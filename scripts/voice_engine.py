@@ -48,6 +48,360 @@ DEFAULT_OUT_SRT = ACTIVE_PROJECT_ROOT / "04_workspace" / "ready_for_openreel" / 
 
 SUPPORTED_AUDIO_EXTS = (".wav", ".mp3", ".m4a", ".flac", ".ogg", ".aac", ".wma")
 
+PIPER_VOICES_DIR = PROJECT_ROOT / "03_voice_clone" / "piper_voices"
+PIPER_HF_BASE = "https://huggingface.co/rhasspy/piper-voices/resolve/main/"
+PIPER_VOICE_MODELS: dict[str, dict[str, str]] = {
+    "vi_VN-vais1000-medium": {
+        "filename": "vi_VN-vais1000-medium.onnx",
+        "hf_path": "vi/vi_VN/vais1000/medium/vi_VN-vais1000-medium.onnx",
+    },
+    "vi_VN-25hours_single-low": {
+        "filename": "vi_VN-25hours_single-low.onnx",
+        "hf_path": "vi/vi_VN/25hours_single/low/vi_VN-25hours_single-low.onnx",
+    },
+    "vi_VN-vivos-x_low": {
+        "filename": "vi_VN-vivos-x_low.onnx",
+        "hf_path": "vi/vi_VN/vivos/x_low/vi_VN-vivos-x_low.onnx",
+    },
+}
+
+VOCAL_EQ_FILTERS: dict[str, str] = {
+    "neutral": "",
+    "bright": "equalizer=f=280:t=q:w=1.2:g=-1.5,equalizer=f=4800:t=q:w=1.3:g=2.5,",
+    "warm": "equalizer=f=220:t=q:w=1.1:g=2.2,equalizer=f=5500:t=q:w=1.2:g=-1.5,",
+    "crisp": "equalizer=f=250:t=q:w=1.1:g=-2.0,equalizer=f=3800:t=q:w=1.2:g=2.0,equalizer=f=7000:t=q:w=1.3:g=1.5,",
+    "deep": "equalizer=f=150:t=q:w=1.0:g=3.0,equalizer=f=4200:t=q:w=1.2:g=-2.0,",
+    "radio": "highpass=f=130,equalizer=f=320:t=q:w=1.0:g=-1.5,equalizer=f=2600:t=q:w=1.2:g=2.8,",
+    "soft": "equalizer=f=300:t=q:w=1.0:g=1.2,equalizer=f=4500:t=q:w=1.3:g=-2.2,",
+    "energetic": "equalizer=f=190:t=q:w=1.1:g=1.5,equalizer=f=3500:t=q:w=1.2:g=2.2,",
+}
+
+FREE_VOICE_CATALOG: list[dict[str, Any]] = [
+    # 10 Edge Neural KOC presets (0d, Online, chuan Anh-Viet)
+    {
+        "id": "edge_hoaimy_koc",
+        "label": "Nữ Hoài My · KOC Tự Nhiên (Neural)",
+        "group": "Edge Neural KOC (0đ · Online)",
+        "tts_engine": "edge_tts",
+        "edge_voice": "vi-VN-HoaiMyNeural",
+        "edge_rate": "+4%",
+        "edge_pitch": "+0Hz",
+        "vocal_eq": "neutral",
+        "gender": "female",
+    },
+    {
+        "id": "edge_hoaimy_energetic",
+        "label": "Nữ Hoài My · Săn Deal Năng Lượng",
+        "group": "Edge Neural KOC (0đ · Online)",
+        "tts_engine": "edge_tts",
+        "edge_voice": "vi-VN-HoaiMyNeural",
+        "edge_rate": "+11%",
+        "edge_pitch": "+8Hz",
+        "vocal_eq": "energetic",
+        "gender": "female",
+    },
+    {
+        "id": "edge_hoaimy_soft",
+        "label": "Nữ Hoài My · Tâm Sự Nhẹ Nhàng",
+        "group": "Edge Neural KOC (0đ · Online)",
+        "tts_engine": "edge_tts",
+        "edge_voice": "vi-VN-HoaiMyNeural",
+        "edge_rate": "-3%",
+        "edge_pitch": "-6Hz",
+        "vocal_eq": "soft",
+        "gender": "female",
+    },
+    {
+        "id": "edge_hoaimy_story",
+        "label": "Nữ Hoài My · Kể Chuyện Mượt Mà",
+        "group": "Edge Neural KOC (0đ · Online)",
+        "tts_engine": "edge_tts",
+        "edge_voice": "vi-VN-HoaiMyNeural",
+        "edge_rate": "+1%",
+        "edge_pitch": "-3Hz",
+        "vocal_eq": "warm",
+        "gender": "female",
+    },
+    {
+        "id": "edge_hoaimy_bright",
+        "label": "Nữ Hoài My · Trong Trẻo Skincare",
+        "group": "Edge Neural KOC (0đ · Online)",
+        "tts_engine": "edge_tts",
+        "edge_voice": "vi-VN-HoaiMyNeural",
+        "edge_rate": "+6%",
+        "edge_pitch": "+5Hz",
+        "vocal_eq": "bright",
+        "gender": "female",
+    },
+    {
+        "id": "edge_namminh_review",
+        "label": "Nam Minh · Review Công Nghệ Chuẩn",
+        "group": "Edge Neural KOC (0đ · Online)",
+        "tts_engine": "edge_tts",
+        "edge_voice": "vi-VN-NamMinhNeural",
+        "edge_rate": "+4%",
+        "edge_pitch": "+0Hz",
+        "vocal_eq": "crisp",
+        "gender": "male",
+    },
+    {
+        "id": "edge_namminh_fast",
+        "label": "Nam Minh · Nhịp Nhanh Bắt Trend",
+        "group": "Edge Neural KOC (0đ · Online)",
+        "tts_engine": "edge_tts",
+        "edge_voice": "vi-VN-NamMinhNeural",
+        "edge_rate": "+12%",
+        "edge_pitch": "+6Hz",
+        "vocal_eq": "energetic",
+        "gender": "male",
+    },
+    {
+        "id": "edge_namminh_deep",
+        "label": "Nam Minh · Trầm Ấm Chuyên Gia",
+        "group": "Edge Neural KOC (0đ · Online)",
+        "tts_engine": "edge_tts",
+        "edge_voice": "vi-VN-NamMinhNeural",
+        "edge_rate": "-2%",
+        "edge_pitch": "-8Hz",
+        "vocal_eq": "deep",
+        "gender": "male",
+    },
+    {
+        "id": "edge_namminh_warm",
+        "label": "Nam Minh · Gần Gũi Đời Thường",
+        "group": "Edge Neural KOC (0đ · Online)",
+        "tts_engine": "edge_tts",
+        "edge_voice": "vi-VN-NamMinhNeural",
+        "edge_rate": "+2%",
+        "edge_pitch": "-4Hz",
+        "vocal_eq": "warm",
+        "gender": "male",
+    },
+    {
+        "id": "edge_namminh_podcast",
+        "label": "Nam Minh · Podcast Radio Sắc Nét",
+        "group": "Edge Neural KOC (0đ · Online)",
+        "tts_engine": "edge_tts",
+        "edge_voice": "vi-VN-NamMinhNeural",
+        "edge_rate": "+5%",
+        "edge_pitch": "+3Hz",
+        "vocal_eq": "radio",
+        "gender": "male",
+    },
+    # 6 Offline Piper TTS Vietnamese presets (0d, 100% Offline)
+    {
+        "id": "piper_vais1000",
+        "label": "Piper · VAIS1000 Rõ Ràng (Offline)",
+        "group": "Piper Offline Việt Nam (0đ · Không cần mạng)",
+        "tts_engine": "piper_tts",
+        "piper_model": "vi_VN-vais1000-medium",
+        "piper_length_scale": 0.96,
+        "piper_speaker": None,
+        "vocal_eq": "neutral",
+        "gender": "female",
+    },
+    {
+        "id": "piper_vais1000_fast",
+        "label": "Piper · VAIS1000 Nhanh Gọn (Offline)",
+        "group": "Piper Offline Việt Nam (0đ · Không cần mạng)",
+        "tts_engine": "piper_tts",
+        "piper_model": "vi_VN-vais1000-medium",
+        "piper_length_scale": 0.86,
+        "piper_speaker": None,
+        "vocal_eq": "bright",
+        "gender": "female",
+    },
+    {
+        "id": "piper_25hours",
+        "label": "Piper · 25Hours Tự Nhiên (Offline)",
+        "group": "Piper Offline Việt Nam (0đ · Không cần mạng)",
+        "tts_engine": "piper_tts",
+        "piper_model": "vi_VN-25hours_single-low",
+        "piper_length_scale": 0.95,
+        "piper_speaker": None,
+        "vocal_eq": "crisp",
+        "gender": "female",
+    },
+    {
+        "id": "piper_25hours_warm",
+        "label": "Piper · 25Hours Ấm Áp (Offline)",
+        "group": "Piper Offline Việt Nam (0đ · Không cần mạng)",
+        "tts_engine": "piper_tts",
+        "piper_model": "vi_VN-25hours_single-low",
+        "piper_length_scale": 1.03,
+        "piper_speaker": None,
+        "vocal_eq": "warm",
+        "gender": "female",
+    },
+    {
+        "id": "piper_vivos_s0",
+        "label": "Piper · VIVOS Giọng 1 (Offline)",
+        "group": "Piper Offline Việt Nam (0đ · Không cần mạng)",
+        "tts_engine": "piper_tts",
+        "piper_model": "vi_VN-vivos-x_low",
+        "piper_length_scale": 0.94,
+        "piper_speaker": 0,
+        "vocal_eq": "neutral",
+        "gender": "neutral",
+    },
+    {
+        "id": "piper_vivos_s1",
+        "label": "Piper · VIVOS Giọng 2 (Offline)",
+        "group": "Piper Offline Việt Nam (0đ · Không cần mạng)",
+        "tts_engine": "piper_tts",
+        "piper_model": "vi_VN-vivos-x_low",
+        "piper_length_scale": 0.95,
+        "piper_speaker": 1,
+        "vocal_eq": "bright",
+        "gender": "neutral",
+    },
+    # 4 F5-TTS Local GPU Clone presets (0d, Local GPU)
+    {
+        "id": "f5_clone_default",
+        "label": "F5-TTS · Clone Giọng Mẫu Chuẩn",
+        "group": "F5-TTS Clone Giọng Mẫu (0đ · Local GPU)",
+        "tts_engine": "f5_tts",
+        "speed": 1.05,
+        "vocal_eq": "neutral",
+        "gender": "custom",
+    },
+    {
+        "id": "f5_clone_fast",
+        "label": "F5-TTS · Clone Nhanh Chốt Đơn",
+        "group": "F5-TTS Clone Giọng Mẫu (0đ · Local GPU)",
+        "tts_engine": "f5_tts",
+        "speed": 1.15,
+        "vocal_eq": "energetic",
+        "gender": "custom",
+    },
+    {
+        "id": "f5_clone_warm",
+        "label": "F5-TTS · Clone Trầm Ấm Review",
+        "group": "F5-TTS Clone Giọng Mẫu (0đ · Local GPU)",
+        "tts_engine": "f5_tts",
+        "speed": 0.98,
+        "vocal_eq": "warm",
+        "gender": "custom",
+    },
+    {
+        "id": "f5_clone_crisp",
+        "label": "F5-TTS · Clone Sáng Rõ Studio",
+        "group": "F5-TTS Clone Giọng Mẫu (0đ · Local GPU)",
+        "tts_engine": "f5_tts",
+        "speed": 1.06,
+        "vocal_eq": "crisp",
+        "gender": "custom",
+    },
+]
+
+RANDOM_VOICE_MODES: list[dict[str, str]] = [
+    {
+        "id": "random_neural",
+        "label": "🎲 Random Thông Minh: 3 Giọng Edge Neural KOC Khác Nhau (Khuyên dùng)",
+    },
+    {
+        "id": "random_piper_neural",
+        "label": "🎲 Random Đa Dạng: Mix Edge Neural + Piper Offline",
+    },
+    {
+        "id": "random_all",
+        "label": "🎲 Random Toàn Kho (20+ Giọng Miễn Phí 0đ)",
+    },
+]
+
+
+def _discover_f5_voice_profiles() -> list[dict[str, Any]]:
+    voices_dir = PROJECT_ROOT / "03_voice_clone" / "voices"
+    if not voices_dir.exists():
+        return []
+    profiles: list[dict[str, Any]] = []
+    for p in sorted(voices_dir.iterdir()):
+        if p.is_file() and p.suffix.lower() in SUPPORTED_AUDIO_EXTS:
+            profiles.append(
+                {
+                    "id": f"f5_profile:{p.stem}",
+                    "label": f"F5-TTS · Giọng Riêng ({p.stem})",
+                    "group": "F5-TTS Clone Giọng Mẫu (0đ · Local GPU)",
+                    "tts_engine": "f5_tts",
+                    "ref_audio": str(p),
+                    "speed": 1.05,
+                    "vocal_eq": "neutral",
+                    "gender": "custom",
+                }
+            )
+    return profiles
+
+
+def list_free_voice_catalog() -> dict[str, Any]:
+    presets = [dict(p) for p in FREE_VOICE_CATALOG] + _discover_f5_voice_profiles()
+    return {
+        "presets": presets,
+        "random_modes": [dict(m) for m in RANDOM_VOICE_MODES],
+        "count": len(presets),
+    }
+
+
+def resolve_voice_preset(preset_id: str) -> dict[str, Any]:
+    pid = (preset_id or "").strip()
+    if pid in ("edge_tts", ""):
+        pid = "edge_hoaimy_koc"
+    elif pid == "f5_tts":
+        pid = "f5_clone_default"
+    elif pid == "piper_tts":
+        pid = "piper_vais1000"
+
+    catalog = list_free_voice_catalog()["presets"]
+    for item in catalog:
+        if item["id"] == pid:
+            return dict(item)
+    return dict(catalog[0])
+
+
+def pick_random_voice_presets(mode: str, count: int = 3) -> list[dict[str, Any]]:
+    import random as _rnd
+
+    catalog = list_free_voice_catalog()["presets"]
+    has_f5_model = DEFAULT_MODEL_CKPT.exists()
+    mode_key = (mode or "random_neural").strip()
+
+    if mode_key == "random_neural":
+        pool = [p for p in catalog if p["tts_engine"] == "edge_tts"]
+    elif mode_key == "random_piper_neural":
+        pool = [p for p in catalog if p["tts_engine"] in ("edge_tts", "piper_tts")]
+    else:
+        pool = [p for p in catalog if p["tts_engine"] != "f5_tts" or has_f5_model]
+
+    if not pool:
+        pool = [p for p in catalog if p["tts_engine"] == "edge_tts"]
+
+    picked: list[dict[str, Any]] = []
+    if len(pool) <= count:
+        shuffled = list(pool)
+        _rnd.shuffle(shuffled)
+        while len(picked) < count:
+            picked.append(dict(shuffled[len(picked) % len(shuffled)]))
+        return picked
+
+    # Encourage diversity across engines/genders when picking 3 voices
+    females = [p for p in pool if p.get("gender") == "female"]
+    males = [p for p in pool if p.get("gender") == "male"]
+    others = [p for p in pool if p.get("gender") not in ("female", "male")]
+    used_ids: set[str] = set()
+    for bucket in (females, males, others):
+        if bucket and len(picked) < count:
+            choice = _rnd.choice(bucket)
+            if choice["id"] not in used_ids:
+                picked.append(dict(choice))
+                used_ids.add(choice["id"])
+    remaining = [p for p in pool if p["id"] not in used_ids]
+    _rnd.shuffle(remaining)
+    for item in remaining:
+        if len(picked) >= count:
+            break
+        picked.append(dict(item))
+    _rnd.shuffle(picked)
+    return picked[:count]
+
 # Bảng phiên âm các từ tiếng Anh TikTok Shop phổ biến sang cách đọc tiếng Việt cho F5-TTS
 ENGLISH_PHONETIC_MAP: list[tuple[str, str]] = [
     (r"\bhead\s*(?:&|and)\s*shoulders\b", "hét en sâu đơ"),
@@ -707,8 +1061,19 @@ def main() -> int:
     parser.add_argument(
         "--tts-engine",
         default="edge_tts",
-        choices=["edge_tts", "f5_tts", "auto"],
-        help="Engine đọc giọng: edge_tts (Neural KOC mượt chuẩn Anh-Việt), f5_tts (Clone giọng mẫu GPU), auto.",
+        choices=["edge_tts", "piper_tts", "f5_tts", "auto"],
+        help="Engine đọc giọng: edge_tts (Neural KOC), piper_tts (Offline Việt Nam), f5_tts (Clone GPU), auto.",
+    )
+    parser.add_argument(
+        "--voice-preset",
+        default="",
+        help="ID preset trong kho giọng miễn phí (ví dụ: edge_hoaimy_koc, piper_vais1000, f5_clone_default).",
+    )
+    parser.add_argument(
+        "--vocal-eq",
+        default="neutral",
+        choices=sorted(VOCAL_EQ_FILTERS.keys()),
+        help="Màu âm sắc FFmpeg cho giọng đọc (neutral, bright, warm, crisp, deep, radio, soft, energetic).",
     )
     parser.add_argument(
         "--edge-voice",
@@ -726,11 +1091,50 @@ def main() -> int:
         help="Cao độ Edge Neural TTS (mặc định: +0Hz).",
     )
     parser.add_argument(
+        "--piper-model",
+        default="vi_VN-vais1000-medium",
+        help="Model Piper TTS tiếng Việt offline.",
+    )
+    parser.add_argument(
+        "--piper-length-scale",
+        type=float,
+        default=0.96,
+        help="Tốc độ Piper TTS (nhỏ hơn = nhanh hơn, mặc định 0.96).",
+    )
+    parser.add_argument(
+        "--piper-speaker",
+        type=int,
+        default=-1,
+        help="Speaker ID cho Piper multi-speaker (vivos), -1 để mặc định.",
+    )
+    parser.add_argument(
         "--no-srt",
         action="store_true",
         help="Chỉ xuất file giọng đọc WAV, bỏ qua bước tạo phụ đề SRT.",
     )
     args = parser.parse_args()
+    if args.voice_preset:
+        preset_cfg = resolve_voice_preset(args.voice_preset)
+        args.tts_engine = preset_cfg.get("tts_engine", args.tts_engine)
+        if preset_cfg.get("edge_voice"):
+            args.edge_voice = str(preset_cfg["edge_voice"])
+        if preset_cfg.get("edge_rate"):
+            args.edge_rate = str(preset_cfg["edge_rate"])
+        if preset_cfg.get("edge_pitch"):
+            args.edge_pitch = str(preset_cfg["edge_pitch"])
+        if preset_cfg.get("piper_model"):
+            args.piper_model = str(preset_cfg["piper_model"])
+        if preset_cfg.get("piper_length_scale") is not None:
+            args.piper_length_scale = float(preset_cfg["piper_length_scale"])
+        if preset_cfg.get("piper_speaker") is not None:
+            args.piper_speaker = int(preset_cfg["piper_speaker"])
+        if preset_cfg.get("ref_audio"):
+            args.ref_audio = str(preset_cfg["ref_audio"])
+        if preset_cfg.get("speed") is not None:
+            args.speed = float(preset_cfg["speed"])
+        if preset_cfg.get("vocal_eq"):
+            args.vocal_eq = str(preset_cfg["vocal_eq"])
+        print(f"[Voice Preset] {preset_cfg.get('label')} ({preset_cfg.get('id')})")
     active_root = get_project_root()
     import style_dna as _sd
     _sd.refresh_project_paths(active_root)
@@ -750,6 +1154,7 @@ def main() -> int:
         raise ValueError("Nội dung kịch bản đầu vào đang rỗng.")
 
     use_edge_tts = args.tts_engine in ("edge_tts", "auto")
+    use_piper_tts = args.tts_engine == "piper_tts"
     out_wav_path = Path(args.output_audio)
     if not out_wav_path.is_absolute():
         out_wav_path = (active_root / out_wav_path).resolve()
@@ -993,6 +1398,56 @@ def main() -> int:
                 out_beats.append((cleaned_wav, int(p_sr), speak_s, disp_s))
         return out_beats
 
+    def _ensure_piper_model(model_key: str) -> Path:
+        meta = PIPER_VOICE_MODELS.get(model_key) or PIPER_VOICE_MODELS["vi_VN-vais1000-medium"]
+        PIPER_VOICES_DIR.mkdir(parents=True, exist_ok=True)
+        onnx_path = PIPER_VOICES_DIR / meta["filename"]
+        json_path = PIPER_VOICES_DIR / f"{meta['filename']}.json"
+        if not onnx_path.exists() or not json_path.exists():
+            import urllib.request
+
+            hf_rel = meta["hf_path"]
+            print(f"[Piper TTS] Đang tải model giọng Việt offline ({meta['filename']})...")
+            if not onnx_path.exists():
+                urllib.request.urlretrieve(f"{PIPER_HF_BASE}{hf_rel}", str(onnx_path))
+            if not json_path.exists():
+                urllib.request.urlretrieve(f"{PIPER_HF_BASE}{hf_rel}.json", str(json_path))
+        return onnx_path
+
+    def _synthesize_beats_piper_tts(
+        sentences_disp: list[str],
+        brief_cfg: dict[str, Any],
+    ) -> list[tuple[Any, int, str, str]]:
+        import wave
+        from piper.voice import PiperVoice
+        from piper.config import SynthesisConfig
+
+        model_key = str(getattr(args, "piper_model", "vi_VN-vais1000-medium") or "vi_VN-vais1000-medium")
+        model_path = _ensure_piper_model(model_key)
+        length_scale = float(getattr(args, "piper_length_scale", 0.96) or 0.96)
+        speaker_id = int(getattr(args, "piper_speaker", -1))
+        syn_cfg = SynthesisConfig(
+            length_scale=length_scale,
+            speaker_id=(speaker_id if speaker_id >= 0 else None),
+        )
+        print(f"[Piper TTS Offline] Khởi tạo model: {model_key} (length_scale={length_scale}, speaker={speaker_id})")
+        voice = PiperVoice.load(str(model_path))
+
+        out_beats: list[tuple[Any, int, str, str]] = []
+        with tempfile.TemporaryDirectory() as tmpdir:
+            for bi, disp_s in enumerate(sentences_disp, start=1):
+                speak_s = _clean_text_for_edge_tts(disp_s)
+                if not speak_s:
+                    continue
+                wav_p = Path(tmpdir) / f"piper_beat_{bi:03d}.wav"
+                print(f"  -> Piper Beat {bi}/{len(sentences_disp)}: \"{speak_s[:70]}\"")
+                with wave.open(str(wav_p), "wb") as wf:
+                    voice.synthesize_wav(speak_s, wf, syn_config=syn_cfg)
+                pcm_arr, p_sr = sf.read(str(wav_p), dtype="float32")
+                cleaned_wav = _trim_pcm_edges(np.asarray(pcm_arr, dtype=np.float32).reshape(-1), int(p_sr))
+                out_beats.append((cleaned_wav, int(p_sr), speak_s, disp_s))
+        return out_beats
+
     # Prefer clean display script sentences when available so Edge-TTS gets crisp bilingual text
     disp_file = active_root / "04_workspace" / "kich_ban_hien_thi.md"
     src_for_split = raw_script
@@ -1014,14 +1469,31 @@ def main() -> int:
     sr = 24000
     raw_beats: list[tuple[Any, int, str, str]] = []
     used_engine = "f5_tts"
-    if use_edge_tts:
+    if use_piper_tts:
+        try:
+            raw_beats = _synthesize_beats_piper_tts(raw_sentences, brief_cfg)
+            if raw_beats:
+                used_engine = "piper_tts"
+        except Exception as exc:
+            print(f"  [WARN] Piper-TTS lỗi ({exc}) -> Thử Edge-TTS...")
+            raw_beats = []
+            use_edge_tts = True
+
+    if not raw_beats and use_edge_tts:
         try:
             raw_beats = _synthesize_beats_edge_tts(raw_sentences, brief_cfg)
             if raw_beats:
                 used_engine = "edge_tts"
         except Exception as exc:
-            print(f"  [WARN] Edge-TTS không khả dụng ({exc}) -> Tự động chuyển sang F5-TTS Local...")
+            print(f"  [WARN] Edge-TTS không khả dụng ({exc}) -> Thử Piper-TTS Offline...")
             raw_beats = []
+            try:
+                raw_beats = _synthesize_beats_piper_tts(raw_sentences, brief_cfg)
+                if raw_beats:
+                    used_engine = "piper_tts"
+            except Exception as p_exc:
+                print(f"  [WARN] Piper-TTS cũng không khả dụng ({p_exc}) -> Chuyển sang F5-TTS Local...")
+                raw_beats = []
 
     if not raw_beats:
         f5tts, ref_wav_path, ref_text_norm = _init_f5_tts()
@@ -1114,7 +1586,7 @@ def main() -> int:
                     "-i",
                     str(out_wav_path),
                     "-af",
-                    "highpass=f=75,lowpass=f=11500,equalizer=f=3200:t=q:w=1.2:g=-1.5,acompressor=threshold=-18dB:ratio=2.5:attack=12:release=140:makeup=2dB,alimiter=limit=0.95",
+                    f"highpass=f=75,lowpass=f=11500,{VOCAL_EQ_FILTERS.get(getattr(args, 'vocal_eq', 'neutral'), '')}equalizer=f=3200:t=q:w=1.2:g=-1.5,acompressor=threshold=-18dB:ratio=2.5:attack=12:release=140:makeup=2dB,alimiter=limit=0.95",
                     "-ar",
                     str(sr),
                     "-ac",

@@ -10,7 +10,9 @@ remotion_studio/public/
 # Large model weights (>100MB GitHub limit - auto downloaded by install.bat)
 03_voice_clone/model/*.pt
 03_voice_clone/model/*.safetensors
+03_voice_clone/piper_voices/*.onnx
 assets/bin/
+.update_cache.json
 
 # Per-machine / Per-channel workspaces, raw inputs & outputs
 projects/

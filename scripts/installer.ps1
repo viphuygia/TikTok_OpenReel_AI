@@ -110,7 +110,7 @@ if ($CloneTo -ne "") {
         }
     }
     foreach ($fileRel in @(
-        "requirements.txt", "install.bat", "clone_new_channel.bat", "pack_portable.ps1", ".gitignore", "README.md",
+        "requirements.txt", "install.bat", "update.bat", "clone_new_channel.bat", "pack_portable.ps1", ".gitignore", "README.md",
         "remotion_studio\package.json", "remotion_studio\package-lock.json", "remotion_studio\tsconfig.json", "remotion_studio\remotion.config.ts",
         "hyperframes_studio\package.json", "hyperframes_studio\package-lock.json"
     )) {
@@ -139,6 +139,7 @@ if ($CloneTo -ne "") {
     # Link heavy shared read-only directories via Windows Junction (0 MB extra disk)
     Ensure-Junction (Join-Path $Dest "03_voice_clone\venv") (Join-Path $SourceRoot "03_voice_clone\venv")
     Ensure-Junction (Join-Path $Dest "03_voice_clone\model") (Join-Path $SourceRoot "03_voice_clone\model")
+    Ensure-Junction (Join-Path $Dest "03_voice_clone\piper_voices") (Join-Path $SourceRoot "03_voice_clone\piper_voices")
     Ensure-Junction (Join-Path $Dest "assets") (Join-Path $SourceRoot "assets")
     Ensure-Junction (Join-Path $Dest "06_assets_audio") (Join-Path $SourceRoot "06_assets_audio")
     Ensure-Junction (Join-Path $Dest "remotion_studio\node_modules") (Join-Path $SourceRoot "remotion_studio\node_modules")
@@ -236,6 +237,33 @@ if (-not (Test-Path -LiteralPath $ModelVocab)) {
     try {
         Invoke-WebRequest -Uri "https://huggingface.co/hynt/F5-TTS-Vietnamese-ViVoice/resolve/main/vocab.txt" -OutFile $ModelVocab -UseBasicParsing
     } catch {}
+}
+
+# 3b. Check & Auto-Download Piper Vietnamese Offline Voices if missing
+$PiperDir = Join-Path $Root "03_voice_clone\piper_voices"
+New-Item -ItemType Directory -Path $PiperDir -Force | Out-Null
+$piperBase = "https://huggingface.co/rhasspy/piper-voices/resolve/main/"
+$piperModels = @(
+    @{ Name = "vi_VN-vais1000-medium.onnx"; Rel = "vi/vi_VN/vais1000/medium/vi_VN-vais1000-medium.onnx" },
+    @{ Name = "vi_VN-25hours_single-low.onnx"; Rel = "vi/vi_VN/25hours_single/low/vi_VN-25hours_single-low.onnx" },
+    @{ Name = "vi_VN-vivos-x_low.onnx"; Rel = "vi/vi_VN/vivos/x_low/vi_VN-vivos-x_low.onnx" }
+)
+foreach ($pm in $piperModels) {
+    $onnxDest = Join-Path $PiperDir $pm.Name
+    $jsonDest = Join-Path $PiperDir ($pm.Name + ".json")
+    if (-not (Test-Path -LiteralPath $onnxDest)) {
+        Write-Info "Dang tai Piper Voice offline: $($pm.Name)..."
+        try {
+            Invoke-WebRequest -Uri ($piperBase + $pm.Rel) -OutFile $onnxDest -UseBasicParsing
+        } catch {
+            Write-Warning "Khong the tai $($pm.Name): $($_.Exception.Message)"
+        }
+    }
+    if (-not (Test-Path -LiteralPath $jsonDest)) {
+        try {
+            Invoke-WebRequest -Uri ($piperBase + $pm.Rel + ".json") -OutFile $jsonDest -UseBasicParsing
+        } catch {}
+    }
 }
 
 # 4. Install Node dependencies for Remotion & HyperFrames

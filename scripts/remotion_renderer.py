@@ -276,6 +276,10 @@ def sync_media_to_remotion_public(bgm_track: str | None = None) -> dict[str, Any
         dst_sub = pub_assets / sub
         dst_sub.mkdir(parents=True, exist_ok=True)
         if src_sub.exists():
+            src_names = {f.name for f in src_sub.iterdir() if f.is_file()}
+            for old_dst in dst_sub.iterdir():
+                if old_dst.is_file() and old_dst.name not in src_names:
+                    old_dst.unlink(missing_ok=True)
             for f in src_sub.iterdir():
                 if f.is_file():
                     dst_f = dst_sub / f.name
@@ -340,6 +344,10 @@ def sync_media_to_remotion_public(bgm_track: str | None = None) -> dict[str, Any
 
     sfx_map: dict[str, str] = {}
     if DIR_ASSETS_AUDIO.exists():
+        src_sfx_names = {src.name for src in DIR_ASSETS_AUDIO.glob("sfx_*.wav")}
+        for old_sfx in ws_audio_dir.glob("sfx_*.wav"):
+            if old_sfx.name not in src_sfx_names:
+                old_sfx.unlink(missing_ok=True)
         for src in sorted(DIR_ASSETS_AUDIO.glob("sfx_*.wav")):
             dst_sfx = ws_audio_dir / src.name
             if not dst_sfx.exists() or dst_sfx.stat().st_size != src.stat().st_size:
@@ -686,48 +694,70 @@ def build_remotion_props(overrides: dict[str, Any] | None = None) -> dict[str, A
             }
         )
 
-    # Audio SFX events locked to Hook, Beat Callouts, Transitions, and CTA
+    sfx_level = str(ov.get("sfx_level") or dna.get("sfx_level") or "subtle").strip().lower()
+    if sfx_level not in ("subtle", "balanced", "off"):
+        sfx_level = "subtle"
+
+    # Audio SFX events locked to Hook, Beat Callouts, Transitions, and CTA (clean subtle pool, no corny game/bell SFX)
     sfx_events: list[dict[str, Any]] = []
     sfx_map = synced["sfx"]
-    hook_sfx = sfx_map.get("sfx_bubble_pop.wav") or sfx_map.get("sfx_pop.wav")
-    callout_sfx_pool = [
-        k for k in ("sfx_sparkle_chime.wav", "sfx_bubble_pop.wav", "sfx_notification.wav", "sfx_pop.wav") if sfx_map.get(k)
-    ]
-    if hook_sfx:
-        sfx_events.append({"id": "sfx_hook_pop", "src": hook_sfx, "start": 0.08, "duration": 0.6, "volume": 0.34})
-        for ci, co in enumerate(callouts):
-            co_id = str(co.get("id") or "")
-            co_start = float(co.get("start") or 0.0)
-            if co_id.startswith("callout_mid_") and 1.0 < co_start < total_duration - 0.8 and callout_sfx_pool:
-                chosen_c_sfx = sfx_map[callout_sfx_pool[ci % len(callout_sfx_pool)]]
-                sfx_events.append(
-                    {
-                        "id": f"sfx_callout_pop_{ci}",
-                        "src": chosen_c_sfx,
-                        "start": round(co_start, 2),
-                        "duration": 0.65,
-                        "volume": 0.30,
-                    }
-                )
-    trans_sfx_pool = [
-        k for k in ("sfx_swoosh_soft.wav", "sfx_camera_shutter.wav", "sfx_snap_finger.wav", "sfx_whoosh.wav") if sfx_map.get(k)
-    ]
-    if trans_sfx_pool and len(clip_items) > 1:
-        for wi, cl in enumerate(clip_items[1:], start=1):
-            if (cl.get("transitionType") == "flash" or wi in (1, 3, 5, 7)) and cl["startInTimeline"] < total_duration - 1.0:
-                chosen_t_sfx = sfx_map[trans_sfx_pool[wi % len(trans_sfx_pool)]]
-                sfx_events.append(
-                    {
-                        "id": f"sfx_whoosh_{wi}",
-                        "src": chosen_t_sfx,
-                        "start": max(0.0, round(cl["startInTimeline"] - 0.12, 2)),
-                        "duration": 0.8,
-                        "volume": 0.32,
-                    }
-                )
-    cta_sfx = sfx_map.get("sfx_coin_clink.wav") or sfx_map.get("sfx_ding.wav")
-    if cta_sfx and total_duration > 5.0:
-        sfx_events.append({"id": "sfx_cta_ding", "src": cta_sfx, "start": cta_start, "duration": 1.2, "volume": 0.36})
+    if sfx_level != "off":
+        hook_sfx = sfx_map.get("sfx_bubble_pop.wav") or sfx_map.get("sfx_pop.wav")
+        callout_sfx_pool = [
+            k for k in ("sfx_bubble_pop.wav", "sfx_pop.wav", "sfx_sparkle_chime.wav") if sfx_map.get(k)
+        ]
+        trans_sfx_pool = [
+            k for k in ("sfx_swoosh_soft.wav", "sfx_pop.wav") if sfx_map.get(k)
+        ]
+        vol_scale = 0.72 if sfx_level == "subtle" else 1.0
+
+        if hook_sfx:
+            sfx_events.append(
+                {"id": "sfx_hook_pop", "src": hook_sfx, "start": 0.08, "duration": 0.45, "volume": round(0.28 * vol_scale, 3)}
+            )
+
+        if sfx_level == "balanced" and callout_sfx_pool:
+            for ci, co in enumerate(callouts):
+                co_id = str(co.get("id") or "")
+                co_start = float(co.get("start") or 0.0)
+                if co_id.startswith("callout_mid_") and 1.0 < co_start < total_duration - 0.8:
+                    chosen_c_sfx = sfx_map[callout_sfx_pool[ci % len(callout_sfx_pool)]]
+                    sfx_events.append(
+                        {
+                            "id": f"sfx_callout_pop_{ci}",
+                            "src": chosen_c_sfx,
+                            "start": round(co_start, 2),
+                            "duration": 0.50,
+                            "volume": 0.24,
+                        }
+                    )
+
+        if trans_sfx_pool and len(clip_items) > 1:
+            max_trans = 2 if sfx_level == "subtle" else 4
+            trans_added = 0
+            for wi, cl in enumerate(clip_items[1:], start=1):
+                if trans_added >= max_trans:
+                    break
+                if (cl.get("transitionType") == "flash" or wi in (1, 3, 5, 7)) and cl["startInTimeline"] < total_duration - 1.0:
+                    chosen_t_sfx = sfx_map[trans_sfx_pool[wi % len(trans_sfx_pool)]]
+                    sfx_events.append(
+                        {
+                            "id": f"sfx_whoosh_{wi}",
+                            "src": chosen_t_sfx,
+                            "start": max(0.0, round(cl["startInTimeline"] - 0.12, 2)),
+                            "duration": 0.60,
+                            "volume": round(0.26 * vol_scale, 3),
+                        }
+                    )
+                    trans_added += 1
+
+        cta_sfx = sfx_map.get("sfx_sparkle_chime.wav") or sfx_map.get("sfx_bubble_pop.wav")
+        if cta_sfx and total_duration > 5.0:
+            sfx_events.append(
+                {"id": "sfx_cta_chime", "src": cta_sfx, "start": cta_start, "duration": 0.75, "volume": round(0.26 * vol_scale, 3)}
+            )
+        if sfx_level == "subtle" and len(sfx_events) > 4:
+            sfx_events = sfx_events[:3] + [sfx_events[-1]]
 
     creative_mode = str(ov.get("creative_mode") or dna.get("creative_mode") or "breakthrough_ai")
     camera_intensity = str(ov.get("camera_intensity") or dna.get("camera_intensity") or "dynamic_ai")
@@ -787,7 +817,8 @@ def build_remotion_props(overrides: dict[str, Any] | None = None) -> dict[str, A
         "bgmSrc": synced["bgm"],
         "bgmVolume": float(bgm_vol_val if bgm_vol_val is not None else 0.16),
         "sfxEvents": sfx_events,
-        "sfxVolume": float(ov.get("sfx_volume") or dna.get("sfx_volume") or 0.55),
+        "sfxLevel": sfx_level,
+        "sfxVolume": float(ov.get("sfx_volume") or dna.get("sfx_volume") or 0.42),
     }
 
     # Global + Brand Banned Words guardrail across all rendered visual text & captions

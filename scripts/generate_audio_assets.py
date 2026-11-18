@@ -44,13 +44,13 @@ def make_whoosh(path: Path) -> None:
 
 
 def make_pop(path: Path) -> None:
-    dur = 0.14
+    dur = 0.12
     n = int(SR * dur)
     t = np.linspace(0, dur, n, endpoint=False)
-    freq = 320 + 620 * np.exp(-t * 28)
+    freq = 240 + 360 * np.exp(-t * 32)
     phase = 2 * math.pi * np.cumsum(freq) / SR
-    env = np.exp(-t * 32) * (1 - np.exp(-t * 350))
-    out = np.sin(phase) * env * 0.75
+    env = np.exp(-t * 38) * (1 - np.exp(-t * 280))
+    out = np.sin(phase) * env * 0.42
     _write_wav(path, out)
 
 
@@ -117,13 +117,13 @@ def make_upbeat_bgm(path: Path, dur: float = 32.0) -> None:
 
 
 def make_bubble_pop(path: Path) -> None:
-    dur = 0.16
+    dur = 0.13
     n = int(SR * dur)
     t = np.linspace(0, dur, n, endpoint=False)
-    freq = 440 + 780 * (1 - np.exp(-t * 38))
+    freq = 340 + 460 * (1 - np.exp(-t * 34))
     phase = 2 * math.pi * np.cumsum(freq) / SR
-    env = np.exp(-t * 28) * (1 - np.exp(-t * 420))
-    _write_wav(path, np.sin(phase) * env * 0.72)
+    env = np.exp(-t * 34) * (1 - np.exp(-t * 320))
+    _write_wav(path, np.sin(phase) * env * 0.40)
 
 
 def make_camera_shutter(path: Path) -> None:
@@ -140,29 +140,29 @@ def make_camera_shutter(path: Path) -> None:
 
 
 def make_swoosh_soft(path: Path) -> None:
-    dur = 0.42
+    dur = 0.36
     n = int(SR * dur)
     t = np.linspace(0, dur, n, endpoint=False)
     rng = np.random.default_rng(31)
     noise = rng.normal(0, 1, n)
-    kernel = np.ones(85) / 85.0
+    kernel = np.ones(120) / 120.0
     smooth = np.convolve(noise, kernel, mode="same")
-    env = np.sin(math.pi * (t / dur)) ** 2.0
-    warm = np.sin(2 * math.pi * (160 + 280 * (t / dur)) * t) * 0.18
-    _write_wav(path, (smooth * 1.2 + warm) * env * 0.45)
+    env = np.sin(math.pi * (t / dur)) ** 2.2
+    warm = np.sin(2 * math.pi * (140 + 180 * (t / dur)) * t) * 0.10
+    _write_wav(path, (smooth * 1.1 + warm) * env * 0.30)
 
 
 def make_sparkle_chime(path: Path) -> None:
-    dur = 0.75
+    dur = 0.55
     n = int(SR * dur)
     t = np.linspace(0, dur, n, endpoint=False)
-    notes = [(0.00, 1318.5), (0.06, 1567.98), (0.12, 1975.53), (0.18, 2637.02)]
+    notes = [(0.00, 1046.5), (0.06, 1318.5), (0.12, 1567.98)]
     out = np.zeros(n, dtype=np.float64)
     for st, freq in notes:
         dt = np.maximum(0.0, t - st)
         mask = t >= st
-        env = np.exp(-dt[mask] * 7.5) * (1 - np.exp(-dt[mask] * 450))
-        out[mask] += (np.sin(2 * math.pi * freq * dt[mask]) + 0.25 * np.sin(4 * math.pi * freq * dt[mask])) * env * 0.30
+        env = np.exp(-dt[mask] * 9.5) * (1 - np.exp(-dt[mask] * 320))
+        out[mask] += np.sin(2 * math.pi * freq * dt[mask]) * env * 0.22
     _write_wav(path, out)
 
 
@@ -231,9 +231,10 @@ def make_bass_drop_soft(path: Path) -> None:
     _write_wav(path, np.sin(phase) * env * 0.72)
 
 
-def ensure_audio_assets() -> dict[str, Path]:
+def ensure_audio_assets(force_soft: bool = False) -> dict[str, Path]:
     DIR_ASSETS_AUDIO.mkdir(parents=True, exist_ok=True)
     DIR_BGM.mkdir(parents=True, exist_ok=True)
+    soft_keys = {"pop", "bubble_pop", "swoosh_soft", "sparkle_chime"}
     sfx_builders = {
         "whoosh": ("sfx_whoosh.wav", make_whoosh),
         "pop": ("sfx_pop.wav", make_pop),
@@ -252,7 +253,7 @@ def ensure_audio_assets() -> dict[str, Path]:
     out: dict[str, Path] = {}
     for key, (fname, fn) in sfx_builders.items():
         p = DIR_ASSETS_AUDIO / fname
-        if not p.exists():
+        if not p.exists() or (force_soft and key in soft_keys):
             fn(p)
         out[key] = p
     bgm = DIR_BGM / "bgm_upbeat_default.wav"
@@ -263,6 +264,6 @@ def ensure_audio_assets() -> dict[str, Path]:
 
 
 if __name__ == "__main__":
-    res = ensure_audio_assets()
+    res = ensure_audio_assets(force_soft=True)
     for k, p in res.items():
         print(f"{k}: {p} ({p.stat().st_size} bytes)")

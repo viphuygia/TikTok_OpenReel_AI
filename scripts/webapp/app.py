@@ -1137,6 +1137,7 @@ class RemotionRenderReq(BaseModel):
     disable_flash_shake: bool = True
     icon_density: str = "balanced"
     sticker_density: str = "normal"
+    sfx_level: str = "subtle"
 
 
 class RemotionAiEditReq(BaseModel):
@@ -1183,10 +1184,13 @@ class OneClickPipelineReq(BaseModel):
     disable_flash_shake: bool = True
     icon_density: str = "balanced"
     sticker_density: str = "normal"
+    sfx_level: str = "subtle"
     mix_engines: bool = False
     creative_wildcard: bool = False
     tts_engine: str = "edge_tts"
     edge_voice: str = "vi-VN-HoaiMyNeural"
+    voice_preset: str = "random_neural"
+    sfx_level: str = "subtle"
     project_ids: list[str] = Field(default_factory=list)
     sync: bool = False
 
@@ -4608,6 +4612,13 @@ def api_remotion_ai_director(req: OpenReelDirectorReq):
     }
 
 
+@app.get("/api/voice/catalog")
+def api_voice_catalog():
+    import voice_engine as _ve
+
+    return {"ok": True, **_ve.list_free_voice_catalog()}
+
+
 @app.post("/api/remotion/preview-badge")
 def api_remotion_preview_badge(req: RemotionRenderReq):
     ov = _apply_remotion_req_to_overrides(req)
@@ -5248,6 +5259,14 @@ def _run_single_project_pipeline(req: OneClickPipelineReq) -> None:
                 else []
             )
             wildcard_cache_key = str(load_config().get("gemini_api_key") or "")
+            import voice_engine as _ve
+            req_voice_preset = str(getattr(req, "voice_preset", "") or "").strip()
+            batch_voice_presets: list[dict[str, Any]] = []
+            if req_voice_preset.startswith("random_"):
+                batch_voice_presets = _ve.pick_random_voice_presets(req_voice_preset, count=max(1, len(batch_opts)))
+            elif req_voice_preset:
+                resolved_p = _ve.resolve_voice_preset(req_voice_preset)
+                batch_voice_presets = [resolved_p for _ in batch_opts]
             used_wc_archetypes: list[str] = []
             used_wc_palettes: list[str] = []
             used_wc_hooks: list[str] = []
@@ -5303,33 +5322,48 @@ def _run_single_project_pipeline(req: OneClickPipelineReq) -> None:
                     sync_voice_clone_files()
                     req_tts_engine = str(getattr(req, "tts_engine", "edge_tts") or "edge_tts").strip()
                     req_edge_voice = str(getattr(req, "edge_voice", "vi-VN-HoaiMyNeural") or "vi-VN-HoaiMyNeural").strip()
-                    slot_edge_voice = req_edge_voice
-                    slot_edge_rate = "+4%"
-                    if req.mix_variants and req_tts_engine == "edge_tts":
-                        edge_mix_pool = [
-                            ("vi-VN-HoaiMyNeural", "+4%"),
-                            ("vi-VN-NamMinhNeural", "+4%"),
-                            ("vi-VN-HoaiMyNeural", "+1%"),
+                    slot_preset = batch_voice_presets[b_idx - 1] if (b_idx - 1) < len(batch_voice_presets) else None
+                    if slot_preset:
+                        tts_args = [
+                            "--script",
+                            "04_workspace/kich_ban.txt",
+                            "--voice-preset",
+                            str(slot_preset["id"]),
+                            "--nfe-step",
+                            "48",
+                            "--whisper-model",
+                            "small",
+                            "--target-duration",
+                            f"{req.target_duration_sec:.2f}",
                         ]
-                        slot_edge_voice, slot_edge_rate = edge_mix_pool[(b_idx - 1) % len(edge_mix_pool)]
-                    tts_args = [
-                        "--script",
-                        "04_workspace/kich_ban.txt",
-                        "--tts-engine",
-                        req_tts_engine,
-                        "--edge-voice",
-                        slot_edge_voice,
-                        "--edge-rate",
-                        slot_edge_rate,
-                        "--speed",
-                        str(mix_prof["tts_speed"]),
-                        "--nfe-step",
-                        "48",
-                        "--whisper-model",
-                        "small",
-                        "--target-duration",
-                        f"{req.target_duration_sec:.2f}",
-                    ]
+                    else:
+                        slot_edge_voice = req_edge_voice
+                        slot_edge_rate = "+4%"
+                        if req.mix_variants and req_tts_engine == "edge_tts":
+                            edge_mix_pool = [
+                                ("vi-VN-HoaiMyNeural", "+4%"),
+                                ("vi-VN-NamMinhNeural", "+4%"),
+                                ("vi-VN-HoaiMyNeural", "+1%"),
+                            ]
+                            slot_edge_voice, slot_edge_rate = edge_mix_pool[(b_idx - 1) % len(edge_mix_pool)]
+                        tts_args = [
+                            "--script",
+                            "04_workspace/kich_ban.txt",
+                            "--tts-engine",
+                            req_tts_engine,
+                            "--edge-voice",
+                            slot_edge_voice,
+                            "--edge-rate",
+                            slot_edge_rate,
+                            "--speed",
+                            str(mix_prof["tts_speed"]),
+                            "--nfe-step",
+                            "48",
+                            "--whisper-model",
+                            "small",
+                            "--target-duration",
+                            f"{req.target_duration_sec:.2f}",
+                        ]
                     if req.mix_variants and len(voice_profiles) > 1:
                         vp = voice_profiles[(b_idx - 1) % len(voice_profiles)]
                         tts_args.extend(["--ref-audio", vp["wav_path"]])
@@ -5437,6 +5471,7 @@ def _run_single_project_pipeline(req: OneClickPipelineReq) -> None:
                             "disable_flash_shake": bool(req.disable_flash_shake),
                             "icon_density": req.icon_density or "balanced",
                             "sticker_density": req.sticker_density or "normal",
+                            "sfx_level": getattr(req, "sfx_level", "subtle") or "subtle",
                             **({"wildcard_spec": slot_wildcard} if slot_wildcard else {}),
                         }
                     )
@@ -5487,9 +5522,25 @@ def _run_single_project_pipeline(req: OneClickPipelineReq) -> None:
         )
         if req.force_tts or not FILE_TTS_WAV.exists() or not FILE_VOICE_BEATS.exists() or script_newer or duration_mismatch:
             sync_voice_clone_files()
-            tts_res = run_python_script(
-                "scripts/voice_engine.py",
-                [
+            import voice_engine as _ve
+            single_vp = str(getattr(req, "voice_preset", "") or "").strip()
+            if single_vp.startswith("random_"):
+                single_vp = _ve.pick_random_voice_presets(single_vp, count=1)[0]["id"]
+            if single_vp:
+                single_tts_args = [
+                    "--script",
+                    "04_workspace/kich_ban.txt",
+                    "--voice-preset",
+                    single_vp,
+                    "--nfe-step",
+                    "48",
+                    "--whisper-model",
+                    "small",
+                    "--target-duration",
+                    f"{req.target_duration_sec:.2f}",
+                ]
+            else:
+                single_tts_args = [
                     "--script",
                     "04_workspace/kich_ban.txt",
                     "--tts-engine",
@@ -5504,7 +5555,10 @@ def _run_single_project_pipeline(req: OneClickPipelineReq) -> None:
                     "small",
                     "--target-duration",
                     f"{req.target_duration_sec:.2f}",
-                ],
+                ]
+            tts_res = run_python_script(
+                "scripts/voice_engine.py",
+                single_tts_args,
             )
             if not tts_res.get("ok"):
                 raise RuntimeError(f"voice_engine.py lỗi: {tts_res.get('log', '')[-400:]}")
@@ -5589,6 +5643,7 @@ def _run_single_project_pipeline(req: OneClickPipelineReq) -> None:
                 "disable_flash_shake": bool(req.disable_flash_shake),
                 "icon_density": req.icon_density or "balanced",
                 "sticker_density": req.sticker_density or "normal",
+                "sfx_level": getattr(req, "sfx_level", "subtle") or "subtle",
                 **({"wildcard_spec": single_wildcard} if single_wildcard else {}),
             }
         )
