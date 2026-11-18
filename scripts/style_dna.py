@@ -1138,18 +1138,21 @@ COMMON_TTS_FALLBACK_RULES: list[tuple[str, str]] = [
     (r"\b72\s*giờ\b", "bảy mươi hai giờ"),
     (r"\btonic\b", "tô ních"),
     (r"\bleave[- ]on\b", "líp on"),
-    (r"\bfree\s*ship\s*xtra\b", "phờ ri síp ích tra"),
-    (r"\bfree\s*ship\b", "phờ ri síp"),
-    (r"\bflash\s*sale\b", "phờ lát sêu"),
-    (r"\bbest\s*seller\b", "bét seo lơ"),
+    (r"\bfree\s*ship\s*xtra\b", "miễn phí vận chuyển"),
+    (r"\bfree\s*ship\b", "miễn phí vận chuyển"),
+    (r"\bflash\s*sale\b", "giảm giá sốc"),
+    (r"\bbest\s*seller\b", "bán chạy hàng đầu"),
     (r"\btik\s*tok\s*shop\b", "tích tóc sóp"),
     (r"\btik\s*tok\b", "tích tóc"),
-    (r"\bvoucher\b", "vao chờ"),
+    (r"\bvoucher\b", "mã giảm giá"),
     (r"\bunbox\b", "ăn bóc"),
     (r"\breview\b", "ri viu"),
     (r"\bcombo\b", "com bo"),
-    (r"\bdeal\b", "điu"),
-    (r"\bsale\b", "sêu"),
+    (r"\bdeal\s+hời\b", "giá hời"),
+    (r"\bsăn\s+deal\b", "săn ưu đãi"),
+    (r"\bchốt\s+deal\b", "chốt đơn"),
+    (r"\bdeal\b", "ưu đãi"),
+    (r"\bsale\b", "giảm giá"),
     (r"\blive\b", "lai"),
     (r"\bshop\b", "sóp"),
 ]
@@ -1193,11 +1196,11 @@ def _vn_small_number(num_str: str) -> str:
 
 
 def compute_target_word_budget(target_duration_sec: float) -> tuple[int, int, int]:
-    """Return (target_words, min_words, target_sentences) calibrated for Vietnamese F5-TTS (~4.75 syl/s)."""
+    """Return (target_words, min_words, target_sentences) calibrated for natural breathing room (~3.85 syl/s)."""
     dur = max(8.0, min(90.0, float(target_duration_sec or 30.0)))
-    target_words = max(42, int(round(dur * 4.75)))
-    min_words = max(36, int(round(dur * 4.2)))
-    target_sentences = max(4, min(9, int(round(dur / 4.0))))
+    target_words = max(36, int(round(dur * 3.85)))
+    min_words = max(30, int(round(dur * 3.35)))
+    target_sentences = max(4, min(8, int(round(dur / 4.2))))
     return target_words, min_words, target_sentences
 
 
@@ -1285,7 +1288,7 @@ def _extract_brief_product_angles(brand_brief: dict[str, Any]) -> dict[str, str]
     prod = str(brand_brief.get("product_line") or "").strip()
     cat = str(brand_brief.get("category") or "sản phẩm chăm sóc").strip()
     usps = re.sub(r"[.,]+$", "", str(brand_brief.get("usps") or "").strip())
-    cta = str(brand_brief.get("offer_cta") or "Đang có deal hời kèm Freeship, mấy bà bấm giỏ hàng góc trái chốt liền nha.").strip()
+    cta = str(brand_brief.get("offer_cta") or "Đang có giá hời kèm miễn phí vận chuyển, mấy bà bấm giỏ hàng góc trái chốt liền nha.").strip()
     raw_brief = str(brand_brief.get("raw_brief") or "").strip()
 
     extra_lines = [ln.strip() for ln in raw_brief.splitlines() if ln.strip()]
@@ -1467,11 +1470,11 @@ def generate_three_script_options_fallback(
             "angle": "Nỗi đau",
             "hook_badge": f"CHÂN ÁI {prod_full.upper()}"[:44],
             "sentences": [
-                f"{pronoun.capitalize()} đang tìm dòng {cat} chuẩn xịn tiện lợi thì dừng lại ba giây xem ngay em {prod_full} này nha.",
-                f"Nổi bật nhất là {usps}, giải quyết cực kỳ gọn nhẹ nhu cầu hằng ngày mà không tốn nhiều công sức.",
-                "Thiết kế nhỏ gọn dễ mang theo bên người, đi làm hay đi chơi đều lấy ra dùng ngay trong vài giây.",
-                f"Trải nghiệm thực tế với {prod_full} mang lại cảm giác dễ chịu, tự tin hơn hẳn trong mọi cuộc gặp gỡ.",
-                f"Đặc biệt khi kết hợp đều đặn cùng {second_p}, hiệu quả duy trì lại càng rõ rệt và bền lâu hơn nữa.",
+                f"{pronoun.capitalize()} ơi, đang tìm {cat} tiện lợi thì dừng lại ba giây xem ngay em {prod_full} này nha.",
+                f"Điểm sáng là {usps}, dùng nhanh gọn trong vài giây mà không tốn nhiều công sức.",
+                "Thiết kế nhỏ gọn dễ bỏ túi, mang đi làm hay đi chơi đều rất tiện.",
+                "Dùng xong cảm giác dễ chịu, tự tin hẳn khi ra ngoài gặp gỡ bạn bè.",
+                f"Kết hợp thêm cùng {second_p} nữa là hiệu quả bền lâu hơn hẳn.",
                 cta,
             ],
         },
@@ -1481,11 +1484,10 @@ def generate_three_script_options_fallback(
             "angle": "Review Trải nghiệm",
             "hook_badge": f"REVIEW THẬT {prod_full.upper()}"[:44],
             "sentences": [
-                f"Hôm nay mình trên tay chi tiết dòng {cat} {prod_full} đang được rất nhiều người săn đón trên TikTok Shop nha.",
-                f"Điểm ăn tiền đầu tiên là {usps}, giúp tối ưu trải nghiệm sử dụng ngay từ những lần đầu tiên.",
-                "Mức độ hoàn thiện và đóng gói rất chỉn chu, cầm chắc tay và cực kỳ tiện để trong túi xách mỗi ngày.",
-                "Dùng đều đặn sáng tối giúp mình cảm thấy thoải mái, nhẹ nhàng và tự tin giao tiếp suốt cả ngày dài.",
-                "Ai đang tìm một giải pháp gọn nhẹ, hiệu quả thực tế cho nhu cầu hằng ngày thì rất đáng để trải nghiệm.",
+                f"Hôm nay mình review nhanh em {prod_full} đang được nhiều người tìm mua nha.",
+                f"Điểm ăn tiền đầu tiên là {usps}, mang lại cảm giác thoải mái ngay lần đầu dùng.",
+                "Đóng gói chỉn chu chắc tay, cực kỳ gọn để mang theo trong túi mỗi ngày.",
+                "Dùng đều mỗi ngày giúp mình nhẹ nhàng và tự tin giao tiếp suốt cả ngày.",
                 cta,
             ],
         },
@@ -1495,11 +1497,10 @@ def generate_three_script_options_fallback(
             "angle": "Combo & Săn Deal",
             "hook_badge": f"DEAL HỜI {brand.upper()} ĐANG SALE"[:44],
             "sentences": [
-                f"Nếu {pronoun} đang muốn chốt đơn {cat} vừa chất lượng vừa tiết kiệm thì đừng bỏ qua em {prod_full} hôm nay nha.",
-                f"Ưu điểm lớn nhất là {usps}, bỏ túi mang theo bên người mọi lúc mọi nơi cực kỳ linh hoạt.",
-                f"Thay vì mua lẻ tẻ tốn kém, chọn đúng {second_p} trong phiên live hôm nay sẽ có mức giá hời hơn hẳn bình thường.",
-                "Hàng chính hãng đóng gói cẩn thận, nhận về tay kiểm tra thoải mái nên cực kỳ yên tâm khi đặt mua.",
-                f"Số lượng quà tặng kèm mã miễn phí vận chuyển đang còn giới hạn trong khung giờ này thôi đó {pronoun} ơi.",
+                f"Muốn chọn {cat} vừa chất lượng vừa tiết kiệm thì đừng bỏ qua em {prod_full} hôm nay nha.",
+                f"Ưu điểm lớn nhất là {usps}, bỏ túi mang theo dùng mọi lúc mọi nơi.",
+                f"Chọn kèm {second_p} trong hôm nay sẽ có mức giá hời hơn mua lẻ rất nhiều.",
+                "Hàng chính hãng đóng gói cẩn thận, kèm miễn phí vận chuyển đang còn giới hạn.",
                 cta,
             ],
         },
@@ -1515,7 +1516,7 @@ def generate_three_script_options_fallback(
             brand_brief=brief,
             option_index=i,
         )
-        est_sec = round(spoken_cnt / 4.75, 1)
+        est_sec = round(spoken_cnt / 3.85, 1)
         options.append(
             {
                 "id": spec["id"],
@@ -1794,19 +1795,19 @@ def _build_default_sticker_events(
             seen_lbl.add(lb)
             dedup.append((em, lb))
 
-    # Safe edge/corner slots avoiding central subtitle band (y 0.66..0.82)
+    # Safe edge/corner slots avoiding Hook badge & central subtitle band (y 0.66..0.82)
     edge_slots = [
-        (0.06, 0.25, -7),
-        (0.70, 0.30, 6),
-        (0.05, 0.48, -5),
+        (0.06, 0.42, -6),
+        (0.70, 0.44, 6),
+        (0.05, 0.50, -5),
         (0.68, 0.54, 5),
         (0.06, 0.58, -6),
         (0.66, 0.38, 7),
-        (0.08, 0.34, -4),
+        (0.08, 0.36, -4),
     ]
     events: list[dict[str, Any]] = []
     n_events = 7 if sticker_density == "rich" else 4
-    step = (dur - 2.4) / float(n_events)
+    step = max(2.2, (dur - 3.0) / float(n_events))
     for i in range(n_events):
         em, lb = dedup[i % len(dedup)]
         xp, yp, rot = edge_slots[i % len(edge_slots)]
@@ -1818,7 +1819,7 @@ def _build_default_sticker_events(
                 "label": strip_slop_emojis(lb),
                 "stickerAsset": asset_rel,
                 "styleKind": style_kind,
-                "start": round(1.0 + i * step, 2),
+                "start": round(1.8 + i * step, 2),
                 "duration": round(min(3.4, max(2.2, step * 0.8)), 2),
                 "xPct": xp,
                 "yPct": yp,
@@ -2013,13 +2014,16 @@ def generate_ai_wildcard_style_spec(
                             em_raw = str(st.get("emoji") or "✨")[:4]
                             asset_rel = resolve_animated_sticker_asset(em_raw, si)
                             clean_lbl = strip_slop_emojis(str(st.get("label") or "HOT DEAL"))[:18].upper() or "HOT DEAL"
+                            st_start = max(1.8, float(st.get("start") or (1.8 + si * 2.8)))
+                            if st_start < 4.0 and yp < 0.40:
+                                yp = 0.42
                             clean_st.append(
                                 {
                                     "emoji": "",
                                     "label": clean_lbl,
                                     "stickerAsset": asset_rel,
                                     "styleKind": "animated_sticker" if (asset_rel and si % 2 == 0) else "messenger_bubble",
-                                    "start": max(0.4, float(st.get("start") or (1.0 + si * 2.8))),
+                                    "start": st_start,
                                     "duration": max(1.6, min(3.8, float(st.get("duration") or 2.5))),
                                     "xPct": max(0.04, min(0.74, float(st.get("xPct") or (0.06 if si % 2 == 0 else 0.68)))),
                                     "yPct": max(0.22, min(0.86, yp)),

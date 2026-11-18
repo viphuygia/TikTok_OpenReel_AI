@@ -1185,6 +1185,8 @@ class OneClickPipelineReq(BaseModel):
     sticker_density: str = "normal"
     mix_engines: bool = False
     creative_wildcard: bool = False
+    tts_engine: str = "edge_tts"
+    edge_voice: str = "vi-VN-HoaiMyNeural"
     project_ids: list[str] = Field(default_factory=list)
     sync: bool = False
 
@@ -1222,6 +1224,7 @@ class DeleteFileReq(BaseModel):
 class OpenExplorerReq(BaseModel):
     rel_path: str = "04_workspace/ready_for_openreel"
     select_file: bool = False
+    project_id: str = ""
 
 
 class DownloadReq(BaseModel):
@@ -1834,7 +1837,17 @@ def _bring_explorer_to_front(folder_name: str) -> None:
 @app.post("/api/system/open-explorer")
 def api_open_explorer(req: OpenExplorerReq):
     global _last_explorer_req
-    target = resolve_safe_path(req.rel_path)
+    pid_clean = str(req.project_id or "").strip()
+    if pid_clean:
+        p_root = get_project_root(pid_clean).resolve()
+        rel_c = str(req.rel_path or "").strip().lstrip("/\\")
+        if ".." in Path(rel_c).parts:
+            raise HTTPException(status_code=400, detail="Đường dẫn không hợp lệ.")
+        target = (p_root / rel_c).resolve()
+        if not target.is_relative_to(p_root):
+            raise HTTPException(status_code=400, detail="Đường dẫn ngoài thư mục Project.")
+    else:
+        target = resolve_safe_path(req.rel_path)
     if not target.exists():
         target.mkdir(parents=True, exist_ok=True)
 
@@ -5288,9 +5301,26 @@ def _run_single_project_pipeline(req: OneClickPipelineReq) -> None:
                         )
                     )
                     sync_voice_clone_files()
+                    req_tts_engine = str(getattr(req, "tts_engine", "edge_tts") or "edge_tts").strip()
+                    req_edge_voice = str(getattr(req, "edge_voice", "vi-VN-HoaiMyNeural") or "vi-VN-HoaiMyNeural").strip()
+                    slot_edge_voice = req_edge_voice
+                    slot_edge_rate = "+4%"
+                    if req.mix_variants and req_tts_engine == "edge_tts":
+                        edge_mix_pool = [
+                            ("vi-VN-HoaiMyNeural", "+4%"),
+                            ("vi-VN-NamMinhNeural", "+4%"),
+                            ("vi-VN-HoaiMyNeural", "+1%"),
+                        ]
+                        slot_edge_voice, slot_edge_rate = edge_mix_pool[(b_idx - 1) % len(edge_mix_pool)]
                     tts_args = [
                         "--script",
                         "04_workspace/kich_ban.txt",
+                        "--tts-engine",
+                        req_tts_engine,
+                        "--edge-voice",
+                        slot_edge_voice,
+                        "--edge-rate",
+                        slot_edge_rate,
                         "--speed",
                         str(mix_prof["tts_speed"]),
                         "--nfe-step",
@@ -5462,8 +5492,12 @@ def _run_single_project_pipeline(req: OneClickPipelineReq) -> None:
                 [
                     "--script",
                     "04_workspace/kich_ban.txt",
+                    "--tts-engine",
+                    str(getattr(req, "tts_engine", "edge_tts") or "edge_tts"),
+                    "--edge-voice",
+                    str(getattr(req, "edge_voice", "vi-VN-HoaiMyNeural") or "vi-VN-HoaiMyNeural"),
                     "--speed",
-                    "1.08",
+                    "1.04",
                     "--nfe-step",
                     "48",
                     "--whisper-model",
@@ -5818,13 +5852,17 @@ def api_tunnel_stop(request: Request):
 
 
 @app.get("/api/files/download")
-def api_download_file(path: str = Query(..., description="Relative path or /files/... URL")):
+def api_download_file(
+    path: str = Query(..., description="Relative path or /files/... URL"),
+    project_id: str = Query("", description="Optional project ID"),
+):
     raw = unquote(str(path or "")).strip().lstrip("/")
     if raw.startswith("files/"):
         raw = raw[len("files/"):]
     if not raw or ".." in Path(raw).parts:
         raise HTTPException(status_code=400, detail="Đường dẫn không hợp lệ.")
-    active_proj = get_project_root().resolve()
+    pid_clean = str(project_id or "").strip()
+    active_proj = (get_project_root(pid_clean) if pid_clean else get_project_root()).resolve()
     candidates = [
         (active_proj / raw).resolve(),
         (PROJECT_ROOT / raw).resolve(),
@@ -5843,3 +5881,102 @@ def api_download_file(path: str = Query(..., description="Relative path or /file
         filename=safe_name,
         headers={"Content-Disposition": f'attachment; filename="{safe_name}"'},
     )
+
+
+@app.get("/api/projects/outputs")
+def api_list_project_outputs(project_id: str = Query("all")):
+    proj_bundle = pm_list_projects()
+    all_projs = proj_bundle.get("projects") or []
+    active_id = proj_bundle.get("active_id") or ""
+    target_pid = str(project_id or "all").strip()
+    outputs: list[dict[str, Any]] = []
+    for pr in all_projs:
+        pid = str(pr.get("id") or "")
+        if not pid or (target_pid != "all" and pid != target_pid):
+            continue
+        p_root = get_project_root(pid)
+        out_dir = p_root / "05_output"
+        if not out_dir.exists():
+            continue
+        mp4s = sorted(
+            [p for p in out_dir.glob("*.mp4") if p.is_file()],
+            key=lambda x: x.stat().st_mtime,
+            reverse=True,
+        )
+        for mp4 in mp4s:
+            meta = probe_media(mp4)
+            stat = mp4.stat()
+            outputs.append(
+                {
+                    "project_id": pid,
+                    "project_name": str(pr.get("name") or pid),
+                    "name": mp4.name,
+                    "rel_path": f"05_output/{mp4.name}",
+                    "stream_url": f"/api/projects/outputs/stream?project_id={pid}&name={mp4.name}&t={int(stat.st_mtime)}",
+                    "download_url": f"/api/files/download?project_id={pid}&path=05_output/{mp4.name}",
+                    "size_mb": meta.get("size_mb", round(stat.st_size / (1024 * 1024), 2)),
+                    "duration_sec": meta.get("duration_sec", 0.0),
+                    "width": meta.get("width", 1080),
+                    "height": meta.get("height", 1920),
+                    "mtime": int(stat.st_mtime),
+                }
+            )
+    outputs.sort(key=lambda x: x["mtime"], reverse=True)
+    return {
+        "ok": True,
+        "active_project_id": active_id,
+        "selected_project_id": target_pid,
+        "projects": [{"id": p["id"], "name": p["name"], "output_count": p.get("output_count", 0)} for p in all_projs],
+        "outputs": outputs,
+    }
+
+
+@app.get("/api/projects/outputs/stream")
+def api_stream_project_output(project_id: str = Query(...), name: str = Query(...)):
+    safe_name = Path(name).name
+    if not safe_name or ".." in name or not safe_name.lower().endswith(".mp4"):
+        raise HTTPException(status_code=400, detail="Tên file không hợp lệ.")
+    p_root = get_project_root(project_id).resolve()
+    fp = (p_root / "05_output" / safe_name).resolve()
+    if not fp.is_relative_to(p_root) or not fp.exists() or not fp.is_file():
+        raise HTTPException(status_code=404, detail="Không tìm thấy video output.")
+    return FileResponse(path=str(fp), media_type="video/mp4")
+
+
+@app.get("/api/projects/outputs/zip")
+def api_download_project_outputs_zip(project_id: str = Query(...)):
+    import zipfile
+
+    pid = str(project_id or "").strip()
+    if not pid:
+        raise HTTPException(status_code=400, detail="Thiếu project_id.")
+    p_root = get_project_root(pid).resolve()
+    out_dir = p_root / "05_output"
+    mp4s = sorted([p for p in out_dir.glob("*.mp4") if p.is_file()]) if out_dir.exists() else []
+    if not mp4s:
+        raise HTTPException(status_code=404, detail=f"Project {pid} chưa có video output nào.")
+    tmp_zip = Path(tempfile.gettempdir()) / f"{pid}_outputs_{int(time.time())}.zip"
+    with zipfile.ZipFile(tmp_zip, "w", compression=zipfile.ZIP_STORED) as zf:
+        for mp4 in mp4s:
+            zf.write(mp4, arcname=mp4.name)
+    dl_name = f"{pid}_outputs.zip"
+    return FileResponse(
+        path=str(tmp_zip),
+        media_type="application/zip",
+        filename=dl_name,
+        headers={"Content-Disposition": f'attachment; filename="{dl_name}"'},
+    )
+
+
+@app.post("/api/projects/outputs/delete")
+def api_delete_project_output(payload: dict[str, Any]):
+    pid = str(payload.get("project_id") or "").strip()
+    name = Path(str(payload.get("name") or "")).name
+    if not pid or not name:
+        raise HTTPException(status_code=400, detail="Thiếu project_id hoặc tên file.")
+    p_root = get_project_root(pid).resolve()
+    fp = (p_root / "05_output" / name).resolve()
+    if not fp.is_relative_to(p_root) or not fp.exists() or not fp.is_file():
+        raise HTTPException(status_code=404, detail="Không tìm thấy file để xóa.")
+    fp.unlink()
+    return {"ok": True, "deleted": name, "project_id": pid}

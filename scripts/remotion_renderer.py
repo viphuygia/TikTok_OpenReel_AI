@@ -694,7 +694,7 @@ def build_remotion_props(overrides: dict[str, Any] | None = None) -> dict[str, A
         k for k in ("sfx_sparkle_chime.wav", "sfx_bubble_pop.wav", "sfx_notification.wav", "sfx_pop.wav") if sfx_map.get(k)
     ]
     if hook_sfx:
-        sfx_events.append({"id": "sfx_hook_pop", "src": hook_sfx, "start": 0.08, "duration": 0.6, "volume": 0.25})
+        sfx_events.append({"id": "sfx_hook_pop", "src": hook_sfx, "start": 0.08, "duration": 0.6, "volume": 0.34})
         for ci, co in enumerate(callouts):
             co_id = str(co.get("id") or "")
             co_start = float(co.get("start") or 0.0)
@@ -706,7 +706,7 @@ def build_remotion_props(overrides: dict[str, Any] | None = None) -> dict[str, A
                         "src": chosen_c_sfx,
                         "start": round(co_start, 2),
                         "duration": 0.65,
-                        "volume": 0.22,
+                        "volume": 0.30,
                     }
                 )
     trans_sfx_pool = [
@@ -722,12 +722,12 @@ def build_remotion_props(overrides: dict[str, Any] | None = None) -> dict[str, A
                         "src": chosen_t_sfx,
                         "start": max(0.0, round(cl["startInTimeline"] - 0.12, 2)),
                         "duration": 0.8,
-                        "volume": 0.22,
+                        "volume": 0.32,
                     }
                 )
     cta_sfx = sfx_map.get("sfx_coin_clink.wav") or sfx_map.get("sfx_ding.wav")
     if cta_sfx and total_duration > 5.0:
-        sfx_events.append({"id": "sfx_cta_ding", "src": cta_sfx, "start": cta_start, "duration": 1.2, "volume": 0.28})
+        sfx_events.append({"id": "sfx_cta_ding", "src": cta_sfx, "start": cta_start, "duration": 1.2, "volume": 0.36})
 
     creative_mode = str(ov.get("creative_mode") or dna.get("creative_mode") or "breakthrough_ai")
     camera_intensity = str(ov.get("camera_intensity") or dna.get("camera_intensity") or "dynamic_ai")
@@ -785,7 +785,7 @@ def build_remotion_props(overrides: dict[str, Any] | None = None) -> dict[str, A
         "clips": clip_items,
         "voiceSrc": synced["voice"],
         "bgmSrc": synced["bgm"],
-        "bgmVolume": float(bgm_vol_val if bgm_vol_val is not None else 0.24),
+        "bgmVolume": float(bgm_vol_val if bgm_vol_val is not None else 0.16),
         "sfxEvents": sfx_events,
         "sfxVolume": float(ov.get("sfx_volume") or dna.get("sfx_volume") or 0.55),
     }

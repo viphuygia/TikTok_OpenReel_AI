@@ -58,29 +58,30 @@ ENGLISH_PHONETIC_MAP: list[tuple[str, str]] = [
     (r"\btonic\b", "tô ních"),
     (r"\bleave[- ]on\b", "líp on"),
     (r"\b(\d+)\s*ml\b", r"\1 mi li lít"),
-    (r"\bfreeship\s+xtra\b", "phờ ri síp ích tra"),
-    (r"\bfree\s*ship\b", "phờ ri síp"),
-    (r"\bflash\s*sale\b", "phờ lát sêu"),
-    (r"\bbest\s*seller\b", "bét seo lơ"),
-    (r"\blive\s*stream\b", "lai trym"),
+    (r"\bfreeship\s+xtra\b", "miễn phí vận chuyển"),
+    (r"\bfree\s*ship\b", "miễn phí vận chuyển"),
+    (r"\bflash\s*sale\b", "giảm giá sốc"),
+    (r"\bbest\s*seller\b", "bán chạy hàng đầu"),
+    (r"\blive\s*stream\b", "phát trực tiếp"),
     (r"\btik\s*tok\s*shop\b", "tích tóc sóp"),
     (r"\btik\s*tok\b", "tích tóc"),
-    (r"\bvoucher\b", "vao chờ"),
-    (r"\bfeedback\b", "phít bách"),
-    (r"\bskincare\b", "xì kin ke"),
-    (r"\bmakeup\b", "mếch ắp"),
-    (r"\bunbox\b", "ăn bóc"),
-    (r"\breview\b", "ri viu"),
-    (r"\bcomment\b", "com men"),
-    (r"\bfollow\b", "pho lâu"),
-    (r"\binbox\b", "in bóc"),
-    (r"\border\b", "o đờ"),
+    (r"\bvoucher\b", "mã giảm giá"),
+    (r"\bfeedback\b", "phản hồi"),
+    (r"\bskincare\b", "dưỡng da"),
+    (r"\bmakeup\b", "trang điểm"),
+    (r"\bunbox\b", "mở hộp"),
+    (r"\breview\b", "đánh giá"),
+    (r"\bcomment\b", "bình luận"),
+    (r"\bfollow\b", "theo dõi"),
+    (r"\binbox\b", "nhắn tin"),
+    (r"\border\b", "đặt hàng"),
     (r"\bcombo\b", "com bo"),
     (r"\bserum\b", "xê rum"),
-    (r"\btoner\b", "tô nơ"),
-    (r"\bcheck\b", "chếch"),
-    (r"\bdeal\b", "điu"),
-    (r"\bsale\b", "sêu"),
+    (r"\btoner\b", "nước cân bằng"),
+    (r"\bcheck\b", "kiểm tra"),
+    (r"\bdeal\s+hời\b", "giá hời"),
+    (r"\bdeal\b", "ưu đãi"),
+    (r"\bsale\b", "giảm giá"),
     (r"\bsize\b", "sai"),
     (r"\bform\b", "phom"),
     (r"\blink\b", "linh"),
@@ -704,6 +705,27 @@ def main() -> int:
         help="Thời lượng mục tiêu (giây); 0 = tự đọc từ 04_workspace/brand_brief.json.",
     )
     parser.add_argument(
+        "--tts-engine",
+        default="edge_tts",
+        choices=["edge_tts", "f5_tts", "auto"],
+        help="Engine đọc giọng: edge_tts (Neural KOC mượt chuẩn Anh-Việt), f5_tts (Clone giọng mẫu GPU), auto.",
+    )
+    parser.add_argument(
+        "--edge-voice",
+        default="vi-VN-HoaiMyNeural",
+        help="Giọng Edge Neural TTS (mặc định: vi-VN-HoaiMyNeural; hoặc vi-VN-NamMinhNeural).",
+    )
+    parser.add_argument(
+        "--edge-rate",
+        default="+4%",
+        help="Tốc độ đọc Edge Neural TTS (mặc định: +4%%).",
+    )
+    parser.add_argument(
+        "--edge-pitch",
+        default="+0Hz",
+        help="Cao độ Edge Neural TTS (mặc định: +0Hz).",
+    )
+    parser.add_argument(
         "--no-srt",
         action="store_true",
         help="Chỉ xuất file giọng đọc WAV, bỏ qua bước tạo phụ đề SRT.",
@@ -727,69 +749,68 @@ def main() -> int:
     if not raw_script:
         raise ValueError("Nội dung kịch bản đầu vào đang rỗng.")
 
-    # 2. Tìm và chuẩn hóa giọng mẫu về Mono 24000Hz
-    ref_src = find_ref_audio(args.ref_audio)
-    norm_ref_wav = active_root / "04_workspace" / "ref_audio_normalized.wav"
-    print(f"[1/4] Chuẩn hóa giọng mẫu: {ref_src.name} -> Mono 24000Hz...")
-    ref_wav_path, was_clipped = normalize_reference_audio(ref_src, norm_ref_wav)
-
-    ref_text_path = Path(args.ref_text)
-    if not ref_text_path.is_absolute():
-        ref_text_path = (PROJECT_ROOT / ref_text_path).resolve()
-
-    if not ref_text_path.exists() and ref_text_path == DEFAULT_REF_TEXT_FILE and FALLBACK_REF_TEXT_FILE.exists():
-        ref_text_path = FALLBACK_REF_TEXT_FILE
-
-    ref_text = ""
-    if ref_text_path.exists() and not was_clipped:
-        ref_text = ref_text_path.read_text(encoding="utf-8-sig").strip()
-
-    if not ref_text:
-        print("[1b/4] Đang tự nhận diện nội dung file giọng mẫu bằng Faster-Whisper...")
-        ref_text = transcribe_audio_text(ref_wav_path, model_size=args.whisper_model)
-        if not ref_text_path.exists() or not ref_text_path.read_text(encoding="utf-8-sig").strip():
-            ref_text_path.write_text(ref_text + "\n", encoding="utf-8")
-
-    ref_text_norm = ref_text.strip().lower()
-    if ref_text_norm and ref_text_norm[-1] not in ".!?":
-        ref_text_norm += "."
-
-    gen_text_norm = normalize_vietnamese_script(raw_script)
-    print(f"  -> Giọng mẫu ref_text: \"{ref_text_norm}\"")
-    print(f"  -> Kịch bản TTS đã chuẩn hóa: \"{gen_text_norm}\"")
-
-    # 3. Nạp F5-TTS và tổng hợp giọng đọc
-    patch_torchaudio_load()
-    import soundfile as sf
-    import torch
-    from f5_tts.api import F5TTS
-
-    device = select_device()
-    ckpt_path = Path(args.model_ckpt)
-    vocab_path = Path(args.vocab_file)
-    if not ckpt_path.exists() or not vocab_path.exists():
-        raise FileNotFoundError(
-            f"Thiếu model tiếng Việt tại {ckpt_path} hoặc {vocab_path}."
-        )
-
-    print(f"[2/4] Đang nạp F5-TTS-Vietnamese trên thiết bị: {device.upper()}...")
-    f5tts = F5TTS(
-        model="F5TTS_Base",
-        ckpt_file=str(ckpt_path),
-        vocab_file=str(vocab_path),
-        device=device,
-    )
-
+    use_edge_tts = args.tts_engine in ("edge_tts", "auto")
     out_wav_path = Path(args.output_audio)
     if not out_wav_path.is_absolute():
         out_wav_path = (active_root / out_wav_path).resolve()
     out_wav_path.parent.mkdir(parents=True, exist_ok=True)
 
-    print(
-        f"[3/4] Đang nhân bản giọng nói (tốc độ {args.speed}x, nfe_step={args.nfe_step}, cfg={args.cfg_strength})..."
-    )
     import tempfile
     import numpy as np
+    import soundfile as sf
+    import torch
+
+    f5tts: Any = None
+    ref_wav_path: Path | None = None
+    ref_text_norm = ""
+
+    def _init_f5_tts() -> tuple[Any, Path, str]:
+        ref_src = find_ref_audio(args.ref_audio)
+        norm_ref_wav = active_root / "04_workspace" / "ref_audio_normalized.wav"
+        print(f"[1/4] Chuẩn hóa giọng mẫu: {ref_src.name} -> Mono 24000Hz...")
+        r_wav, was_clipped = normalize_reference_audio(ref_src, norm_ref_wav)
+
+        r_txt_path = Path(args.ref_text)
+        if not r_txt_path.is_absolute():
+            r_txt_path = (PROJECT_ROOT / r_txt_path).resolve()
+        if not r_txt_path.exists() and r_txt_path == DEFAULT_REF_TEXT_FILE and FALLBACK_REF_TEXT_FILE.exists():
+            r_txt_path = FALLBACK_REF_TEXT_FILE
+
+        r_txt = ""
+        if r_txt_path.exists() and not was_clipped:
+            r_txt = r_txt_path.read_text(encoding="utf-8-sig").strip()
+        if not r_txt:
+            print("[1b/4] Đang tự nhận diện nội dung file giọng mẫu bằng Faster-Whisper...")
+            r_txt = transcribe_audio_text(r_wav, model_size=args.whisper_model)
+            if not r_txt_path.exists() or not r_txt_path.read_text(encoding="utf-8-sig").strip():
+                r_txt_path.write_text(r_txt + "\n", encoding="utf-8")
+
+        r_txt_norm = r_txt.strip().lower()
+        if r_txt_norm and r_txt_norm[-1] not in ".!?":
+            r_txt_norm += "."
+
+        gen_text_norm = normalize_vietnamese_script(raw_script)
+        print(f"  -> Giọng mẫu ref_text: \"{r_txt_norm}\"")
+        print(f"  -> Kịch bản TTS đã chuẩn hóa: \"{gen_text_norm}\"")
+
+        patch_torchaudio_load()
+        from f5_tts.api import F5TTS
+
+        device = select_device()
+        ckpt_path = Path(args.model_ckpt)
+        vocab_path = Path(args.vocab_file)
+        if not ckpt_path.exists() or not vocab_path.exists():
+            raise FileNotFoundError(f"Thiếu model tiếng Việt tại {ckpt_path} hoặc {vocab_path}.")
+
+        print(f"[2/4] Đang nạp F5-TTS-Vietnamese trên thiết bị: {device.upper()}...")
+        model_inst = F5TTS(
+            model="F5TTS_Base",
+            ckpt_file=str(ckpt_path),
+            vocab_file=str(vocab_path),
+            device=device,
+        )
+        print(f"[3/4] Đang nhân bản giọng nói (tốc độ {args.speed}x, nfe_step={args.nfe_step}, cfg={args.cfg_strength})...")
+        return model_inst, r_wav, r_txt_norm
 
     def _time_stretch_pcm_ffmpeg(samples: Any, sample_rate: int, atempo: float) -> Any:
         ratio = max(0.5, min(2.0, float(atempo)))
@@ -825,27 +846,22 @@ def main() -> int:
             stretched, _ = sf.read(str(out_w), dtype="float32")
             return np.asarray(stretched, dtype=np.float32).reshape(-1)
 
-    def _split_long_clause(sent: str, max_words: int = 22) -> list[str]:
+    def _split_long_clause(sent: str, max_words: int = 24) -> list[str]:
         words_s = sent.split()
         if len(words_s) <= max_words:
             return [sent]
-        # Prefer natural comma pauses, dashes, or Vietnamese conjunctions
+        # Split cleanly ONLY at commas or whole-clause conjunctions; never split inside "5 trong 1" or numbers!
         parts_out: list[str] = []
         norm_s = re.sub(r"\s+[-–—]\s+", ", ", sent)
-        norm_s = re.sub(r"\s+(vừa|nên|nhưng|giúp|để|vì|rồi|cũng|hoặc|mà)\s+", r", \1 ", norm_s, flags=re.IGNORECASE)
+        norm_s = re.sub(
+            r"\s+(nhưng|nên|giúp|để|vì|đồng thời|đặc biệt là|chưa kể|mà)\s+",
+            r", \1 ",
+            norm_s,
+            flags=re.IGNORECASE,
+        )
         raw_clauses = [c.strip() for c in re.split(r",\s+", norm_s) if c.strip()]
-        # Further split any oversized single clause near its midpoint so F5-TTS stays <= max_words
-        bounded_clauses: list[str] = []
-        for rc in raw_clauses:
-            rc_words = rc.split()
-            if len(rc_words) <= max_words:
-                bounded_clauses.append(rc)
-            else:
-                mid = max(8, min(max_words - 2, len(rc_words) // 2))
-                bounded_clauses.append(" ".join(rc_words[:mid]))
-                bounded_clauses.append(" ".join(rc_words[mid:]))
         cur = ""
-        for cl in bounded_clauses:
+        for cl in raw_clauses:
             cand = f"{cur}, {cl}" if cur else cl
             if cur and len(cand.split()) > max_words and len(cur.split()) >= 7:
                 parts_out.append(cur.rstrip(", ") + ",")
@@ -921,8 +937,72 @@ def main() -> int:
             trimmed[-fade_len:] *= np.linspace(1.0, 0.0, fade_len, dtype=np.float32)
         return trimmed
 
+    def _clean_text_for_edge_tts(disp_sentence: str) -> str:
+        t = re.sub(r"\[([^\]]+)\]", r"\1, ", disp_sentence)
+        t = re.sub(r"\b5\s*in\s*1\b|\b5in1\b", "5 trong 1", t, flags=re.IGNORECASE)
+        t = re.sub(r"(?i)head\s*&\s*shoulders", "Head and Shoulders", t)
+        t = re.sub(r"\s*&\s*", " và ", t)
+        t = re.sub(r"\s+[-–—]\s+", ", ", t)
+        t = re.sub(r"(\d+)\s*%", r"\1 phần trăm", t)
+        t = re.sub(r"\b(\d+)\s*[kK]\b", r"\1 nghìn", t)
+        t = re.sub(r"\s+", " ", t).strip()
+        if t and t[-1] not in ".!?":
+            t += "."
+        return t
+
+    def _synthesize_beats_edge_tts(sents: list[str], brief_d: dict[str, Any]) -> list[tuple[Any, int, str, str]]:
+        import asyncio
+        import edge_tts
+
+        ffmpeg_exe = shutil.which("ffmpeg") or shutil.which("ffmpeg.exe")
+        if not ffmpeg_exe:
+            raise RuntimeError("FFmpeg required to decode edge-tts MP3")
+
+        rate_str = str(args.edge_rate or "+4%")
+        if args.speed and abs(float(args.speed) - 1.0) > 0.015 and rate_str == "+4%":
+            pct = max(-15, min(20, int(round((float(args.speed) - 1.0) * 100))))
+            rate_str = f"{pct:+d}%"
+
+        print(f"[2/4] Đang tạo giọng Neural TTS mượt như người thật ({args.edge_voice}, rate={rate_str})...")
+        out_beats: list[tuple[Any, int, str, str]] = []
+        with tempfile.TemporaryDirectory() as tmpd:
+            for ci, raw_s in enumerate(sents, start=1):
+                disp_s = restore_display_text(raw_s, brief_d)
+                speak_s = _clean_text_for_edge_tts(disp_s)
+                print(f"  -> Tổng hợp Beat {ci}/{len(sents)}: \"{speak_s[:70]}\"")
+                mp3_p = Path(tmpd) / f"beat_{ci}.mp3"
+                wav_p = Path(tmpd) / f"beat_{ci}.wav"
+
+                async def _run_edge(txt: str = speak_s, dst: Path = mp3_p) -> None:
+                    comm = edge_tts.Communicate(
+                        txt,
+                        voice=args.edge_voice,
+                        rate=rate_str,
+                        pitch=str(args.edge_pitch or "+0Hz"),
+                    )
+                    await comm.save(str(dst))
+
+                asyncio.run(_run_edge())
+                subprocess.run(
+                    [ffmpeg_exe, "-y", "-hide_banner", "-loglevel", "error", "-i", str(mp3_p), "-ar", "24000", "-ac", "1", "-c:a", "pcm_s16le", str(wav_p)],
+                    check=True,
+                    timeout=30,
+                )
+                pcm_arr, p_sr = sf.read(str(wav_p), dtype="float32")
+                cleaned_wav = _trim_pcm_edges(np.asarray(pcm_arr, dtype=np.float32).reshape(-1), int(p_sr))
+                out_beats.append((cleaned_wav, int(p_sr), speak_s, disp_s))
+        return out_beats
+
+    # Prefer clean display script sentences when available so Edge-TTS gets crisp bilingual text
+    disp_file = active_root / "04_workspace" / "kich_ban_hien_thi.md"
+    src_for_split = raw_script
+    if disp_file.exists() and args.script.endswith("kich_ban.txt"):
+        disp_cand = disp_file.read_text(encoding="utf-8-sig").strip()
+        if disp_cand and len(disp_cand.split()) >= max(8, int(len(raw_script.split()) * 0.6)):
+            src_for_split = disp_cand
+
     raw_sentences = _group_natural_breath_sentences(
-        [s.strip() for s in re.split(r"(?<=[.!?])\s+", raw_script) if s.strip()] or [raw_script]
+        [s.strip() for s in re.split(r"(?<=[.!?])\s+", src_for_split) if s.strip()] or [src_for_split]
     )
     sentences_norm = [normalize_vietnamese_script(s) for s in raw_sentences]
 
@@ -933,44 +1013,56 @@ def main() -> int:
 
     sr = 24000
     raw_beats: list[tuple[Any, int, str, str]] = []
-    for ci, ch in enumerate(sentences_norm, start=1):
-        print(f"  -> Tổng hợp Beat {ci}/{len(sentences_norm)}: \"{ch[:70]}\"")
-        part_wav, part_sr, _ = f5tts.infer(
-            ref_file=str(ref_wav_path),
-            ref_text=ref_text_norm,
-            gen_text=ch,
-            speed=args.speed,
-            nfe_step=args.nfe_step,
-            cfg_strength=args.cfg_strength,
-            sway_sampling_coef=args.sway_coef,
-            seed=42,
-            remove_silence=False,
-        )
-        sr = int(part_sr or sr)
-        if part_wav is not None and len(part_wav) > 0:
-            cleaned_wav = _trim_pcm_edges(part_wav, sr)
-            raw_s = raw_sentences[ci - 1]
-            disp_s = restore_display_text(raw_s, brief_cfg)
-            raw_beats.append((cleaned_wav, sr, raw_s, disp_s))
+    used_engine = "f5_tts"
+    if use_edge_tts:
+        try:
+            raw_beats = _synthesize_beats_edge_tts(raw_sentences, brief_cfg)
+            if raw_beats:
+                used_engine = "edge_tts"
+        except Exception as exc:
+            print(f"  [WARN] Edge-TTS không khả dụng ({exc}) -> Tự động chuyển sang F5-TTS Local...")
+            raw_beats = []
+
+    if not raw_beats:
+        f5tts, ref_wav_path, ref_text_norm = _init_f5_tts()
+        for ci, ch in enumerate(sentences_norm, start=1):
+            print(f"  -> Tổng hợp Beat {ci}/{len(sentences_norm)}: \"{ch[:70]}\"")
+            part_wav, part_sr, _ = f5tts.infer(
+                ref_file=str(ref_wav_path),
+                ref_text=ref_text_norm,
+                gen_text=ch,
+                speed=args.speed,
+                nfe_step=args.nfe_step,
+                cfg_strength=args.cfg_strength,
+                sway_sampling_coef=args.sway_coef,
+                seed=42,
+                remove_silence=False,
+            )
+            sr = int(part_sr or sr)
+            if part_wav is not None and len(part_wav) > 0:
+                cleaned_wav = _trim_pcm_edges(part_wav, sr)
+                raw_s = raw_sentences[ci - 1]
+                disp_s = restore_display_text(raw_s, brief_cfg)
+                raw_beats.append((cleaned_wav, sr, raw_s, disp_s))
 
     raw_speech_dur = sum(len(w) / float(s_rate) for w, s_rate, _, _ in raw_beats)
     n_gaps = max(0, len(raw_beats) - 1)
-    pause_sec = 0.16 if n_gaps else 0.0
-    tail_sec = 0.14
+    pause_sec = 0.22 if n_gaps else 0.0
+    tail_sec = 0.16
     tempo_ratio = 1.0
 
     if target_dur >= 8.0 and raw_beats and raw_speech_dur > 1.0:
         gap_delta = target_dur - raw_speech_dur
-        if -0.4 <= gap_delta <= 2.2 and n_gaps > 0:
-            pause_sec = min(0.24, max(0.14, (gap_delta - 0.18) / n_gaps))
-            tail_sec = max(0.08, min(0.35, target_dur - raw_speech_dur - pause_sec * n_gaps))
+        if -0.4 <= gap_delta <= 2.8 and n_gaps > 0:
+            pause_sec = min(0.28, max(0.18, (gap_delta - 0.18) / n_gaps))
+            tail_sec = max(0.10, min(0.38, target_dur - raw_speech_dur - pause_sec * n_gaps))
         elif abs(gap_delta) > 0.4:
-            pause_sec = 0.20 if gap_delta > 0 else 0.12
-            tail_sec = 0.22 if gap_delta > 0 else 0.10
+            pause_sec = 0.24 if gap_delta > 0 else 0.16
+            tail_sec = 0.24 if gap_delta > 0 else 0.12
             desired_speech = max(4.0, target_dur - (pause_sec * n_gaps + tail_sec))
-            tempo_ratio = max(0.94, min(1.06, raw_speech_dur / desired_speech))
+            tempo_ratio = max(0.95, min(1.05, raw_speech_dur / desired_speech))
             print(
-                f"  -> Căn chuẩn thời lượng mục tiêu {target_dur:.1f}s: "
+                f"  -> Căn chuẩn thời lượng mục tiêu {target_dur:.1f}s ({used_engine}): "
                 f"raw={raw_speech_dur:.2f}s, atempo={tempo_ratio:.3f}, pause={pause_sec:.2f}s"
             )
 
@@ -1060,7 +1152,8 @@ def main() -> int:
     print(f"  -> Đã lưu timing từng câu: {voice_beats_file} ({len(voice_beats_list)} beats)")
 
     # Giải phóng VRAM trước khi nạp Faster-Whisper
-    del f5tts
+    if f5tts is not None:
+        del f5tts
     gc.collect()
     if torch.cuda.is_available():
         torch.cuda.empty_cache()

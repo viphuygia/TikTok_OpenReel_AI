@@ -303,7 +303,15 @@
 
         <!-- Quick Visual / Audio / Pipeline Toggles -->
         <div class="rounded-xl bg-zinc-900/70 border border-zinc-800 p-3 space-y-2.5">
-          <div class="text-[11px] font-semibold uppercase tracking-wide text-zinc-400">3. Nhịp Dựng AI, Chuyển Cảnh &amp; Nhạc Nền (Dùng cho cả 3 Engine)</div>
+          <div class="text-[11px] font-semibold uppercase tracking-wide text-zinc-400">3. Giọng Đọc AI, Nhịp Dựng &amp; Nhạc Nền (Dùng cho cả 3 Engine)</div>
+          <div>
+            <label class="block text-[11px] text-cyan-300 font-medium mb-1">🎙️ Công nghệ Giọng Đọc AI (TTS Engine)</label>
+            <select id="auto-tts-engine" class="w-full rounded-lg bg-zinc-950 border border-zinc-700 px-2.5 py-2 text-xs text-zinc-100">
+              <option value="edge_tts" selected>✨ Neural KOC Nữ Mượt (HoaiMyNeural · Đọc chuẩn Anh-Việt như người thật)</option>
+              <option value="edge_tts_male">✨ Neural KOC Nam Ấm (NamMinhNeural · Review công nghệ / gia dụng)</option>
+              <option value="f5_tts">🎙️ F5-TTS Clone Giọng Mẫu (Local GPU · Nhại theo file giọng mẫu)</option>
+            </select>
+          </div>
           <div>
             <label class="block text-[11px] text-emerald-300 font-medium mb-1">Mức độ Hiệu ứng, Nhịp cắt &amp; Chuyển cảnh (AI dùng để viết kịch bản + chia số cảnh + render)</label>
             <select id="auto-transition-level" class="w-full rounded-lg bg-zinc-950 border border-zinc-700 px-2.5 py-2 text-xs text-zinc-100">
@@ -555,101 +563,107 @@
     </div>
   </div>
 
-  <!-- Header -->
+  <!-- Compact Sticky Header (Never blocks mobile screen) -->
   <header class="sticky top-0 z-30 border-b border-studio-border bg-studio-panel/95 backdrop-blur">
-    <div class="max-w-[1600px] mx-auto px-4 py-3 flex flex-wrap items-center justify-between gap-3">
-      <div id="header-channel-box" onclick="openChannelProfileModal()" title="Bấm để đổi Tên Kênh & màu nhận diện" class="flex items-center gap-3 cursor-pointer group rounded-xl px-1.5 py-1 -ml-1.5 hover:bg-zinc-800/50 transition">
-        <div id="header-avatar-box" class="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-500 to-rose-500 flex items-center justify-center font-bold text-white shadow-lg shrink-0">
+    <div class="max-w-[1600px] mx-auto px-3 sm:px-4 py-2 flex items-center justify-between gap-2">
+      <div id="header-channel-box" onclick="openChannelProfileModal()" title="Bấm để đổi Tên Kênh & màu nhận diện" class="flex items-center gap-2.5 cursor-pointer group rounded-xl px-1 py-0.5 -ml-1 hover:bg-zinc-800/50 transition min-w-0">
+        <div id="header-avatar-box" class="w-8 h-8 rounded-xl bg-gradient-to-br from-indigo-500 to-rose-500 flex items-center justify-center text-xs font-bold text-white shadow-lg shrink-0">
           OR
         </div>
         <div class="min-w-0">
-          <div class="flex items-center gap-1.5">
-            <h1 id="header-channel-name" class="text-base font-semibold tracking-tight text-white truncate max-w-[220px] sm:max-w-xs">TikTok OpenReel AI</h1>
-            <span class="text-[11px] text-zinc-500 group-hover:text-indigo-300 transition">✏️</span>
+          <div class="flex items-center gap-1">
+            <h1 id="header-channel-name" class="text-sm sm:text-base font-semibold tracking-tight text-white truncate max-w-[140px] sm:max-w-xs">TikTok OpenReel AI</h1>
+            <span class="text-[10px] text-zinc-500 group-hover:text-indigo-300 transition shrink-0">✏️</span>
           </div>
-          <p id="header-channel-sub" class="text-xs text-zinc-400 truncate max-w-[240px] sm:max-w-md">Zero-Copy Local Studio · F5-TTS Vietnamese · Faster-Whisper</p>
+          <p id="header-channel-sub" class="hidden sm:block text-[11px] text-zinc-400 truncate max-w-md">Zero-Copy Local Studio · Neural &amp; F5-TTS · Whisper</p>
         </div>
       </div>
 
-      <!-- Status Pills -->
-      <div class="flex flex-wrap items-center gap-2 text-xs">
-        <span id="badge-remote-access" onclick="openRemoteAccessModal()" title="Mở mã QR cho iPhone & Bật/Tắt truy cập Internet qua Cloudflare" class="cursor-pointer px-2.5 py-1 rounded-full bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/40 text-cyan-200 transition">🏠 Nội Bộ (LAN) · Mở QR</span>
-        <span id="badge-models" onclick="openAiSettingsModal()" title="Bấm để cấu hình Gemini API Key, Model & Effort" class="cursor-pointer px-2.5 py-1 rounded-full bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/35 text-indigo-200 transition">AI: Local F5-TTS · Whisper · Cấu hình Gemini</span>
-        <span id="badge-banned-words" onclick="openBannedWordsModal()" title="Quản lý danh sách từ ngữ cấm kỵ toàn App (TikTok Shop)" class="cursor-pointer px-2.5 py-1 rounded-full bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/40 text-rose-200 transition">🚫 Từ Cấm Kỵ</span>
-        <span id="badge-gpu" class="px-2.5 py-1 rounded-full bg-zinc-800/90 border border-zinc-700 text-zinc-300">GPU: ...</span>
-        <span id="badge-ffmpeg" class="px-2.5 py-1 rounded-full bg-zinc-800/90 border border-zinc-700 text-zinc-300">FFmpeg: ...</span>
-        <span id="badge-openreel" onclick="switchTab('tab5')" title="Chuyển tới Tab Render Tự Động (Remotion)" class="cursor-pointer px-2.5 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/35 text-emerald-300">Remotion 100% Auto</span>
-        <button type="button" onclick="openExplorer('')" class="hidden sm:inline-flex px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-200 transition">
-          Mở thư mục Dự án
+      <div class="flex items-center gap-1.5 sm:gap-2 shrink-0">
+        <span id="badge-remote-access" onclick="openRemoteAccessModal()" title="Mở mã QR cho iPhone & Bật/Tắt truy cập Internet qua Cloudflare" class="cursor-pointer px-2.5 py-1 rounded-full bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/40 text-[11px] text-cyan-200 transition whitespace-nowrap">🏠 QR / LAN</span>
+        <button id="btn-one-click-mp4" type="button" onclick="openAutoPipelineModal()" disabled class="px-3 sm:px-4 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-xs font-semibold text-white shadow-lg shadow-emerald-950/50 transition opacity-45 cursor-not-allowed grayscale whitespace-nowrap" title="Vui lòng điền &amp; Lưu Brief Nhãn Hàng trước khi Tạo Video Auto">
+          🚀 Tạo Video Auto
         </button>
       </div>
     </div>
 
-    <!-- Navigation Tabs -->
-    <div class="max-w-[1600px] mx-auto px-4 pb-3 flex flex-wrap gap-2 mobile-scroll-row">
-      <button data-tab="tab1" onclick="switchTab('tab1')" class="tab-btn active px-3.5 py-2 rounded-xl text-sm font-medium text-zinc-300 hover:bg-zinc-800 transition">
-        1. Tải &amp; Quản Lý Nguyên Liệu <span id="cnt-tab1" class="ml-1 text-xs opacity-75"></span>
+    <!-- Navigation Tabs (1 slim scrollable row) -->
+    <div class="max-w-[1600px] mx-auto px-3 sm:px-4 pb-2 flex gap-1.5 mobile-scroll-row">
+      <button data-tab="tab1" onclick="switchTab('tab1')" class="tab-btn active px-3 py-1.5 rounded-xl text-xs sm:text-sm font-medium text-zinc-300 hover:bg-zinc-800 transition whitespace-nowrap">
+        1. Nguyên Liệu <span id="cnt-tab1" class="ml-0.5 text-[11px] opacity-75"></span>
       </button>
-      <button data-tab="tab4" onclick="switchTab('tab4')" class="tab-btn px-3.5 py-2 rounded-xl text-sm font-medium text-zinc-300 hover:bg-zinc-800 transition inline-flex items-center gap-1.5">
-        <span>2. Kế Hoạch AI &amp; Chọn 3 Kịch Bản</span>
+      <button data-tab="tab4" onclick="switchTab('tab4')" class="tab-btn px-3 py-1.5 rounded-xl text-xs sm:text-sm font-medium text-zinc-300 hover:bg-zinc-800 transition inline-flex items-center gap-1 whitespace-nowrap">
+        <span>2. Kịch Bản AI</span>
         <span id="tab-prog-tab4" class="hidden text-[10px] px-1.5 py-0.5 rounded-full font-semibold"></span>
       </button>
-      <button data-tab="tab5" onclick="switchTab('tab5')" class="tab-btn px-3.5 py-2 rounded-xl text-sm font-medium text-zinc-300 hover:bg-zinc-800 transition inline-flex items-center gap-1.5">
-        <span>3. Xuất Video .MP4 Tự Động (Remotion)</span>
+      <button data-tab="tab5" onclick="switchTab('tab5')" class="tab-btn px-3 py-1.5 rounded-xl text-xs sm:text-sm font-medium text-zinc-300 hover:bg-zinc-800 transition inline-flex items-center gap-1 whitespace-nowrap">
+        <span>3. Xuất Video Auto</span>
         <span id="tab-prog-tab5" class="hidden text-[10px] px-1.5 py-0.5 rounded-full font-semibold"></span>
       </button>
-      <button data-tab="tab3" onclick="switchTab('tab3')" class="tab-btn px-3.5 py-2 rounded-xl text-sm font-medium text-zinc-300 hover:bg-zinc-800 transition inline-flex items-center gap-1.5">
-        <span>⚙️ Học Phong Cách Kênh (DNA)</span>
+      <button data-tab="tab6" onclick="switchTab('tab6')" class="tab-btn px-3 py-1.5 rounded-xl text-xs sm:text-sm font-medium text-zinc-300 hover:bg-zinc-800 transition inline-flex items-center gap-1 whitespace-nowrap">
+        <span>4. 🎬 Kho Video Output</span>
+        <span id="cnt-tab6" class="text-[11px] opacity-80"></span>
+      </button>
+      <button data-tab="tab3" onclick="switchTab('tab3')" class="tab-btn px-3 py-1.5 rounded-xl text-xs sm:text-sm font-medium text-zinc-300 hover:bg-zinc-800 transition inline-flex items-center gap-1 whitespace-nowrap">
+        <span>⚙️ Style DNA</span>
         <span id="tab-prog-tab3" class="hidden text-[10px] px-1.5 py-0.5 rounded-full font-semibold"></span>
       </button>
-      <button data-tab="tab2" onclick="switchTab('tab2')" class="tab-btn px-3.5 py-2 rounded-xl text-sm font-medium text-zinc-300 hover:bg-zinc-800 transition">
-        🎙️ Phòng Thu Giọng Mẫu
+      <button data-tab="tab2" onclick="switchTab('tab2')" class="tab-btn px-3 py-1.5 rounded-xl text-xs sm:text-sm font-medium text-zinc-300 hover:bg-zinc-800 transition whitespace-nowrap">
+        🎙️ Giọng Mẫu
       </button>
     </div>
+  </header>
 
-    <!-- Master 1-Click Pipeline & Brand Brief Control Bar -->
-    <div class="border-t border-zinc-800/80 bg-zinc-950/60">
-      <div class="max-w-[1600px] mx-auto px-4 py-2.5 flex flex-wrap items-center justify-between gap-3 text-xs">
+  <!-- Main Workspace -->
+  <main class="flex-1 max-w-[1600px] w-full mx-auto px-3 sm:px-4 py-4 space-y-4">
+    <!-- Scrollable System Status, Project Bar & Live Progress Stepper (Scrolls away when reading content) -->
+    <div class="rounded-2xl border border-studio-border bg-studio-panel/70 p-3 space-y-2.5 text-xs">
+      <!-- Status Pills -->
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        <div class="flex flex-wrap items-center gap-1.5">
+          <span id="badge-models" onclick="openAiSettingsModal()" title="Bấm để cấu hình Gemini API Key, Model & Effort" class="cursor-pointer px-2.5 py-1 rounded-full bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/35 text-indigo-200 transition">AI: Neural + F5-TTS · Whisper</span>
+          <span id="badge-banned-words" onclick="openBannedWordsModal()" title="Quản lý danh sách từ ngữ cấm kỵ toàn App (TikTok Shop)" class="cursor-pointer px-2.5 py-1 rounded-full bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/40 text-rose-200 transition">🚫 Từ Cấm Kỵ</span>
+          <span id="badge-gpu" class="px-2.5 py-1 rounded-full bg-zinc-800/90 border border-zinc-700 text-zinc-300">GPU: ...</span>
+          <span id="badge-ffmpeg" class="px-2.5 py-1 rounded-full bg-zinc-800/90 border border-zinc-700 text-zinc-300">FFmpeg: ...</span>
+          <span id="badge-openreel" onclick="switchTab('tab5')" title="Chuyển tới Tab Render Tự Động (Remotion & HyperFrames)" class="cursor-pointer px-2.5 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/35 text-emerald-300">Remotion · HyperFrames</span>
+        </div>
+        <button type="button" onclick="openExplorer('')" class="hidden sm:inline-flex px-2.5 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-200 transition">
+          Mở thư mục Dự án
+        </button>
+      </div>
+
+      <!-- Project, Duration & Brief Bar -->
+      <div class="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-zinc-800/80">
         <div class="flex flex-wrap items-center gap-2">
           <div class="flex items-center gap-1.5 bg-zinc-900 border border-zinc-700 rounded-xl px-2.5 py-1">
             <span class="text-zinc-400">📁 Project:</span>
-            <select id="project-select" onchange="switchProject(this.value)" class="bg-zinc-900 text-white font-semibold focus:outline-none min-w-[170px] max-w-[260px] rounded px-1 py-0.5 cursor-pointer"></select>
+            <select id="project-select" onchange="switchProject(this.value)" class="bg-zinc-900 text-white font-semibold focus:outline-none min-w-[140px] max-w-[230px] rounded px-1 py-0.5 cursor-pointer"></select>
             <button id="btn-new-project" type="button" onclick="createNewProject()" class="px-1.5 py-0.5 rounded bg-indigo-600/80 hover:bg-indigo-500 text-[10px] text-white font-semibold" title="Tạo thư mục Project mới giữ riêng Video Thô &amp; Output">+ Mới</button>
           </div>
           <div class="flex items-center gap-1.5 bg-zinc-900 border border-zinc-700 rounded-xl px-2.5 py-1">
-            <span class="text-zinc-400">Thời lượng (s):</span>
-            <input id="global-target-duration" type="number" min="10" max="60" step="1" value="25" onchange="setTargetDurationPreset(this.value, true)" class="w-12 bg-transparent text-white font-semibold mono text-center focus:outline-none" />
+            <span class="text-zinc-400">Thời lượng:</span>
+            <input id="global-target-duration" type="number" min="10" max="60" step="1" value="25" onchange="setTargetDurationPreset(this.value, true)" class="w-11 bg-transparent text-white font-semibold mono text-center focus:outline-none" />
             <button type="button" onclick="setTargetDurationPreset(15, true)" class="px-1.5 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 text-[10px] text-zinc-300">15s</button>
             <button type="button" onclick="setTargetDurationPreset(25, true)" class="px-1.5 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 text-[10px] text-zinc-300">25s</button>
             <button type="button" onclick="setTargetDurationPreset(30, true)" class="px-1.5 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 text-[10px] text-zinc-300">30s</button>
           </div>
           <button id="btn-open-brand-brief" type="button" onclick="openBrandBriefModal()" class="px-3 py-1.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-amber-200 font-medium transition inline-flex items-center gap-1.5">
-            <span>📋 Brief Nhãn Hàng (Bắt buộc):</span>
+            <span>📋 Brief:</span>
             <span id="brand-brief-pill" class="font-semibold text-white">Chưa thiết lập</span>
           </button>
-          <span id="brief-required-hint" class="text-[11px] text-amber-300/90">Cần điền Brief để mở khóa nút Tạo Video</span>
+          <span id="brief-required-hint" class="text-[11px] text-amber-300/90">Cần điền Brief để mở khóa Tạo Video</span>
         </div>
-
-        <div class="flex flex-wrap items-center gap-2">
-          <span id="pipeline-status-text" class="text-[11px] text-zinc-400 hidden sm:inline">Sẵn sàng</span>
-          <button id="btn-one-click-mp4" type="button" onclick="openAutoPipelineModal()" disabled class="px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-xs font-semibold text-white shadow-lg shadow-emerald-950/50 transition opacity-45 cursor-not-allowed grayscale" title="Vui lòng điền &amp; Lưu Brief Nhãn Hàng trước khi Tạo Video Auto">
-            🚀 Tạo Video Auto
-          </button>
-        </div>
+        <span id="pipeline-status-text" class="text-[11px] text-zinc-400">Sẵn sàng</span>
       </div>
 
-      <!-- Collapsible Live 5-Step Progress Stepper -->
-      <div id="pipeline-stepper" class="hidden max-w-[1600px] mx-auto px-4 pb-3 space-y-2">
+      <!-- Collapsible Live 5-Step Progress Stepper (scrollable!) -->
+      <div id="pipeline-stepper" class="hidden pt-1 space-y-2">
         <div class="w-full h-1.5 rounded-full bg-zinc-800 overflow-hidden">
           <div id="pipeline-progress-bar" class="h-full bg-gradient-to-r from-indigo-500 via-emerald-400 to-teal-400 transition-all duration-300" style="width: 0%"></div>
         </div>
         <div id="pipeline-steps-row" class="grid grid-cols-2 sm:grid-cols-5 gap-2 text-[11px]"></div>
       </div>
     </div>
-  </header>
-
-  <!-- Main Workspace -->
-  <main class="flex-1 max-w-[1600px] w-full mx-auto px-4 py-5">
 
     <!-- ======================= TAB 1: DOWNLOADER ======================= -->
     <section id="tab1" class="tab-panel space-y-5">
@@ -1503,6 +1517,28 @@
       </div>
     </section>
 
+    <!-- ======================= TAB 6: OUTPUT GALLERY PER PROJECT ======================= -->
+    <section id="tab6" class="tab-panel hidden space-y-5">
+      <div class="bg-studio-card border border-studio-border rounded-2xl p-4 sm:p-5 space-y-4">
+        <div class="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 class="text-base sm:text-lg font-semibold text-white">🎬 Kho Video Output (Duyệt theo từng Project)</h2>
+            <p class="text-xs text-zinc-400">Xem nhanh, tải về iPhone/PC hoặc tải trọn bộ ZIP của bất kỳ Project nào mà không làm gián đoạn Project đang chạy.</p>
+          </div>
+          <div class="flex flex-wrap gap-2 text-xs">
+            <button id="btn-gallery-zip" type="button" onclick="downloadGalleryZip()" class="hidden px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold">📦 Tải cả Project (.ZIP)</button>
+            <button type="button" onclick="loadOutputGallery()" class="px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-200">🔄 Làm mới</button>
+          </div>
+        </div>
+
+        <!-- Project Folder Filter Pills -->
+        <div id="gallery-project-pills" class="flex flex-wrap gap-2 text-xs"></div>
+
+        <!-- Gallery Videos Grid -->
+        <div id="gallery-output-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"></div>
+      </div>
+    </section>
+
   </main>
 
   <script>
@@ -1569,16 +1605,17 @@
       if (tabId === 'tab3') loadStyleData();
       if (tabId === 'tab4') loadWorkshopState();
       if (tabId === 'tab5') loadOpenReelStatus();
+      if (tabId === 'tab6') loadOutputGallery();
     }
 
-    async function openExplorer(relPath, selectFile = false) {
+    async function openExplorer(relPath, selectFile = false, projectId = '') {
       if (state.openingExplorer) return;
       state.openingExplorer = true;
       try {
         const res = await api('/api/system/open-explorer', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ rel_path: relPath, select_file: selectFile })
+          body: JSON.stringify({ rel_path: relPath, select_file: selectFile, project_id: projectId })
         });
         if (res.ok === false) {
           if (res.opened && navigator.clipboard) {
@@ -1785,12 +1822,9 @@
             : 'cursor-pointer px-2.5 py-1 rounded-full bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-amber-200 transition';
         }
         const orBadge = document.getElementById('badge-openreel');
-        if (data.openreel_online) {
-          orBadge.textContent = 'OpenReel :5173 Online';
-          orBadge.className = 'cursor-pointer px-2.5 py-1 rounded-full bg-emerald-500/20 border border-emerald-500/40 text-emerald-300';
-        } else {
-          orBadge.textContent = 'OpenReel :5173 Offline';
-          orBadge.className = 'cursor-pointer px-2.5 py-1 rounded-full bg-zinc-800/90 border border-zinc-700 text-zinc-400';
+        if (orBadge) {
+          orBadge.textContent = 'Remotion · HyperFrames Auto';
+          orBadge.className = 'cursor-pointer px-2.5 py-1 rounded-full bg-emerald-500/15 border border-emerald-500/35 text-emerald-300';
         }
         document.getElementById('cnt-tab1').textContent = `(${data.counts['01_video_mau'] + data.counts['02_video_tho']})`;
         if (data.config && document.getElementById('dl-cobalt-url').value === '') {
@@ -4046,6 +4080,9 @@
       const sticker_density = document.getElementById('auto-sticker-density')?.value || 'normal';
       const disable_flash_shake = document.getElementById('chk-disable-flash-shake')?.checked !== false;
       const mix_engines = !!document.getElementById('chk-batch-mix-engines')?.checked;
+      const rawTtsSel = document.getElementById('auto-tts-engine')?.value || 'edge_tts';
+      const tts_engine = rawTtsSel === 'f5_tts' ? 'f5_tts' : 'edge_tts';
+      const edge_voice = rawTtsSel === 'edge_tts_male' ? 'vi-VN-NamMinhNeural' : 'vi-VN-HoaiMyNeural';
       _lastAutoTab = null;
       try {
         const p = await api('/api/pipeline/run-all', {
@@ -4074,6 +4111,8 @@
             sticker_density,
             disable_flash_shake,
             mix_engines,
+            tts_engine,
+            edge_voice,
             project_ids: projectIds,
             sync: false
           })
@@ -4427,10 +4466,11 @@
     }
 
     // Active Video Download & iPhone Photos Share Helpers
-    function triggerFileDownload(relPath) {
+    function triggerFileDownload(relPath, projectId = '') {
       const clean = String(relPath || '').trim();
       if (!clean) return toast('Chưa có file video để tải.', 'warn');
-      window.location.href = `/api/files/download?path=${encodeURIComponent(clean)}`;
+      const q = projectId ? `&project_id=${encodeURIComponent(projectId)}` : '';
+      window.location.href = `/api/files/download?path=${encodeURIComponent(clean)}${q}`;
     }
 
     function downloadCurrentOutputVideo() {
@@ -4442,16 +4482,17 @@
       return triggerFileDownload(state.previewFile.rel_path);
     }
 
-    async function shareOrSaveVideoMobile(relPath, fileName = 'tiktok_video.mp4') {
+    async function shareOrSaveVideoMobile(relPath, fileName = 'tiktok_video.mp4', projectId = '') {
       const clean = String(relPath || '').trim();
       if (!clean) return toast('Chưa có file video để lưu.', 'warn');
       if (!navigator.share || !navigator.canShare) {
         toast('Trình duyệt máy tính sẽ tải trực tiếp file .MP4 về máy.', 'info');
-        return triggerFileDownload(clean);
+        return triggerFileDownload(clean, projectId);
       }
       try {
         toast('Đang chuẩn bị file MP4 để lưu vào iPhone...', 'info');
-        const dlUrl = `/api/files/download?path=${encodeURIComponent(clean)}`;
+        const q = projectId ? `&project_id=${encodeURIComponent(projectId)}` : '';
+        const dlUrl = `/api/files/download?path=${encodeURIComponent(clean)}${q}`;
         const resp = await fetch(dlUrl);
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
         const blob = await resp.blob();
@@ -4463,16 +4504,107 @@
       } catch (err) {
         if (err && err.name === 'AbortError') return;
       }
-      triggerFileDownload(clean);
+      triggerFileDownload(clean, projectId);
     }
 
     function shareCurrentOutputVideoMobile() {
       return shareOrSaveVideoMobile(state.latestOutputRelPath || '05_output/final_tiktok.mp4', state.latestOutputName || 'final_tiktok.mp4');
     }
 
+    // Tab 6: Output Gallery per Project
+    state.galleryProjectId = 'all';
+
+    async function loadOutputGallery(projectId = state.galleryProjectId || 'all') {
+      state.galleryProjectId = projectId;
+      try {
+        const res = await api(`/api/projects/outputs?project_id=${encodeURIComponent(projectId)}`);
+        const projs = res.projects || [];
+        const outputs = res.outputs || [];
+        const totalAll = projs.reduce((acc, p) => acc + Number(p.output_count || 0), 0);
+        const cntEl = document.getElementById('cnt-tab6');
+        if (cntEl) cntEl.textContent = totalAll > 0 ? `(${totalAll})` : '';
+
+        const pillsEl = document.getElementById('gallery-project-pills');
+        if (pillsEl) {
+          const allCls = projectId === 'all'
+            ? 'bg-indigo-600 text-white border-indigo-500'
+            : 'bg-zinc-900 text-zinc-300 border-zinc-700 hover:bg-zinc-800';
+          pillsEl.innerHTML = [
+            `<button type="button" onclick="selectGalleryProject('all')" class="px-3 py-1.5 rounded-xl border font-medium transition ${allCls}">📂 Tất cả Project (${totalAll})</button>`,
+            ...projs.map((p) => {
+              const active = projectId === p.id;
+              const cls = active
+                ? 'bg-indigo-600 text-white border-indigo-500'
+                : 'bg-zinc-900 text-zinc-300 border-zinc-700 hover:bg-zinc-800';
+              return `<button type="button" onclick="selectGalleryProject('${escapeHtml(p.id)}')" class="px-3 py-1.5 rounded-xl border font-medium transition ${cls}">📁 ${escapeHtml(p.name || p.id)} (${p.output_count || 0})</button>`;
+            }),
+          ].join('');
+        }
+
+        const zipBtn = document.getElementById('btn-gallery-zip');
+        if (zipBtn) {
+          zipBtn.classList.toggle('hidden', projectId === 'all' || !outputs.length);
+        }
+
+        const grid = document.getElementById('gallery-output-grid');
+        if (grid) {
+          grid.innerHTML = outputs.length
+            ? outputs.map((o) => `
+              <div class="rounded-xl bg-zinc-900 border border-zinc-800 overflow-hidden flex flex-col">
+                <video src="${o.stream_url}" controls playsinline preload="none" class="w-full h-60 bg-black object-contain"></video>
+                <div class="p-3 space-y-2 text-xs">
+                  <div class="flex items-center justify-between gap-2">
+                    <span class="px-2 py-0.5 rounded-md bg-indigo-500/20 border border-indigo-500/35 text-indigo-200 text-[10px] font-semibold truncate">${escapeHtml(o.project_name)}</span>
+                    <span class="mono text-[11px] text-zinc-400 shrink-0">${o.duration_sec}s · ${o.size_mb} MB</span>
+                  </div>
+                  <div class="font-medium text-zinc-100 truncate" title="${escapeHtml(o.name)}">${escapeHtml(o.name)}</div>
+                  <div class="grid grid-cols-2 gap-1.5">
+                    <button type="button" onclick="triggerFileDownload('${escapeHtml(o.rel_path)}', '${escapeHtml(o.project_id)}')" class="py-1.5 px-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold">⬇️ Tải MP4</button>
+                    <button type="button" onclick="shareOrSaveVideoMobile('${escapeHtml(o.rel_path)}', '${escapeHtml(o.name)}', '${escapeHtml(o.project_id)}')" class="py-1.5 px-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold">📲 Lưu iPhone</button>
+                    <button type="button" onclick="openProjectOutputInExplorer('${escapeHtml(o.project_id)}', '${escapeHtml(o.rel_path)}')" class="py-1.5 px-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200">📂 Thư mục</button>
+                    <button type="button" onclick="deleteGalleryVideo('${escapeHtml(o.project_id)}', '${escapeHtml(o.name)}')" class="py-1.5 px-2 rounded-lg bg-rose-500/15 hover:bg-rose-500/30 text-rose-300">🗑️ Xóa</button>
+                  </div>
+                </div>
+              </div>`).join('')
+            : '<div class="col-span-full p-8 text-center text-xs text-zinc-500 border border-dashed border-zinc-800 rounded-xl">Chưa có video output nào trong Project này.</div>';
+        }
+      } catch (e) {
+        toast(e.message, 'error');
+      }
+    }
+
+    function selectGalleryProject(pid) {
+      loadOutputGallery(pid);
+    }
+
+    function downloadGalleryZip() {
+      const pid = state.galleryProjectId;
+      if (!pid || pid === 'all') return toast('Vui lòng chọn 1 Project cụ thể để tải ZIP.', 'warn');
+      window.location.href = `/api/projects/outputs/zip?project_id=${encodeURIComponent(pid)}`;
+    }
+
+    async function openProjectOutputInExplorer(pid, relPath) {
+      return openExplorer(relPath, true, pid);
+    }
+
+    async function deleteGalleryVideo(pid, name) {
+      if (!confirm(`Xóa video thành phẩm "${name}" khỏi Project "${pid}"?`)) return;
+      try {
+        await api('/api/projects/outputs/delete', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ project_id: pid, name }),
+        });
+        toast(`Đã xóa ${name}.`, 'info');
+        await loadOutputGallery(state.galleryProjectId);
+      } catch (e) {
+        toast(e.message, 'error');
+      }
+    }
+
     // Boot
     (async () => {
-      await Promise.all([loadChannelProfile(true), loadProjects(), loadOverview(), loadDirectories(), loadBrandBrief(), pollPipelineStatus(true), refreshNetworkStatus(true)]);
+      await Promise.all([loadChannelProfile(true), loadProjects(), loadOverview(), loadDirectories(), loadBrandBrief(), pollPipelineStatus(true), refreshNetworkStatus(true), loadOutputGallery('all')]);
       await loadTab1Files();
     })();
   </script>

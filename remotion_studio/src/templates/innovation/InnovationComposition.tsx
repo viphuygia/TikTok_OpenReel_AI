@@ -888,6 +888,8 @@ export const InnovationComposition: React.FC<TikTokVideoProps> = (props) => {
                 : 1;
             const sc = interpolate(popIn, [0, 1], [0.2, 1]) * popOut;
             const isAnimStk = st.styleKind === 'animated_sticker' && st.stickerAsset;
+            const hookEndSec = props.floralBadge?.enabled ? (props.floralBadge?.end ?? 3.8) : 0;
+            const safeYPct = st.start < hookEndSec && st.yPct < 0.40 ? 0.42 : st.yPct;
             if (isAnimStk && st.stickerAsset) {
               return (
                 <div
@@ -895,7 +897,7 @@ export const InnovationComposition: React.FC<TikTokVideoProps> = (props) => {
                   style={{
                     position: 'absolute',
                     left: `${(st.xPct * 100).toFixed(1)}%`,
-                    top: `${(st.yPct * 100).toFixed(1)}%`,
+                    top: `${(safeYPct * 100).toFixed(1)}%`,
                     transform: `scale(${sc.toFixed(3)}) rotate(${st.rotateDeg ?? (si % 2 === 0 ? -6 : 6)}deg)`,
                     display: 'flex',
                     flexDirection: 'column',
@@ -929,14 +931,14 @@ export const InnovationComposition: React.FC<TikTokVideoProps> = (props) => {
               );
             }
             return (
-              <div
-                key={`stk-${si}`}
-                style={{
-                  position: 'absolute',
-                  left: `${(st.xPct * 100).toFixed(1)}%`,
-                  top: `${(st.yPct * 100).toFixed(1)}%`,
-                  transform: `scale(${sc.toFixed(3)}) rotate(${st.rotateDeg ?? (si % 2 === 0 ? -5 : 5)}deg)`,
-                  padding: '12px 22px',
+                <div
+                  key={`stk-${si}`}
+                  style={{
+                    position: 'absolute',
+                    left: `${(st.xPct * 100).toFixed(1)}%`,
+                    top: `${(safeYPct * 100).toFixed(1)}%`,
+                    transform: `scale(${sc.toFixed(3)}) rotate(${st.rotateDeg ?? (si % 2 === 0 ? -5 : 5)}deg)`,
+                    padding: '12px 22px',
                   borderRadius: '24px 24px 24px 6px',
                   background: st.bg || popPalette[si % popPalette.length],
                   border: '3.5px solid #FFFFFF',
@@ -1237,7 +1239,15 @@ export const InnovationComposition: React.FC<TikTokVideoProps> = (props) => {
 
       {/* 5. Asymmetric Callout Banners */}
       {!props.badgeOnly &&
-        (props.callouts || []).map((c, idx) => {
+        (props.callouts || [])
+          .filter((c) => {
+            if (c.id === 'callout_cta') return false;
+            if (props.floralBadge?.enabled && (c.id === 'callout_hook' || c.start < (props.floralBadge?.end ?? 3.8) - 0.2)) {
+              return false;
+            }
+            return true;
+          })
+          .map((c, idx) => {
           const from = Math.max(0, Math.round(c.start * fps));
           const dur = Math.max(20, Math.round((c.end - c.start) * fps));
           const topPx = Math.round(height * (c.y ?? 0.42));
