@@ -1531,6 +1531,7 @@
             <p class="text-xs text-zinc-400">Xem nhanh, tải về iPhone/PC hoặc tải trọn bộ ZIP của bất kỳ Project nào mà không làm gián đoạn Project đang chạy.</p>
           </div>
           <div class="flex flex-wrap gap-2 text-xs">
+            <button type="button" onclick="copyGalleryShareLink()" class="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold">🔗 Copy Link Kho Video</button>
             <button id="btn-gallery-zip" type="button" onclick="downloadGalleryZip()" class="hidden px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold">📦 Tải cả Project (.ZIP)</button>
             <button type="button" onclick="loadOutputGallery()" class="px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-200">🔄 Làm mới</button>
           </div>
@@ -1599,12 +1600,26 @@
       return String(str ?? '').replace(/[&<>"']/g, s => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[s]));
     }
 
+    function syncUrlHash(tabId, projId = null) {
+      try {
+        const params = new URLSearchParams();
+        if (tabId) params.set('tab', tabId);
+        if (tabId === 'tab6' && projId && projId !== 'all') params.set('project', projId);
+        const nextHash = `#${params.toString()}`;
+        if (window.location.hash !== nextHash) {
+          history.replaceState(null, '', nextHash);
+        }
+      } catch (e) {}
+    }
+
     function switchTab(tabId) {
+      if (!document.getElementById(tabId)) return;
       document.querySelectorAll('.tab-panel').forEach(p => p.classList.add('hidden'));
       document.getElementById(tabId).classList.remove('hidden');
       document.querySelectorAll('.tab-btn').forEach(b => {
         b.classList.toggle('active', b.dataset.tab === tabId);
       });
+      syncUrlHash(tabId, state.galleryProjectId);
       if (tabId === 'tab1') loadTab1Files();
       if (tabId === 'tab2') loadVoiceStatus();
       if (tabId === 'tab3') loadStyleData();
@@ -4581,7 +4596,14 @@
     }
 
     function selectGalleryProject(pid) {
+      syncUrlHash('tab6', pid);
       loadOutputGallery(pid);
+    }
+
+    function copyGalleryShareLink() {
+      syncUrlHash('tab6', state.galleryProjectId);
+      const url = `${window.location.origin}${window.location.pathname}${window.location.hash}`;
+      copyTextValue(url, 'Đã chép link Kho Video để chia sẻ!');
     }
 
     function downloadGalleryZip() {
@@ -4611,8 +4633,17 @@
 
     // Boot
     (async () => {
-      await Promise.all([loadChannelProfile(true), loadProjects(), loadOverview(), loadDirectories(), loadBrandBrief(), pollPipelineStatus(true), refreshNetworkStatus(true), loadOutputGallery('all')]);
-      await loadTab1Files();
+      const hashParams = new URLSearchParams((window.location.hash || '').replace(/^#/, ''));
+      const queryParams = new URLSearchParams(window.location.search || '');
+      const initTab = hashParams.get('tab') || queryParams.get('tab') || 'tab1';
+      const initProj = hashParams.get('project') || queryParams.get('project') || 'all';
+      if (initTab === 'tab6') state.galleryProjectId = initProj;
+      await Promise.all([loadChannelProfile(true), loadProjects(), loadOverview(), loadDirectories(), loadBrandBrief(), pollPipelineStatus(true), refreshNetworkStatus(true), loadOutputGallery(state.galleryProjectId || 'all')]);
+      if (initTab && initTab !== 'tab1' && document.getElementById(initTab)) {
+        switchTab(initTab);
+      } else {
+        await loadTab1Files();
+      }
     })();
   </script>
 </body>
