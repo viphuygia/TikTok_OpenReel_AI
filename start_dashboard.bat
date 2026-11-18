@@ -29,7 +29,7 @@ if %errorlevel%==0 (
 )
 
 echo [1/2] Dang mo trinh duyet tai %URL% ...
-start "" cmd /c "timeout /t 3 /nobreak > nul && start "" "%URL%""
+start "" /b cmd /c "timeout /t 3 /nobreak > nul & start %URL%"
 
 echo [2/2] Dang khoi chay FastAPI Server tai %URL% (Ctrl+C de dung)...
 cd /d "%ROOT_DIR%"
