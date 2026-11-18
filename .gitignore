@@ -1,0 +1,31 @@
+# Python / Node build artifacts & virtual environments
+03_voice_clone/venv/
+**/node_modules/
+**/__pycache__/
+*.pyc
+.pytest_cache/
+remotion_studio/.remotion/
+remotion_studio/public/
+
+# Large model weights (>100MB GitHub limit - auto downloaded by install.bat)
+03_voice_clone/model/*.pt
+03_voice_clone/model/*.safetensors
+assets/bin/
+
+# Per-machine / Per-channel workspaces, raw inputs & outputs
+projects/
+04_workspace/
+01_video_mau/*
+!01_video_mau/.gitkeep
+02_video_tho/*
+!02_video_tho/.gitkeep
+channel_profile.json
+active_project.json
+phong_cach_kenh.md
+style_dna.json
+config.json
+openreel_app/
+start_editor.bat
+start_editor.sh
+*.zip
+*.log

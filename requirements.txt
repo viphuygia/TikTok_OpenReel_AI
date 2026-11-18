@@ -1,0 +1,13 @@
+f5-tts
+faster-whisper
+fastapi
+uvicorn
+pydantic
+python-multipart
+requests
+pydub
+soundfile
+numpy
+vinorm
+av
+ctranslate2
