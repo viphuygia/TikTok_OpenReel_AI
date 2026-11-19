@@ -674,6 +674,11 @@
           <span id="cnt-header-outputs" class="text-[10px] opacity-90"></span>
         </button>
         <span id="badge-remote-access" onclick="openRemoteAccessModal()" title="Mở mã QR cho iPhone & Bật/Tắt truy cập Internet qua Cloudflare" class="cursor-pointer px-2 sm:px-2.5 py-1 rounded-full bg-cyan-500/15 hover:bg-cyan-500/25 border border-cyan-500/40 text-[11px] text-cyan-200 transition whitespace-nowrap"><span class="sm:hidden">🏠 QR</span><span class="hidden sm:inline">🏠 QR / LAN</span></span>
+        <button id="btn-header-update" type="button" onclick="triggerSystemUpdate()" title="Kiểm tra & Cập nhật code mới từ GitHub (tự restart server)" class="relative px-2 sm:px-2.5 py-1 rounded-full bg-zinc-800/90 hover:bg-amber-500/20 border border-zinc-600/80 hover:border-amber-400/60 text-[11px] text-zinc-200 transition whitespace-nowrap inline-flex items-center gap-1">
+          <span>🔄</span>
+          <span class="hidden sm:inline" id="hdr-update-label">Update</span>
+          <span id="hdr-update-dot" class="hidden w-2 h-2 rounded-full bg-amber-400 animate-pulse"></span>
+        </button>
         <button id="btn-one-click-mp4" type="button" onclick="openAutoPipelineModal()" disabled class="px-2 sm:px-4 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-[11px] sm:text-xs font-semibold text-white shadow-lg shadow-emerald-950/50 transition opacity-45 cursor-not-allowed grayscale whitespace-nowrap" title="Vui lòng điền &amp; Lưu Brief Nhãn Hàng trước khi Tạo Video Auto">
           <span class="sm:hidden">🚀 Auto</span><span class="hidden sm:inline">🚀 Tạo Video Auto</span>
         </button>
@@ -4933,6 +4938,73 @@
       }
     }
 
+    let _sysUpdateInfo = null;
+
+    async function checkSystemUpdate() {
+      try {
+        const res = await api('/api/system/check-update');
+        _sysUpdateInfo = res;
+        const dot = document.getElementById('hdr-update-dot');
+        const btn = document.getElementById('btn-header-update');
+        const lbl = document.getElementById('hdr-update-label');
+        if (res.ok && res.has_update) {
+          dot?.classList.remove('hidden');
+          btn?.classList.add('border-amber-400/70', 'bg-amber-950/30', 'text-amber-200');
+          if (lbl) lbl.textContent = res.behind_count > 0 ? `Update (${res.behind_count})` : 'Có bản mới';
+          if (btn) btn.title = `Có bản mới trên GitHub (${res.current_commit || '?'} -> ${res.remote_commit || 'main'}). Bấm để cập nhật & restart!`;
+        } else {
+          dot?.classList.add('hidden');
+          if (lbl) lbl.textContent = 'Update';
+          if (btn && res.current_commit) btn.title = `Đang ở bản mới nhất (${res.current_commit}). Bấm để kiểm tra & cập nhật lại.`;
+        }
+      } catch {}
+    }
+
+    async function triggerSystemUpdate() {
+      const btn = document.getElementById('btn-header-update');
+      const lbl = document.getElementById('hdr-update-label');
+      await checkSystemUpdate();
+      const info = _sysUpdateInfo;
+      const msg = (info && info.has_update)
+        ? `Phát hiện bản mới trên GitHub (${info.current_commit || '?'} → ${info.remote_commit || 'main'}).\n\nCập nhật ngay & tự khởi động lại App? (Dữ liệu projects & giọng mẫu giữ nguyên 100%)`
+        : `Hiện tại: ${info?.current_commit || 'main'} (đã mới nhất).\n\nBạn vẫn muốn chạy đồng bộ update.bat & khởi động lại App?`;
+      if (!confirm(msg)) return;
+
+      if (btn) btn.disabled = true;
+      if (lbl) lbl.textContent = 'Đang update...';
+      toast('Đang tải code mới từ GitHub (5–15 giây)...', 'info');
+      try {
+        const res = await api('/api/system/update', { method: 'POST' });
+        toast(`Đã cập nhật (${res.new_commit || 'main'}). Server đang khởi động lại...`, 'success');
+        if (lbl) lbl.textContent = 'Đang restart...';
+
+        // Wait for old server to exit and new server to come back up
+        let ready = false;
+        for (let i = 0; i < 24; i++) {
+          await new Promise((r) => setTimeout(r, 2000));
+          try {
+            const ping = await fetch('/api/projects', { cache: 'no-store' });
+            if (ping.ok) {
+              ready = true;
+              break;
+            }
+          } catch {}
+        }
+        if (ready) {
+          toast('Server mới đã sẵn sàng! Đang tải lại giao diện...', 'success');
+          setTimeout(() => window.location.reload(), 500);
+        } else {
+          toast('Server đang khởi động lại, hãy bấm tải lại trang sau vài giây.', 'warn');
+          if (btn) btn.disabled = false;
+          if (lbl) lbl.textContent = 'Update';
+        }
+      } catch (e) {
+        toast(e.message, 'error');
+        if (btn) btn.disabled = false;
+        if (lbl) lbl.textContent = 'Update';
+      }
+    }
+
     // Boot
     (async () => {
       const hashParams = new URLSearchParams((window.location.hash || '').replace(/^#/, ''));
@@ -4941,6 +5013,7 @@
       const initProj = hashParams.get('project') || queryParams.get('project') || 'all';
       if (initTab === 'tab6') state.galleryProjectId = initProj;
       await Promise.all([loadChannelProfile(true), loadProjects(), loadOverview(), loadDirectories(), loadBrandBrief(), loadVoiceCatalog(), pollPipelineStatus(true), refreshNetworkStatus(true), loadOutputGallery(state.galleryProjectId || 'all')]);
+      checkSystemUpdate();
       if (initTab && initTab !== 'tab1' && document.getElementById(initTab)) {
         switchTab(initTab);
       } else {

@@ -6140,6 +6140,119 @@ def api_tunnel_stop(request: Request):
     return {**res, "status_info": status}
 
 
+def _git_output(args: list[str], timeout: int = 15) -> tuple[int, str]:
+    try:
+        proc = subprocess.run(
+            ["git", *args],
+            cwd=str(PROJECT_ROOT),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=timeout,
+        )
+        return proc.returncode, ((proc.stdout or "") + "\n" + (proc.stderr or "")).strip()
+    except Exception as exc:
+        return 1, str(exc)
+
+
+@app.get("/api/system/check-update")
+def api_system_check_update():
+    if not shutil.which("git"):
+        return {"ok": False, "has_update": False, "message": "Chưa cài Git trong PATH."}
+    if not (PROJECT_ROOT / ".git").exists():
+        return {"ok": True, "has_update": True, "current_commit": "", "remote_commit": "", "behind_count": 1, "message": "Thư mục ZIP chưa gắn Git — bấm Update để đồng bộ bản mới."}
+    rc_f, out_f = _git_output(["fetch", "origin", "main", "--prune"], timeout=20)
+    if rc_f != 0:
+        return {"ok": False, "has_update": False, "message": f"Không kiểm tra được GitHub: {out_f[:160]}"}
+    rc_h, cur_h = _git_output(["rev-parse", "--short", "HEAD"])
+    rc_r, rem_h = _git_output(["rev-parse", "--short", "origin/main"])
+    cur_commit = cur_h.splitlines()[0].strip() if rc_h == 0 and cur_h else ""
+    rem_commit = rem_h.splitlines()[0].strip() if rc_r == 0 and rem_h else ""
+    behind = 0
+    if cur_commit and rem_commit and cur_commit != rem_commit:
+        rc_b, cnt_s = _git_output(["rev-list", "--count", "HEAD..origin/main"])
+        if rc_b == 0 and cnt_s.strip().isdigit():
+            behind = int(cnt_s.strip())
+    elif not cur_commit and rem_commit:
+        behind = 1
+    has_upd = bool(rem_commit and (not cur_commit or cur_commit != rem_commit))
+    return {
+        "ok": True,
+        "has_update": has_upd,
+        "current_commit": cur_commit,
+        "remote_commit": rem_commit,
+        "behind_count": behind,
+    }
+
+
+@app.post("/api/system/update")
+def api_system_update(request: Request):
+    with PIPELINE_LOCK:
+        if PIPELINE_STATE.get("running"):
+            raise HTTPException(
+                status_code=409,
+                detail="Đang có tiến trình dựng video chạy dở. Vui lòng chờ xong rồi mới cập nhật App!",
+            )
+
+    updater_ps1 = PROJECT_ROOT / "scripts" / "updater.ps1"
+    if not updater_ps1.exists():
+        raise HTTPException(status_code=404, detail="Không tìm thấy scripts/updater.ps1.")
+
+    port = _resolve_server_port(request)
+    _, old_h = _git_output(["rev-parse", "--short", "HEAD"])
+    proc = subprocess.run(
+        ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(updater_ps1)],
+        cwd=str(PROJECT_ROOT),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=240,
+    )
+    full_log = ((proc.stdout or "") + "\n" + (proc.stderr or "")).strip()
+    if proc.returncode != 0:
+        raise HTTPException(status_code=500, detail=f"Cập nhật thất bại:\n{full_log[-800:]}")
+
+    _, new_h = _git_output(["rev-parse", "--short", "HEAD"])
+
+    def _restart_later() -> None:
+        time.sleep(0.9)
+        if os.environ.get("OPENREEL_SUPERVISOR") != "24_7":
+            py_exe = sys.executable
+            if os.name == "nt":
+                flags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0x200) | getattr(subprocess, "DETACHED_PROCESS", 0x8)
+                cmd_str = f'timeout /t 2 /nobreak >nul & "{py_exe}" -m uvicorn scripts.webapp.app:app --host 0.0.0.0 --port {int(port)}'
+                subprocess.Popen(
+                    ["cmd", "/c", cmd_str],
+                    cwd=str(PROJECT_ROOT),
+                    creationflags=flags,
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    close_fds=True,
+                )
+            else:
+                subprocess.Popen(
+                    ["sh", "-c", f'sleep 2 && "{py_exe}" -m uvicorn scripts.webapp.app:app --host 0.0.0.0 --port {int(port)}'],
+                    cwd=str(PROJECT_ROOT),
+                    start_new_session=True,
+                    stdin=subprocess.DEVNULL,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+        os._exit(0)
+
+    threading.Thread(target=_restart_later, daemon=True).start()
+    return {
+        "ok": True,
+        "restarting": True,
+        "old_commit": old_h.splitlines()[0].strip() if old_h else "",
+        "new_commit": new_h.splitlines()[0].strip() if new_h else "",
+        "log": full_log[-1500:],
+    }
+
+
 @app.get("/api/files/download")
 def api_download_file(
     path: str = Query(..., description="Relative path or /files/... URL"),

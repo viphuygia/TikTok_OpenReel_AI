@@ -52,6 +52,7 @@ function Write-Launchers([string]$rootDir, [int]$listenPort) {
 @echo off
 cd /d "%~dp0"
 if "%PORT%"=="" set PORT=$listenPort
+set "OPENREEL_SUPERVISOR=24_7"
 set "PYT=%~dp003_voice_clone\venv\Scripts\python.exe"
 if not exist "%PYT%" goto :no_venv
 :loop
@@ -71,6 +72,7 @@ exit /b 1
 @echo off
 cd /d "%~dp0"
 if "%PORT%"=="" set PORT=$listenPort
+set "OPENREEL_SUPERVISOR=24_7"
 set "PYT=%~dp003_voice_clone\venv\Scripts\python.exe"
 if not exist "%PYT%" goto :no_venv
 start "" "http://127.0.0.1:%PORT%"

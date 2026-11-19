@@ -1,6 +1,7 @@
 @echo off
 cd /d "%~dp0"
 if "%PORT%"=="" set PORT=8000
+set "OPENREEL_SUPERVISOR=24_7"
 set "PYT=%~dp003_voice_clone\venv\Scripts\python.exe"
 if not exist "%PYT%" goto :no_venv
 
