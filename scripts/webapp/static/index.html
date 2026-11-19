@@ -4105,7 +4105,7 @@
     }
 
     function updateAutoModalMixUi() {
-      const batchMode = document.querySelector('input[name="auto-batch-mode"]:checked')?.value || 'single';
+      const batchMode = state.pipelineCategory === 'long_vlog' ? 'single' : (document.querySelector('input[name="auto-batch-mode"]:checked')?.value || 'single');
       const mixOn = !!document.getElementById('chk-batch-mix')?.checked;
       const isRandom3 = batchMode === 'batch3' && mixOn;
       const notice = document.getElementById('auto-mix-notice');
@@ -4204,7 +4204,7 @@
       const transLevel = document.getElementById('auto-transition-level')?.value || 'balanced';
       const themeVal = document.getElementById('auto-badge-theme')?.value || 'auto';
       const bgmVal = document.getElementById('auto-bgm-track')?.value || 'bgm_upbeat_tiktok.wav';
-      const batchMode = document.querySelector('input[name="auto-batch-mode"]:checked')?.value || 'single';
+      const batchMode = state.pipelineCategory === 'long_vlog' ? 'single' : (document.querySelector('input[name="auto-batch-mode"]:checked')?.value || 'single');
 
       // Sync back to Tab 3 controls
       const tab3Eng = document.getElementById('rm-render-engine');
@@ -4218,7 +4218,6 @@
       const tab3Bgm = document.getElementById('rm-bgm-track');
       if (tab3Bgm) tab3Bgm.value = bgmVal;
 
-      const batchMode = state.pipelineCategory === 'long_vlog' ? 'single' : (document.querySelector('input[name="auto-batch-mode"]:checked')?.value || 'single');
       const projectIds = Array.from(document.querySelectorAll('input[name="auto-proj-id"]:checked')).map((el) => el.value);
       if (!projectIds.length) {
         return toast('Vui lòng chọn ít nhất 1 Project sẵn sàng (đủ Brief & Video thô)!', 'warn');
