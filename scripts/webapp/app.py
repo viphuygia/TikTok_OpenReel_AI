@@ -472,12 +472,13 @@ def transcribe_wav_with_faster_whisper(wav_path: Path, model_size: str = "small"
     """Nhận diện tiếng Việt từ file wav bằng Faster-Whisper (ưu tiên GPU CUDA float16) và giải phóng VRAM ngay."""
     patch_av_open()
     from faster_whisper import WhisperModel
+    import voice_engine as _ve
 
     use_cuda = False
     try:
         import ctranslate2
 
-        if ctranslate2.get_cuda_device_count() > 0:
+        if ctranslate2.get_cuda_device_count() > 0 and _ve._preload_cuda_dlls():
             use_cuda = True
     except Exception:
         use_cuda = False
@@ -496,13 +497,26 @@ def transcribe_wav_with_faster_whisper(wav_path: Path, model_size: str = "small"
         model = WhisperModel(model_size, device="cpu", compute_type="int8")
 
     try:
-        segments, _ = model.transcribe(
-            str(wav_path),
-            language="vi",
-            beam_size=5,
-            vad_filter=True,
-        )
-        text = " ".join(seg.text.strip() for seg in segments if seg.text.strip()).strip()
+        try:
+            segments, _ = model.transcribe(
+                str(wav_path),
+                language="vi",
+                beam_size=5,
+                vad_filter=True,
+            )
+            text = " ".join(seg.text.strip() for seg in segments if seg.text.strip()).strip()
+        except Exception:
+            del model
+            gc.collect()
+            model = WhisperModel(model_size, device="cpu", compute_type="int8")
+            backend_used = "CPU (int8 fallback)"
+            segments, _ = model.transcribe(
+                str(wav_path),
+                language="vi",
+                beam_size=5,
+                vad_filter=True,
+            )
+            text = " ".join(seg.text.strip() for seg in segments if seg.text.strip()).strip()
     finally:
         del model
         gc.collect()

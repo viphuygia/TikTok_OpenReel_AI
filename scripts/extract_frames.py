@@ -64,6 +64,9 @@ def configure_windows_tool_paths() -> None:
     os.environ["PATH"] = current_path
 
 
+configure_windows_tool_paths()
+
+
 def find_binary(name: str) -> str:
     """Tìm binary ffmpeg hoặc ffprobe."""
     found = shutil.which(name)
@@ -193,6 +196,38 @@ def patch_av_open() -> None:
     av.open = compat_open
 
 
+def _preload_cuda_dlls() -> bool:
+    """Nạp sẵn CUDA/cuBLAS DLL trên Windows; trả về False nếu thiếu cublas64_12.dll."""
+    if os.name != "nt":
+        return True
+    import ctypes
+
+    configure_windows_tool_paths()
+    site_pkgs = Path(sys.executable).resolve().parent.parent / "Lib" / "site-packages"
+    search_dirs = [site_pkgs / "torch" / "lib", site_pkgs / "ctranslate2"]
+    nvidia_dir = site_pkgs / "nvidia"
+    if nvidia_dir.exists():
+        search_dirs.extend(p for p in nvidia_dir.glob("*/bin") if p.is_dir())
+
+    for d in search_dirs:
+        if not d.exists():
+            continue
+        for pat in ("cudart64_*.dll", "cublasLt64_12.dll", "cublas64_12.dll", "cudnn64_*.dll"):
+            for dll_p in d.glob(pat):
+                try:
+                    ctypes.WinDLL(str(dll_p))
+                except OSError:
+                    pass
+
+    for candidate in [*(d / "cublas64_12.dll" for d in search_dirs if d.exists()), Path("cublas64_12.dll")]:
+        try:
+            ctypes.WinDLL(str(candidate))
+            return True
+        except OSError:
+            continue
+    return False
+
+
 def load_whisper_model(model_size: str):
     """Khởi tạo Faster-Whisper, tự động ưu tiên CUDA nếu khả dụng, fallback sang CPU."""
     patch_av_open()
@@ -202,7 +237,7 @@ def load_whisper_model(model_size: str):
     try:
         import ctranslate2
 
-        if ctranslate2.get_cuda_device_count() > 0:
+        if ctranslate2.get_cuda_device_count() > 0 and _preload_cuda_dlls():
             use_cuda = True
     except Exception:
         use_cuda = False
@@ -226,8 +261,11 @@ def transcribe_video(
     video_path: Path,
     out_dir: Path,
     language: str,
+    model_size: str = "small",
 ) -> dict[str, Any]:
     """Tách âm thanh tạm và bóc lời thoại bằng Faster-Whisper."""
+    from faster_whisper import WhisperModel
+
     with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
         tmp_wav = Path(tmp.name)
 
@@ -251,25 +289,34 @@ def transcribe_video(
         ]
         subprocess.run(cmd, check=True)
 
-        segments_iter, info = whisper_model.transcribe(
-            str(tmp_wav),
-            language=language if language != "auto" else None,
-            beam_size=5,
-            vad_filter=True,
-            word_timestamps=True,
-        )
-        segments = []
-        for seg in segments_iter:
-            text = seg.text.strip()
-            if not text:
-                continue
-            segments.append(
-                {
-                    "start": round(float(seg.start), 3),
-                    "end": round(float(seg.end), 3),
-                    "text": text,
-                }
+        def _run_transcribe(mdl: Any) -> tuple[list[dict[str, Any]], Any]:
+            segments_iter, tr_info = mdl.transcribe(
+                str(tmp_wav),
+                language=language if language != "auto" else None,
+                beam_size=5,
+                vad_filter=True,
+                word_timestamps=True,
             )
+            out_segs: list[dict[str, Any]] = []
+            for seg in segments_iter:
+                text = seg.text.strip()
+                if not text:
+                    continue
+                out_segs.append(
+                    {
+                        "start": round(float(seg.start), 3),
+                        "end": round(float(seg.end), 3),
+                        "text": text,
+                    }
+                )
+            return out_segs, tr_info
+
+        try:
+            segments, info = _run_transcribe(whisper_model)
+        except Exception as exc:
+            print(f"  [Whisper WARN] Lỗi GPU ({exc}) -> Tự động chuyển sang CPU (int8)...")
+            cpu_model = WhisperModel(model_size, device="cpu", compute_type="int8")
+            segments, info = _run_transcribe(cpu_model)
     finally:
         if tmp_wav.exists():
             tmp_wav.unlink()
@@ -431,17 +478,26 @@ def main() -> int:
         meta["fps_extracted"] = args.fps
         meta["frames"] = frames
 
+        # Lưu metadata ngay sau khi trích xuất frames để không bị mất thông số nếu bước âm thanh lỗi
+        (video_out_dir / "metadata.json").write_text(
+            json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+
         transcript_data = None
         if should_transcribe and meta["has_audio"] and whisper_model is not None:
             print(f"  -> Đang bóc lời thoại gốc ({video_path.name})...")
-            transcript_data = transcribe_video(
-                ffmpeg_bin=ffmpeg_bin,
-                whisper_model=whisper_model,
-                video_path=video_path,
-                out_dir=video_out_dir,
-                language=args.language,
-            )
-            meta["transcript"] = transcript_data
+            try:
+                transcript_data = transcribe_video(
+                    ffmpeg_bin=ffmpeg_bin,
+                    whisper_model=whisper_model,
+                    video_path=video_path,
+                    out_dir=video_out_dir,
+                    language=args.language,
+                    model_size=args.whisper_model,
+                )
+                meta["transcript"] = transcript_data
+            except Exception as exc:
+                print(f"  [WARN] Bóc thoại thất bại cho {video_path.name}: {exc}")
 
         (video_out_dir / "metadata.json").write_text(
             json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8"

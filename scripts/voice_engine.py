@@ -487,6 +487,41 @@ def configure_runtime_paths() -> None:
     os.environ["PATH"] = current_path
 
 
+configure_runtime_paths()
+
+
+def _preload_cuda_dlls() -> bool:
+    """Nạp sẵn các DLL CUDA trên Windows; trả về False nếu thiếu cublas64_12.dll để chuyển CPU."""
+    if os.name != "nt":
+        return True
+    import ctypes
+
+    configure_runtime_paths()
+    site_pkgs = Path(sys.executable).resolve().parent.parent / "Lib" / "site-packages"
+    search_dirs = [site_pkgs / "torch" / "lib", site_pkgs / "ctranslate2"]
+    nvidia_dir = site_pkgs / "nvidia"
+    if nvidia_dir.exists():
+        search_dirs.extend(p for p in nvidia_dir.glob("*/bin") if p.is_dir())
+
+    for d in search_dirs:
+        if not d.exists():
+            continue
+        for pat in ("cudart64_*.dll", "cublasLt64_12.dll", "cublas64_12.dll", "cudnn64_*.dll"):
+            for dll_p in d.glob(pat):
+                try:
+                    ctypes.WinDLL(str(dll_p))
+                except OSError:
+                    pass
+
+    for candidate in [*(d / "cublas64_12.dll" for d in search_dirs if d.exists()), Path("cublas64_12.dll")]:
+        try:
+            ctypes.WinDLL(str(candidate))
+            return True
+        except OSError:
+            continue
+    return False
+
+
 def patch_torchaudio_load() -> None:
     """
     Monkey-patch torchaudio.load dùng soundfile làm fallback an toàn trên Windows
@@ -638,7 +673,7 @@ def load_whisper(model_size: str):
     try:
         import ctranslate2
 
-        if ctranslate2.get_cuda_device_count() > 0:
+        if ctranslate2.get_cuda_device_count() > 0 and _preload_cuda_dlls():
             use_cuda = True
     except Exception:
         use_cuda = False
@@ -653,12 +688,24 @@ def load_whisper(model_size: str):
 
 
 def transcribe_audio_text(wav_path: Path, model_size: str = "small") -> str:
+    from faster_whisper import WhisperModel
+
     model = load_whisper(model_size)
-    segments, _ = model.transcribe(
-        str(wav_path), language="vi", beam_size=5, vad_filter=True
-    )
-    text = " ".join(seg.text.strip() for seg in segments if seg.text.strip())
-    del model
+    try:
+        segments_iter, _ = model.transcribe(
+            str(wav_path), language="vi", beam_size=5, vad_filter=True
+        )
+        text = " ".join(seg.text.strip() for seg in segments_iter if seg.text.strip())
+    except Exception as exc:
+        print(f"  [WARN] Whisper CUDA transcribe lỗi ({exc}) -> Tự động chuyển sang CPU (int8)...")
+        del model
+        gc.collect()
+        model = WhisperModel(model_size, device="cpu", compute_type="int8")
+        segments_iter, _ = model.transcribe(
+            str(wav_path), language="vi", beam_size=5, vad_filter=True
+        )
+        text = " ".join(seg.text.strip() for seg in segments_iter if seg.text.strip())
+    model = None
     gc.collect()
     return text.strip()
 
@@ -924,20 +971,47 @@ def generate_srt_from_audio(
     prompt_hint: str,
     voice_beats_file: Path | None = None,
 ) -> int:
+    from faster_whisper import WhisperModel
+
     model = load_whisper(whisper_model_size)
+    segments: list[Any] = []
     # KHÔNG truyền kịch bản làm initial_prompt để tránh Whisper bỏ qua đoạn đầu audio
-    segments_iter, _ = model.transcribe(
-        str(wav_path),
-        language="vi",
-        beam_size=5,
-        vad_filter=True,
-        condition_on_previous_text=False,
-        word_timestamps=True,
-    )
-    segments = [
-        seg for seg in segments_iter
-        if not HALLUCINATION_RE.search(str(getattr(seg, "text", "") or ""))
-    ]
+    try:
+        segments_iter, _ = model.transcribe(
+            str(wav_path),
+            language="vi",
+            beam_size=5,
+            vad_filter=True,
+            condition_on_previous_text=False,
+            word_timestamps=True,
+        )
+        segments = [
+            seg for seg in segments_iter
+            if not HALLUCINATION_RE.search(str(getattr(seg, "text", "") or ""))
+        ]
+    except Exception as exc:
+        print(f"  [WARN] Whisper CUDA lỗi ({exc}) -> Tự động chuyển sang CPU (int8)...")
+        del model
+        model = None
+        gc.collect()
+        try:
+            model = WhisperModel(whisper_model_size, device="cpu", compute_type="int8")
+            segments_iter, _ = model.transcribe(
+                str(wav_path),
+                language="vi",
+                beam_size=5,
+                vad_filter=True,
+                condition_on_previous_text=False,
+                word_timestamps=True,
+            )
+            segments = [
+                seg for seg in segments_iter
+                if not HALLUCINATION_RE.search(str(getattr(seg, "text", "") or ""))
+            ]
+        except Exception as cpu_exc:
+            print(f"  [WARN] Whisper CPU fallback lỗi ({cpu_exc}) -> Dùng timing voice_beats.json...")
+            segments = []
+
     entries = build_tiktok_srt_entries(segments)
     words_out = extract_word_timestamps(segments)
 
@@ -957,7 +1031,7 @@ def generate_srt_from_audio(
     whisper_raw_path = srt_path.parent / "03_whisper_raw.json"
     whisper_raw_path.write_text(json.dumps(words_out, ensure_ascii=False, indent=2), encoding="utf-8")
 
-    del model
+    model = None
     gc.collect()
 
     # Luôn đồng bộ lại phụ đề từ display_text chuẩn trong voice_beats.json + mốc audio thật

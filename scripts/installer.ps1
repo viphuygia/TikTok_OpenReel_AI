@@ -52,18 +52,18 @@ function Write-Launchers([string]$rootDir, [int]$listenPort) {
 @echo off
 cd /d "%~dp0"
 if "%PORT%"=="" set PORT=$listenPort
-set PYT=%~dp003_voice_clone\venv\Scripts\python.exe
-if not exist "%PYT%" (
-    echo [ERROR] Khong tim thay 03_voice_clone\venv\Scripts\python.exe. Hay chay install.bat truoc!
-    pause
-    exit /b 1
-)
+set "PYT=%~dp003_voice_clone\venv\Scripts\python.exe"
+if not exist "%PYT%" goto :no_venv
 :loop
 echo [%date% %time%] Dang khoi dong TikTok Studio 24/7 tai http://0.0.0.0:%PORT% ...
 "%PYT%" -m uvicorn scripts.webapp.app:app --host 0.0.0.0 --port %PORT%
 echo [%date% %time%] Server da dung. Tu dong khoi dong lai sau 3 giay...
 timeout /t 3 /nobreak >nul
 goto loop
+:no_venv
+echo [ERROR] Khong tim thay "%PYT%". Hay chay install.bat truoc!
+pause
+exit /b 1
 "@
     [IO.File]::WriteAllText((Join-Path $rootDir "start_server_24_7.bat"), $start247, [Text.Encoding]::ASCII)
 
@@ -71,14 +71,16 @@ goto loop
 @echo off
 cd /d "%~dp0"
 if "%PORT%"=="" set PORT=$listenPort
-set PYT=%~dp003_voice_clone\venv\Scripts\python.exe
-if not exist "%PYT%" (
-    echo [ERROR] Khong tim thay venv. Hay chay install.bat truoc!
-    pause
-    exit /b 1
-)
+set "PYT=%~dp003_voice_clone\venv\Scripts\python.exe"
+if not exist "%PYT%" goto :no_venv
 start "" "http://127.0.0.1:%PORT%"
 "%PYT%" -m uvicorn scripts.webapp.app:app --host 0.0.0.0 --port %PORT%
+pause
+exit /b 0
+:no_venv
+echo [ERROR] Khong tim thay venv. Hay chay install.bat truoc!
+pause
+exit /b 1
 "@
     [IO.File]::WriteAllText((Join-Path $rootDir "start_studio.bat"), $startLocal, [Text.Encoding]::ASCII)
     Write-Ok "Da tao start_studio.bat & start_server_24_7.bat (Port: $listenPort)"
@@ -110,7 +112,7 @@ if ($CloneTo -ne "") {
         }
     }
     foreach ($fileRel in @(
-        "requirements.txt", "install.bat", "update.bat", "clone_new_channel.bat", "pack_portable.ps1", ".gitignore", "README.md",
+        "requirements.txt", "install.bat", "update.bat", "start_dashboard.bat", "start_server_24_7.bat", "start_studio.bat", "clone_new_channel.bat", "pack_portable.ps1", ".gitignore", "README.md",
         "remotion_studio\package.json", "remotion_studio\package-lock.json", "remotion_studio\tsconfig.json", "remotion_studio\remotion.config.ts",
         "hyperframes_studio\package.json", "hyperframes_studio\package-lock.json"
     )) {

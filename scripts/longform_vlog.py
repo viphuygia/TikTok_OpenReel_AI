@@ -144,6 +144,44 @@ def build_longform_timeline_plan(
     }
 
 
+def _extract_clip_preview_frame_b64(clip_abs_path: str, duration_sec: float) -> str:
+    """Grab 1 lightweight 360px JPEG frame at 35% of the clip duration as base64 for AI vision."""
+    import base64
+
+    ffmpeg_bin = find_binary("ffmpeg")
+    seek_t = round(max(0.0, float(duration_sec or 1.0) * 0.35), 2)
+    try:
+        proc = subprocess.run(
+            [
+                ffmpeg_bin,
+                "-y",
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-ss",
+                f"{seek_t:.2f}",
+                "-i",
+                str(clip_abs_path),
+                "-frames:v",
+                "1",
+                "-vf",
+                "scale=360:-1",
+                "-f",
+                "image2",
+                "-c:v",
+                "mjpeg",
+                "pipe:1",
+            ],
+            capture_output=True,
+            timeout=12,
+        )
+        if proc.returncode == 0 and proc.stdout:
+            return base64.b64encode(proc.stdout).decode("ascii")
+    except Exception:
+        pass
+    return ""
+
+
 def generate_longform_vlog_script(
     ordered_clips: list[dict[str, Any]],
     target_duration_sec: float,
@@ -169,17 +207,27 @@ def generate_longform_vlog_script(
                 f"cho video dài khoảng {target_duration_sec:.0f} giây (~{target_words} từ).\n"
                 f"Chủ đề / Ghi chú: {topic}\n"
                 f"Phong cách: {vibe_meta.get('prompt_hint') or vibe_meta.get('label')}\n"
-                f"Thứ tự các cảnh quay thực tế: {clip_summary}\n"
+                f"Thứ tự các cảnh quay thực tế (tương ứng các ảnh đính kèm theo thứ tự thời gian): {clip_summary}\n"
                 "Yêu cầu bắt buộc:\n"
-                "- Viết thành các đoạn văn liền mạch theo đúng trình tự Mở đầu -> Diễn biến từng cảnh -> Cảm nhận & Kết.\n"
+                "- Quan sát các khung hình đính kèm và viết thành các đoạn văn liền mạch mô tả sát bối cảnh thực tế theo đúng trình tự Mở đầu -> Diễn biến từng cảnh -> Cảm nhận & Kết.\n"
                 "- Chỉ trả về văn bản lời đọc thuần túy (không tiêu đề markdown, không số thứ tự, không ngoặc chú thích).\n"
                 "- TUYỆT ĐỐI KHÔNG nhắc giỏ hàng, chốt đơn, freeship hay bán hàng.\n"
                 f"- Câu kết nhẹ nhàng tự nhiên: {vibe_meta.get('cta_default')}"
             )
+            content_parts: list[dict[str, Any]] = [{"text": prompt}]
+            sample_clips = ordered_clips[:8]
+            if len(ordered_clips) > 8:
+                step = len(ordered_clips) / 8.0
+                sample_clips = [ordered_clips[int(i * step)] for i in range(8)]
+            for sc in sample_clips:
+                b64 = _extract_clip_preview_frame_b64(str(sc.get("abs_path") or ""), float(sc.get("duration_sec") or 2.0))
+                if b64:
+                    content_parts.append({"inline_data": {"mime_type": "image/jpeg", "data": b64}})
+
             url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
             req = urllib.request.Request(
                 url,
-                data=json.dumps({"contents": [{"parts": [{"text": prompt}]}]}).encode("utf-8"),
+                data=json.dumps({"contents": [{"parts": content_parts}]}).encode("utf-8"),
                 headers={"Content-Type": "application/json"},
                 method="POST",
             )
@@ -208,9 +256,19 @@ def generate_longform_vlog_script(
         outro = f"Một hành trình thật trọn vẹn và nhiều tiếng cười. {vibe_meta.get('cta_default') or 'Cảm ơn mọi người đã xem hết video nha.'}"
 
         sentences = [intro]
+        total_clip_dur = max(1.0, sum(float(c.get("duration_sec") or 1.0) for c in ordered_clips))
         approx_sentences = max(4, min(65, int(round(target_words / 24))))
-        for si in range(approx_sentences):
-            sentences.append(chapter_templates[si % len(chapter_templates)])
+        sent_idx = 0
+        for ci, cl in enumerate(ordered_clips):
+            share = max(1, int(round((float(cl.get("duration_sec") or 1.0) / total_clip_dur) * approx_sentences)))
+            for _ in range(share):
+                if len(sentences) - 1 >= approx_sentences:
+                    break
+                sentences.append(chapter_templates[sent_idx % len(chapter_templates)])
+                sent_idx += 1
+        while len(sentences) - 1 < approx_sentences:
+            sentences.append(chapter_templates[sent_idx % len(chapter_templates)])
+            sent_idx += 1
         sentences.append(outro)
         display_text = " ".join(sentences)
 
