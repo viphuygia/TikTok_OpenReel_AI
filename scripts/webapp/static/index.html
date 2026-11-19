@@ -246,22 +246,31 @@
               <select id="longform-duration-sec" class="w-full rounded-lg bg-zinc-950 border border-zinc-700 px-2.5 py-2 text-xs text-zinc-100">
                 <option value="120">2 phút (120 giây)</option>
                 <option value="180">3 phút (180 giây)</option>
-                <option value="300">5 phút (300 giây)</option>
-                <option value="600" selected>10 phút (600 giây · Khuyên dùng)</option>
+                <option value="300" selected>5 phút (300 giây · Khuyên dùng)</option>
+                <option value="600">10 phút (600 giây)</option>
                 <option value="900">15 phút (900 giây)</option>
                 <option value="1200">20 phút (1200 giây)</option>
               </select>
             </div>
-            <div class="flex flex-col gap-1.5 pb-1">
-              <label class="flex items-center gap-2 text-amber-100 cursor-pointer">
-                <input id="chk-longform-autofit" type="checkbox" class="rounded bg-zinc-800 border-amber-500 text-amber-500" />
-                <span>🎯 Tự khớp theo tổng độ dài clip đã quay</span>
-              </label>
-              <label class="flex items-center gap-2 text-emerald-200 cursor-pointer">
-                <input id="chk-longform-keep-audio" type="checkbox" checked class="rounded bg-zinc-800 border-emerald-500 text-emerald-500" />
-                <span>🎙️ Giữ thêm âm thanh gốc clip (tiếng gió/nước/nói)</span>
-              </label>
+            <div class="min-w-0">
+              <label class="block text-[11px] text-cyan-200 font-medium mb-1">💎 Chất lượng Xuất (Nét 4K &amp; Remotion Motion)</label>
+              <select id="longform-quality" class="w-full rounded-lg bg-zinc-950 border border-zinc-700 px-2.5 py-2 text-xs text-zinc-100">
+                <option value="auto_source" selected>🔥 Tự động theo gốc (Giữ 4K nếu nguồn 4K)</option>
+                <option value="4k">💎 4K UHD (3840×2160 / 2160×3840)</option>
+                <option value="2k">✨ 2K QHD (2560×1440 / 1440×2560)</option>
+                <option value="1080p">📺 Full HD 1080p (Nhẹ &amp; Nhanh)</option>
+              </select>
             </div>
+          </div>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-0.5">
+            <label class="flex items-center gap-2 text-amber-100 cursor-pointer">
+              <input id="chk-longform-autofit" type="checkbox" class="rounded bg-zinc-800 border-amber-500 text-amber-500" />
+              <span>🎯 Tự khớp theo tổng độ dài clip đã quay</span>
+            </label>
+            <label class="flex items-center gap-2 text-emerald-200 cursor-pointer">
+              <input id="chk-longform-keep-audio" type="checkbox" checked class="rounded bg-zinc-800 border-emerald-500 text-emerald-500" />
+              <span>🎙️ Giữ thêm âm thanh gốc (tự nhỏ lại khi AI nói)</span>
+            </label>
           </div>
           <div class="space-y-1.5">
             <div class="flex items-center justify-between">
@@ -270,9 +279,15 @@
             </div>
             <div id="longform-clip-list" class="max-h-40 overflow-y-auto space-y-1 pr-1"></div>
           </div>
-          <div>
-            <label class="block text-[11px] text-amber-200 font-medium mb-1">📝 Chủ đề / Bối cảnh Vlog (Để AI viết lời bình sát nội dung)</label>
-            <input id="longform-topic-note" type="text" placeholder="vd: Cắm trại cuối tuần bên hồ Trị An, nấu ăn và chill cùng bạn bè..." class="w-full rounded-lg bg-zinc-950 border border-zinc-700 px-2.5 py-2 text-xs text-zinc-100 placeholder-zinc-500" />
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+            <div>
+              <label class="block text-[11px] text-amber-200 font-medium mb-1">🎬 Tiêu đề Intro Vlog (Tùy chọn)</label>
+              <input id="longform-title" type="text" placeholder="Để trống để AI tự đặt tiêu đề hay..." class="w-full rounded-lg bg-zinc-950 border border-zinc-700 px-2.5 py-2 text-xs text-zinc-100 placeholder-zinc-500" />
+            </div>
+            <div>
+              <label class="block text-[11px] text-amber-200 font-medium mb-1">📝 Chủ đề / Bối cảnh Vlog (Để AI viết sát cảnh)</label>
+              <input id="longform-topic-note" type="text" placeholder="vd: Cắm trại cuối tuần bên hồ, nấu ăn & chill..." class="w-full rounded-lg bg-zinc-950 border border-zinc-700 px-2.5 py-2 text-xs text-zinc-100 placeholder-zinc-500" />
+            </div>
           </div>
         </div>
 
@@ -4364,6 +4379,8 @@
       const sfx_level = document.getElementById('auto-sfx-level')?.value || 'subtle';
       const aspect_ratio = document.getElementById('auto-aspect-ratio')?.value || '9:16';
       const content_vibe = document.getElementById('auto-content-vibe')?.value || 'learned_dna';
+      const quality_preset = isLongVlog ? (document.getElementById('longform-quality')?.value || 'auto_source') : 'auto_source';
+      const vlog_title = isLongVlog ? (document.getElementById('longform-title')?.value?.trim() || '') : '';
       _lastAutoTab = null;
       try {
         const p = await api('/api/pipeline/run-all', {
@@ -4402,6 +4419,8 @@
             ordered_clips,
             keep_clip_audio,
             auto_fit_duration,
+            quality_preset,
+            vlog_title,
             project_ids: projectIds,
             sync: false
           })

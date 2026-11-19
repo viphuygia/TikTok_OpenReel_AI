@@ -1200,9 +1200,6 @@ class OneClickPipelineReq(BaseModel):
     disable_flash_shake: bool = True
     icon_density: str = "balanced"
     sticker_density: str = "normal"
-    sfx_level: str = "subtle"
-    aspect_ratio: str = "9:16"
-    content_vibe: str = "learned_dna"
     mix_engines: bool = False
     creative_wildcard: bool = False
     tts_engine: str = "edge_tts"
@@ -1213,6 +1210,10 @@ class OneClickPipelineReq(BaseModel):
     content_vibe: str = "learned_dna"
     pipeline_category: str = "short_tiktok"
     ordered_clips: list[str] = Field(default_factory=list)
+    keep_clip_audio: bool = False
+    auto_fit_duration: bool = False
+    quality_preset: str = "auto_source"
+    vlog_title: str = ""
     keep_clip_audio: bool = False
     auto_fit_duration: bool = False
     project_ids: list[str] = Field(default_factory=list)
@@ -5105,8 +5106,9 @@ def _build_fallback_script_from_brief(brief: dict[str, Any], target_dur: float) 
 
 
 def _execute_longform_vlog_pipeline(req: OneClickPipelineReq) -> None:
-    """Dedicated pipeline for Clip Dai / Vlog Timeline (> 90s up to 20 min) with strict chronological order."""
+    """Broadcast-Quality 4K Hybrid Remotion + FFmpeg Master Pipeline for Long-Form Vlog (>90s to 20m)."""
     import longform_vlog as _lf
+    import style_dna as _sd
     import voice_engine as _ve
 
     req_aspect = str(getattr(req, "aspect_ratio", "16:9") or "16:9").strip()
@@ -5115,23 +5117,25 @@ def _execute_longform_vlog_pipeline(req: OneClickPipelineReq) -> None:
     req_vibe = str(getattr(req, "content_vibe", "outdoor_picnic") or "outdoor_picnic").strip()
     if req_vibe == "learned_dna":
         req_vibe = "outdoor_picnic"
+    req_quality = str(getattr(req, "quality_preset", "auto_source") or "auto_source").strip()
+    req_vlog_title = str(getattr(req, "vlog_title", "") or "").strip()
 
     with PIPELINE_LOCK:
         PIPELINE_STATE["steps"] = [
-            {"id": 1, "tab": "tab4", "label": "Bước 1: Quét Video Thô & Khóa Thứ Tự Timeline", "status": "idle", "detail": ""},
-            {"id": 2, "tab": "tab4", "label": "Bước 2: Viết Lời Bình Vlog Theo Chương", "status": "idle", "detail": ""},
-            {"id": 3, "tab": "tab4", "label": "Bước 3: Tạo 1 Giọng Đọc AI & Phụ Đề", "status": "idle", "detail": ""},
-            {"id": 4, "tab": "tab4", "label": f"Bước 4: Căn & Nối Clip {req_aspect} (FFmpeg Timeline)", "status": "idle", "detail": ""},
-            {"id": 5, "tab": "tab5", "label": f"Bước 5: Xuất MP4 Vlog Dài {req_aspect} vào Kho Video", "status": "idle", "detail": ""},
+            {"id": 1, "tab": "tab4", "label": "Bước 1: Quét Clip & Cắt Nhịp Highlight Timeline", "status": "idle", "detail": ""},
+            {"id": 2, "tab": "tab4", "label": "Bước 2: AI Viết Kịch Bản Theo Chương (Không Lặp)", "status": "idle", "detail": ""},
+            {"id": 3, "tab": "tab4", "label": "Bước 3: Tạo 1 Giọng Đọc Có Nhịp Nghỉ & Phụ Đề", "status": "idle", "detail": ""},
+            {"id": 4, "tab": "tab4", "label": f"Bước 4: Render Remotion Intro/Ending & Master {req_aspect}", "status": "idle", "detail": ""},
+            {"id": 5, "tab": "tab5", "label": f"Bước 5: Xuất MP4 Chất Lượng Cao vào Kho Video", "status": "idle", "detail": ""},
         ]
 
     _update_pipeline(
         current_step=1,
         current_tab="tab4",
         percent=10,
-        message="Bước 1/5 (Timeline Vlog): Quét video thô & khóa thứ tự thời gian...",
-        step_status=(1, "running", "Khóa thứ tự Timeline"),
-        log_line="[Clip Dài > 90s] Quét clip trong 02_video_tho/ theo đúng thứ tự Timeline...",
+        message="Bước 1/5 (Timeline Vlog): Quét video thô 4K & chia shot highlight theo đúng thứ tự...",
+        step_status=(1, "running", "Chia shot Highlight"),
+        log_line="[Clip Dài > 90s] Quét clip 02_video_tho/ & chia nhịp highlight 4.5-8.5s theo thứ tự thời gian...",
     )
     ordered = _lf.collect_ordered_raw_clips(DIR_VIDEO_THO, ordered_names=req.ordered_clips or None)
     if not ordered:
@@ -5139,23 +5143,27 @@ def _execute_longform_vlog_pipeline(req: OneClickPipelineReq) -> None:
 
     plan = _lf.build_longform_timeline_plan(
         ordered,
-        target_duration_sec=float(req.target_duration_sec or 600.0),
+        target_duration_sec=float(req.target_duration_sec or 300.0),
         auto_fit_duration=bool(getattr(req, "auto_fit_duration", False)),
         aspect_ratio=req_aspect,
+        quality_preset=req_quality,
     )
     actual_target = float(plan["target_duration_sec"])
+    n_shots = len(plan.get("segments") or [])
+    n_chaps = len(plan.get("chapters") or [])
+    q_label = str(plan.get("quality_label") or req_quality)
     _update_pipeline(
-        step_status=(1, "done", f"{len(ordered)} clip · {actual_target:.0f}s"),
+        step_status=(1, "done", f"{n_shots} cảnh · {n_chaps} chương · {q_label}"),
         percent=22,
-        log_line=f"[Bước 1/5] Đã khóa {len(plan['segments'])} đoạn đúng thứ tự ({req_aspect}, tổng {actual_target:.0f}s).",
+        log_line=f"[Bước 1/5] Đã chia {n_shots} cảnh vào {n_chaps} chương ({req_aspect} {q_label}, {actual_target:.0f}s).",
     )
 
     _update_pipeline(
         current_step=2,
         percent=30,
-        message=f"Bước 2/5 (Kịch Bản Vlog): Đang viết lời kể liền mạch cho {actual_target:.0f}s...",
-        step_status=(2, "running", f"~{actual_target:.0f}s"),
-        log_line="[Bước 2/5] Tạo lời bình Vlog theo chương (không giỏ hàng/chốt đơn)...",
+        message=f"Bước 2/5 (Kịch Bản Chương): AI đang xem khung hình & viết {n_chaps} chương có nhịp nghỉ...",
+        step_status=(2, "running", f"{n_chaps} Chương · ~{actual_target:.0f}s"),
+        log_line="[Bước 2/5] Tạo kịch bản Vlog chia chương (chừa khoảng thở B-roll, chống lặp câu)...",
     )
     cfg = load_config()
     api_key = str(cfg.get("gemini_api_key") or "").strip()
@@ -5171,60 +5179,78 @@ def _execute_longform_vlog_pipeline(req: OneClickPipelineReq) -> None:
                 mode="auto",
                 disable_slash_commands=True,
                 timeout=240,
-            ).get("text")
+            ).get("response")
             or ""
         )
-    disp_txt, tts_txt = _lf.generate_longform_vlog_script(
-        ordered,
-        target_duration_sec=actual_target,
+    ch_script = _lf.generate_longform_chapter_script(
+        plan=plan,
+        ordered_clips=ordered,
         topic_note=req.product_note or "",
         content_vibe=req_vibe,
+        vlog_title=req_vlog_title,
         gemini_api_key=api_key,
         agy_caller=agy_caller,
         preview_dir=DIR_WORKSPACE / "frames" / "longform_preview",
     )
+    (DIR_WORKSPACE / "longform_chapters.json").write_text(
+        json.dumps(ch_script, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    disp_txt = " ".join(
+        blk["text"] for ch in ch_script.get("chapters") or [] for blk in ch.get("narration_blocks") or []
+    ).strip()
+    tts_txt = _sd.convert_display_to_tts_script(disp_txt)
     FILE_SCRIPT.write_text(tts_txt + "\n", encoding="utf-8")
     (DIR_WORKSPACE / "kich_ban_hien_thi.md").write_text(disp_txt + "\n", encoding="utf-8")
+    ai_src_lbl = str(ch_script.get("ai_source") or "ai")
     _update_pipeline(
-        step_status=(2, "done", f"{len(tts_txt.split())} từ · Vlog OK"),
-        percent=42,
+        step_status=(2, "done", f"{len(disp_txt.split())} từ ({ai_src_lbl})"),
+        percent=44,
+        log_line=f"[Bước 2/5] Xong kịch bản {n_chaps} chương ({ai_src_lbl}): {ch_script.get('video_title')} · {len(disp_txt.split())} từ.",
     )
 
     _update_pipeline(
         current_step=3,
         percent=50,
-        message="Bước 3/5 (Giọng Đọc Đồng Bộ): Đang tạo 1 giọng đọc AI duy nhất xuyên suốt...",
-        step_status=(3, "running", "1 Giọng xuyên suốt"),
-        log_line="[Bước 3/5] Tạo giọng đọc AI đồng bộ toàn video...",
+        message="Bước 3/5 (Giọng Đọc Nhịp Thở): Đang ghép lời bình đúng mốc chương & chừa khoảng nghỉ B-roll...",
+        step_status=(3, "running", "Giọng + Nhịp nghỉ 4-7s"),
+        log_line="[Bước 3/5] Tạo 1 giọng đọc xuyên suốt theo mốc chương & đồng bộ phụ đề SRT...",
     )
     sync_voice_clone_files()
     vp = str(getattr(req, "voice_preset", "") or "edge_hoaimy_koc").strip()
     if vp.startswith("random_"):
         vp = _ve.pick_random_voice_presets(vp, count=1)[0]["id"]
-    tts_res = run_python_script(
-        "scripts/voice_engine.py",
-        [
-            "--script",
-            "04_workspace/kich_ban.txt",
-            "--voice-preset",
-            vp,
-            "--whisper-model",
-            "small",
-            "--target-duration",
-            f"{actual_target:.2f}",
-        ],
+    voice_res = _lf.build_longform_voice_and_srt(
+        chapter_script=ch_script,
+        plan=plan,
+        out_wav_path=FILE_TTS_WAV,
+        out_srt_path=FILE_TTS_SRT,
+        voice_preset=vp,
     )
-    if not tts_res.get("ok"):
-        raise RuntimeError(f"voice_engine.py lỗi: {tts_res.get('log', '')[-400:]}")
-    _update_pipeline(step_status=(3, "done", "Giọng & Phụ đề OK"), percent=66)
+    _update_pipeline(
+        step_status=(3, "done", f"{voice_res['placed_blocks']} đoạn · {voice_res['srt_lines']} dòng SRT"),
+        percent=66,
+        log_line=f"[Bước 3/5] Hoàn tất giọng ({voice_res['preset_label']}), chừa nhịp thở B-roll & {voice_res['srt_lines']} dòng phụ đề.",
+    )
 
     _update_pipeline(
         current_step=4,
         percent=72,
-        message="Bước 4/5 (Dựng Video Dài FFmpeg): Đang nối clip đúng thứ tự, trộn BGM & phụ đề...",
-        step_status=(4, "running", "FFmpeg Timeline"),
-        log_line="[Bước 4/5] Đang xuất MP4 bằng FFmpeg Timeline Engine...",
+        message=f"Bước 4/5 (Remotion + Master {q_label}): Render Intro, Thẻ Chương, Ending & xuất {req_aspect}...",
+        step_status=(4, "running", f"Remotion + {q_label}"),
+        log_line="[Bước 4/5] Render Motion Graphics bằng Remotion (Intro/Chapter/Outro) và Master bằng FFmpeg...",
     )
+    ch_prof = api_get_channel_profile()
+    ch_name = str(ch_prof.get("name") or "VLOG JOURNAL").strip()
+    ov_dir = DIR_WORKSPACE / "vlog_overlays"
+    shutil.rmtree(ov_dir, ignore_errors=True)
+    overlays = _lf.render_vlog_remotion_overlays(
+        plan=plan,
+        chapter_script=ch_script,
+        out_dir=ov_dir,
+        aspect_ratio=req_aspect,
+        channel_name=ch_name,
+    )
+
     bgm_name = str(req.bgm_track or "bgm_upbeat_tiktok.wav").strip()
     bgm_file = PROJECT_ROOT / "06_assets_audio" / "bgm" / Path(bgm_name).name
     if not bgm_file.exists():
@@ -5232,7 +5258,7 @@ def _execute_longform_vlog_pipeline(req: OneClickPipelineReq) -> None:
         bgm_file = bgm_cand[0] if bgm_cand else bgm_file
 
     DIR_OUTPUT.mkdir(parents=True, exist_ok=True)
-    out_mp4 = DIR_OUTPUT / f"VLOG_{int(round(actual_target))}s_{req_aspect.replace(':', 'x')}_{int(time.time())}.mp4"
+    out_mp4 = DIR_OUTPUT / f"VLOG_{int(round(actual_target))}s_{req_aspect.replace(':', 'x')}_{q_label.split()[0]}_{int(time.time())}.mp4"
 
     render_res = _lf.render_longform_ffmpeg_vlog(
         plan=plan,
@@ -5240,24 +5266,33 @@ def _execute_longform_vlog_pipeline(req: OneClickPipelineReq) -> None:
         srt_path=FILE_TTS_SRT if FILE_TTS_SRT.exists() else None,
         bgm_path=bgm_file if bgm_file.exists() else None,
         output_mp4=out_mp4,
-        bgm_volume=0.14,
+        overlays=overlays,
+        bgm_volume=0.20,
         keep_clip_audio=bool(getattr(req, "keep_clip_audio", False)),
     )
-    _update_pipeline(step_status=(4, "done", f"{req_aspect} · Nối & Master OK"), percent=92)
+    _update_pipeline(
+        step_status=(4, "done", f"{q_label} · {render_res['overlays_count']} Motion OK"),
+        percent=94,
+    )
     _update_pipeline(
         running=False,
         current_step=5,
         percent=100,
-        message=f"Hoàn tất Clip Dài ({render_res['duration_sec']:.0f}s · {out_mp4.name})!",
-        step_status=(5, "done", f"{render_res['duration_sec']:.0f}s OK"),
+        message=f"Hoàn tất Vlog {q_label} ({render_res['duration_sec']:.0f}s · {out_mp4.name})!",
+        step_status=(5, "done", f"{q_label} · {render_res['duration_sec']:.0f}s"),
         result={
             "ok": True,
             "output_file": str(out_mp4),
             "output_url": f"/files/05_output/{out_mp4.name}",
             "duration_sec": render_res["duration_sec"],
             "aspect_ratio": req_aspect,
+            "quality_label": q_label,
+            "ai_source": ai_src_lbl,
+            "segments_count": n_shots,
+            "chapters_count": n_chaps,
+            "overlays_count": render_res["overlays_count"],
         },
-        log_line=f"[HOÀN TẤT] Đã xuất Vlog dài: {out_mp4.name} ({render_res['duration_sec']:.1f}s)",
+        log_line=f"[HOÀN TẤT] Xuất Vlog {q_label} ({n_shots} cảnh, {n_chaps} chương, {render_res['overlays_count']} Remotion motion): {out_mp4.name}",
     )
 
 

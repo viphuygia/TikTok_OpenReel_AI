@@ -2,6 +2,10 @@ import React from 'react';
 import { Composition } from 'remotion';
 import { TikTokComposition } from './TikTokComposition';
 import { InnovationComposition } from './templates/innovation/InnovationComposition';
+import { VlogIntro } from './templates/vlog/VlogIntro';
+import { VlogChapterCard } from './templates/vlog/VlogChapterCard';
+import { VlogOutro } from './templates/vlog/VlogOutro';
+import { VlogIntroProps, VlogChapterProps, VlogOutroProps } from './templates/vlog/types';
 import { TikTokVideoProps } from './types';
 
 const defaultProps: TikTokVideoProps = {
@@ -59,6 +63,47 @@ export const RemotionRoot: React.FC = () => {
     };
   };
 
+  const calcVlogMeta = ({ props }: { props: Record<string, unknown> }) => {
+    const fps = 30;
+    const typed = props as { durationSec?: number; width?: number; height?: number; aspectRatio?: string };
+    const durationSec = Math.max(1.5, Number(typed.durationSec) || 4.5);
+    const isPortrait = typed.aspectRatio === '9:16' || (Number(typed.height) > 0 && Number(typed.height) > Number(typed.width || 0));
+    const width = Number(typed.width) || (isPortrait ? 1080 : 1920);
+    const height = Number(typed.height) || (isPortrait ? 1920 : 1080);
+    return {
+      durationInFrames: Math.round(durationSec * fps),
+      fps,
+      width,
+      height,
+    };
+  };
+
+  const defaultVlogIntro: VlogIntroProps = {
+    title: 'CHUYẾN ĐI ĐÁNG NHỚ',
+    subtitle: 'Nhật ký hành trình & khoảnh khắc',
+    badgeText: 'VLOG JOURNAL · 4K',
+    accentColor: '#F59E0B',
+    durationSec: 4.5,
+    aspectRatio: '16:9',
+  };
+  const defaultVlogChapter: VlogChapterProps = {
+    chapterNumber: '01',
+    title: 'KHỞI HÀNH',
+    subtitle: 'Những bước chuẩn bị đầu tiên',
+    accentColor: '#34D399',
+    durationSec: 3.5,
+    aspectRatio: '16:9',
+  };
+  const defaultVlogOutro: VlogOutroProps = {
+    title: 'CẢM ƠN BẠN ĐÃ ĐỒNG HÀNH!',
+    subtitle: 'Hẹn gặp lại trong những hành trình tiếp theo',
+    ctaText: 'Lưu lại cuối tuần đi thử nha!',
+    channelName: 'VLOG JOURNAL',
+    accentColor: '#F59E0B',
+    durationSec: 6.0,
+    aspectRatio: '16:9',
+  };
+
   return (
     <>
       <Composition
@@ -80,6 +125,36 @@ export const RemotionRoot: React.FC = () => {
         height={1920}
         defaultProps={defaultProps}
         calculateMetadata={calcMeta}
+      />
+      <Composition
+        id="VlogIntro"
+        component={VlogIntro}
+        durationInFrames={135}
+        fps={30}
+        width={1920}
+        height={1080}
+        defaultProps={defaultVlogIntro}
+        calculateMetadata={calcVlogMeta}
+      />
+      <Composition
+        id="VlogChapterCard"
+        component={VlogChapterCard}
+        durationInFrames={105}
+        fps={30}
+        width={1920}
+        height={1080}
+        defaultProps={defaultVlogChapter}
+        calculateMetadata={calcVlogMeta}
+      />
+      <Composition
+        id="VlogOutro"
+        component={VlogOutro}
+        durationInFrames={180}
+        fps={30}
+        width={1920}
+        height={1080}
+        defaultProps={defaultVlogOutro}
+        calculateMetadata={calcVlogMeta}
       />
     </>
   );

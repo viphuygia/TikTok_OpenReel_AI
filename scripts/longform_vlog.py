@@ -1,34 +1,133 @@
 #!/usr/bin/env python3
-"""Long-Form Vlog Timeline Engine (> 90s, up to 20 minutes) with chronological clip ordering & unified style."""
+"""Broadcast-Quality Long-Form Vlog Engine (>90s to 20m) — Hybrid Remotion Overlays + 4K FFmpeg Master."""
 
 from __future__ import annotations
 
+import asyncio
+import base64
+from difflib import SequenceMatcher
 import json
 import os
+from pathlib import Path
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import time
-from pathlib import Path
 from typing import Any
+import wave
+
+import numpy as np
+import soundfile as sf
 
 import style_dna as _sd
+import voice_engine as _ve
 from prepare_clips import find_binary, probe_duration
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
+DIR_REMOTION = PROJECT_ROOT / "remotion_studio"
 MEDIA_VIDEO_EXTS = (".mp4", ".mov", ".mkv", ".avi", ".webm", ".m4v")
+
+FALLBACK_VLOG_POOL: dict[str, list[str]] = {
+    "opening": [
+        "Cuối cùng cũng có một ngày thật thảnh thơi để tạm gác công việc sang một bên và xách máy lên đường.",
+        "Hôm nay tụi mình chọn khởi hành sớm một chút để kịp đón ánh nắng dịu nhất và tận hưởng không khí trong lành.",
+        "Chỉ cần rời khỏi nhịp sống ồn ào vài tiếng đồng hồ thôi là tâm trạng đã thấy nhẹ nhàng và háo hức hơn hẳn.",
+        "Mọi thứ đã chuẩn bị gọn gàng từ tối hôm trước, bây giờ chỉ việc tận hưởng trọn vẹn từng khoảnh khắc phía trước.",
+    ],
+    "journey": [
+        "Đoạn đường di chuyển buổi sáng thoáng đãng hơn mong đợi, hai bên cảnh vật thay đổi dần mang lại cảm giác rất dễ chịu.",
+        "Đi chậm lại một nhịp để ngắm nhìn khung cảnh dọc đường giúp chuyến đi trở nên thú vị ngay từ những phút đầu tiên.",
+        "Ánh sáng xuyên qua tán cây tạo nên những mảng màu tự nhiên, lên khung hình nhìn cực kỳ có chiều sâu.",
+        "Tiếng gió nhẹ và bầu không khí mát mẻ khiến ai nấy trong nhóm đều quên hết cảm giác mệt mỏi thường ngày.",
+        "Càng đi sâu vào không gian ngoài trời, mọi âm thanh dường như trở nên rõ nét và bình yên hơn rất nhiều.",
+    ],
+    "discovery": [
+        "Vừa đặt chân tới nơi, ấn tượng đầu tiên chính là khoảng không gian mở rộng rãi và cực kỳ thoáng đãng.",
+        "Mỗi góc nhỏ ở đây đều có nét riêng, chỉ cần đưa máy lên đúng hướng sáng là đã thu được những thước phim ưng ý.",
+        "Tụi mình dành ít phút đi dạo một vòng quan sát xung quanh trước khi chọn vị trí đẹp nhất để dừng chân.",
+        "Góc nhìn từ khu vực này bao quát được cả khung cảnh rộng lớn, rất hợp để giữ lại làm điểm nhấn cho vlog hôm nay.",
+        "Không gian gần gũi với thiên nhiên mang lại cảm giác thư thái mà hiếm khi tìm thấy giữa phố thị đông đúc.",
+    ],
+    "activity": [
+        "Bắt tay vào chuẩn bị mọi thứ cùng nhau luôn là phần vui và nhiều tiếng cười nhất trong mỗi chuyến đi.",
+        "Từng công đoạn nhỏ được chia nhau làm gọn gàng, vừa làm vừa trò chuyện nên chẳng mấy chốc đã tươm tất.",
+        "Khi mọi đồ đạc đã vào đúng vị trí, cả khu vực nhỏ trông ấm cúng và tràn đầy sức sống hẳn lên.",
+        "Mùi thơm lan tỏa hòa cùng tiếng nói cười xung quanh khiến không khí trở nên gần gũi và đáng nhớ vô cùng.",
+        "Những khoảnh khắc tự nhiên không cần diễn xuất này chính là điều khiến tụi mình thích quay vlog lưu lại nhất.",
+        "Thử thưởng thức thành quả ngay tại chỗ giữa khung cảnh thoáng mát mang lại cảm giác ngon và trọn vị hơn hẳn.",
+    ],
+    "relaxation": [
+        "Sau khi mọi thứ xong xuôi là khoảng thời gian lặng lẽ ngồi nghỉ ngơi, nhâm nhi chút đồ uống và ngắm cảnh.",
+        "Không cần lịch trình dày đặc, chỉ ngồi trò chuyện rôm rả với bạn bè như vậy cũng đủ thấy ngày cuối tuần thật giá trị.",
+        "Khoảnh khắc ngồi thư giãn lắng nghe âm thanh tự nhiên xung quanh giúp đầu óc được nạp lại năng lượng hoàn toàn.",
+        "Gió thổi nhè nhẹ khiến buổi chiều trôi qua êm ả, nhìn lại từng đoạn quay đều thấy rõ sự thoải mái trên nét mặt mọi người.",
+        "Có những buổi chiều bình yên thế này mới thấy đôi khi hạnh phúc chỉ nằm ở những điều thật giản đơn.",
+    ],
+    "golden_hour": [
+        "Càng về cuối buổi chiều, ánh nắng dịu xuống chuyển sang sắc vàng ấm áp phủ khắp không gian.",
+        "Đây luôn là khung giờ đẹp nhất trong ngày để ghi lại những cú máy ngược sáng đầy cảm xúc.",
+        "Bầu trời chuyển màu chậm rãi báo hiệu một ngày trải nghiệm tuyệt vời sắp khép lại.",
+        "Từng chi tiết nhỏ dưới ánh hoàng hôn đều trở nên mềm mại và điện ảnh hơn mà không cần chỉnh sửa quá nhiều.",
+    ],
+    "closing": [
+        "Thu dọn gọn gàng trước khi ra về để giữ không gian luôn sạch đẹp như lúc tụi mình mới đặt chân tới.",
+        "Một ngày rời xa màn hình và tận hưởng trọn vẹn ngoài trời đã khép lại với thật nhiều kỷ niệm đẹp.",
+        "Cảm ơn bạn đã dành thời gian đồng hành cùng tụi mình từ đầu tới cuối thước phim này.",
+        "Nếu thấy thích không khí của chuyến đi hôm nay, đừng quên lưu video và hẹn gặp bạn ở tập tiếp theo nhé.",
+    ],
+}
 
 
 def _natural_sort_key(name: str) -> list[Any]:
     return [int(tok) if tok.isdigit() else tok.lower() for tok in re.split(r"(\d+)", name)]
 
 
+def _probe_video_meta(ffprobe_bin: str, video_path: Path) -> dict[str, Any]:
+    meta = {"duration_sec": 5.0, "width": 1920, "height": 1080}
+    try:
+        res = subprocess.run(
+            [
+                ffprobe_bin,
+                "-v",
+                "error",
+                "-select_streams",
+                "v:0",
+                "-show_entries",
+                "stream=width,height:format=duration",
+                "-of",
+                "json",
+                str(video_path),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        if res.returncode == 0 and res.stdout:
+            parsed = json.loads(res.stdout)
+            streams = parsed.get("streams") or []
+            if streams:
+                meta["width"] = int(streams[0].get("width") or 1920)
+                meta["height"] = int(streams[0].get("height") or 1080)
+            dur = float((parsed.get("format") or {}).get("duration") or 0.0)
+            if dur > 0:
+                meta["duration_sec"] = round(dur, 2)
+            return meta
+    except Exception:
+        pass
+    try:
+        meta["duration_sec"] = max(0.5, round(float(probe_duration(ffprobe_bin, video_path)), 2))
+    except Exception:
+        pass
+    return meta
+
+
 def collect_ordered_raw_clips(
     raw_dir: Path,
     ordered_names: list[str] | None = None,
 ) -> list[dict[str, Any]]:
-    """Collect raw video files in strict chronological / user-specified order."""
+    """Collect raw video files in strict chronological / user-specified order with resolution metadata."""
     if not raw_dir.exists():
         return []
     ffprobe_bin = find_binary("ffprobe")
@@ -51,30 +150,58 @@ def collect_ordered_raw_clips(
     out: list[dict[str, Any]] = []
     for idx, rel in enumerate(ordered_rels, start=1):
         p = all_files[rel]
-        try:
-            dur = round(float(probe_duration(ffprobe_bin, p)), 2)
-        except Exception:
-            dur = 5.0
+        info = _probe_video_meta(ffprobe_bin, p)
+        w = int(info["width"])
+        h = int(info["height"])
         out.append(
             {
                 "order": idx,
                 "rel_path": rel,
                 "abs_path": str(p),
                 "name": p.name,
-                "duration_sec": max(0.5, dur),
+                "duration_sec": max(0.5, float(info["duration_sec"])),
+                "width": w,
+                "height": h,
+                "is_4k": max(w, h) >= 3000,
                 "mtime": int(p.stat().st_mtime),
             }
         )
     return out
 
 
+def resolve_target_resolution(
+    ordered_clips: list[dict[str, Any]],
+    aspect_ratio: str = "16:9",
+    quality_preset: str = "auto_source",
+) -> tuple[int, int, str]:
+    """Choose 4K / 2K / 1080p output resolution matching source quality or explicit preset."""
+    qp = (quality_preset or "auto_source").strip().lower()
+    is_landscape = aspect_ratio == "16:9"
+    max_src_dim = max([max(int(c.get("width") or 0), int(c.get("height") or 0)) for c in ordered_clips] or [1920])
+
+    if qp == "auto_source":
+        if max_src_dim >= 3000:
+            qp = "4k"
+        elif max_src_dim >= 2200:
+            qp = "2k"
+        else:
+            qp = "1080p"
+
+    if qp == "4k":
+        return (3840, 2160, "4K UHD") if is_landscape else (2160, 3840, "4K UHD")
+    if qp == "2k":
+        return (2560, 1440, "2K QHD") if is_landscape else (1440, 2560, "2K QHD")
+    return (1920, 1080, "Full HD 1080p") if is_landscape else (1080, 1920, "Full HD 1080p")
+
+
 def build_longform_timeline_plan(
     ordered_clips: list[dict[str, Any]],
-    target_duration_sec: float = 600.0,
+    target_duration_sec: float = 300.0,
     auto_fit_duration: bool = False,
     aspect_ratio: str = "16:9",
+    quality_preset: str = "auto_source",
 ) -> dict[str, Any]:
-    """Build a strict chronological timeline plan for videos > 90s (up to 1200s)."""
+    """Slice raw clips into crisp chronological 4.5-8.5s vlog highlight cuts grouped into chapters."""
     if not ordered_clips:
         raise RuntimeError("Chưa có video thô nào trong 02_video_tho/ để dựng Timeline dài.")
 
@@ -84,70 +211,155 @@ def build_longform_timeline_plan(
     else:
         eff_target = max(95.0, min(1200.0, float(target_duration_sec)))
 
-    target_w, target_h = (1920, 1080) if aspect_ratio == "16:9" else (1080, 1920)
+    target_w, target_h, quality_label = resolve_target_resolution(
+        ordered_clips, aspect_ratio=aspect_ratio, quality_preset=quality_preset
+    )
     segments: list[dict[str, Any]] = []
 
-    if total_raw >= eff_target:
-        # Allocate proportionally across clips in chronological order without ever reordering
+    if total_raw >= eff_target * 0.92:
         ratio = eff_target / max(1.0, total_raw)
-        for idx, c in enumerate(ordered_clips, start=1):
+        for c in ordered_clips:
             c_dur = float(c["duration_sec"])
-            seg_dur = max(2.0, min(c_dur, round(c_dur * ratio, 2)))
-            # Take centered or front slice cleanly
-            start_sec = round(max(0.0, (c_dur - seg_dur) * 0.35), 2)
-            end_sec = round(min(c_dur, start_sec + seg_dur), 2)
-            segments.append(
-                {
-                    "index": idx,
-                    "source": c["rel_path"],
-                    "abs_path": c["abs_path"],
-                    "start": start_sec,
-                    "end": end_sec,
-                    "duration": round(end_sec - start_sec, 2),
-                    "speed": 1.0,
-                }
-            )
-    else:
-        # Gently slow down slightly if raw footage is slightly shorter, or loop timeline cleanly in chapter blocks
-        needed = eff_target
-        pass_idx = 0
-        while needed > 1.0 and pass_idx < 6:
-            pass_idx += 1
-            for c in ordered_clips:
-                if needed <= 0.5:
-                    break
-                c_dur = float(c["duration_sec"])
-                use_dur = min(c_dur, needed)
-                if use_dur < 1.5 and segments:
-                    break
+            alloc_dur = max(3.5, min(c_dur, c_dur * ratio))
+            # Trim shaky camera start/stop edges on longer raw clips
+            edge_trim = min(1.1, c_dur * 0.08) if c_dur > 10.0 else 0.0
+            usable_start = edge_trim
+            usable_end = max(usable_start + 1.0, c_dur - edge_trim)
+            usable_span = usable_end - usable_start
+
+            if alloc_dur <= 9.0:
+                n_shots = 1
+            else:
+                n_shots = max(2, min(12, int(round(alloc_dur / 6.2))))
+
+            per_shot = max(3.0, min(8.5, alloc_dur / n_shots))
+            # Pick highlight sub-shots evenly distributed chronologically across usable_span
+            for si in range(n_shots):
+                if usable_span <= per_shot * n_shots + 0.5:
+                    st = usable_start + si * (usable_span / n_shots)
+                    dur_s = min(per_shot, usable_end - st)
+                else:
+                    slot = usable_span / n_shots
+                    st = usable_start + si * slot + max(0.0, (slot - per_shot) * 0.35)
+                    dur_s = min(per_shot, usable_end - st)
+                dur_s = round(max(2.5, dur_s), 2)
+                en = round(min(c_dur, st + dur_s), 2)
+                if en - st < 1.8:
+                    continue
                 segments.append(
                     {
                         "index": len(segments) + 1,
                         "source": c["rel_path"],
                         "abs_path": c["abs_path"],
-                        "start": 0.0,
-                        "end": round(use_dur, 2),
-                        "duration": round(use_dur, 2),
+                        "clip_order": c["order"],
+                        "start": round(st, 2),
+                        "end": en,
+                        "duration": round(en - st, 2),
                         "speed": 1.0,
                     }
                 )
-                needed -= use_dur
+    else:
+        # Raw footage is shorter than target: cycle chronologically in highlight 5-8s shots
+        needed = eff_target
+        pass_idx = 0
+        while needed > 1.5 and pass_idx < 8:
+            pass_idx += 1
+            for c in ordered_clips:
+                if needed <= 1.2:
+                    break
+                c_dur = float(c["duration_sec"])
+                n_shots = max(1, min(6, int(round(c_dur / 6.5))))
+                shot_len = min(8.0, max(3.0, c_dur / n_shots), needed)
+                sub_offset = ((pass_idx - 1) * 1.7) % max(0.5, c_dur - shot_len)
+                for si in range(n_shots):
+                    if needed <= 1.2:
+                        break
+                    st = round(min(max(0.0, c_dur - 2.0), sub_offset + si * (c_dur / n_shots)), 2)
+                    use_dur = round(min(shot_len, c_dur - st, needed), 2)
+                    if use_dur < 1.5:
+                        continue
+                    segments.append(
+                        {
+                            "index": len(segments) + 1,
+                            "source": c["rel_path"],
+                            "abs_path": c["abs_path"],
+                            "clip_order": c["order"],
+                            "start": st,
+                            "end": round(st + use_dur, 2),
+                            "duration": use_dur,
+                            "speed": 1.0,
+                        }
+                    )
+                    needed -= use_dur
 
-    actual_total = round(sum(s["duration"] for s in segments), 2)
+    # Assign timeline timestamps and clean Chapters
+    cursor = 0.0
+    for seg in segments:
+        seg["timeline_start"] = round(cursor, 2)
+        cursor += float(seg["duration"])
+        seg["timeline_end"] = round(cursor, 2)
+
+    actual_total = round(cursor, 2)
+    num_chapters = min(6, max(3, int(round(actual_total / 60.0))))
+    num_chapters = min(num_chapters, max(1, len(segments)))
+    chapter_len_target = actual_total / float(num_chapters)
+
+    chapters: list[dict[str, Any]] = []
+    cur_chap = 1
+    chap_start = 0.0
+    chap_shots: list[dict[str, Any]] = []
+    for si, seg in enumerate(segments):
+        should_split = (
+            cur_chap < num_chapters
+            and chap_shots
+            and float(seg["timeline_start"]) >= cur_chap * chapter_len_target
+            and (len(segments) - si) >= (num_chapters - cur_chap)
+        )
+        if should_split:
+            chapters.append(
+                {
+                    "index": cur_chap,
+                    "start_sec": round(chap_start, 2),
+                    "end_sec": round(float(chap_shots[-1]["timeline_end"]), 2),
+                    "shot_count": len(chap_shots),
+                    "lead_clip": chap_shots[0]["abs_path"],
+                    "lead_duration": float(chap_shots[0]["duration"]),
+                }
+            )
+            cur_chap += 1
+            chap_start = float(seg["timeline_start"])
+            chap_shots = []
+        seg["chapter_index"] = cur_chap
+        seg["is_chapter_start"] = len(chap_shots) == 0
+        chap_shots.append(seg)
+
+    if chap_shots:
+        chapters.append(
+            {
+                "index": cur_chap,
+                "start_sec": round(chap_start, 2),
+                "end_sec": round(actual_total, 2),
+                "shot_count": len(chap_shots),
+                "lead_clip": chap_shots[0]["abs_path"],
+                "lead_duration": float(chap_shots[0]["duration"]),
+            }
+        )
+
     return {
         "mode": "long_vlog",
         "aspect_ratio": aspect_ratio,
+        "quality_preset": quality_preset,
+        "quality_label": quality_label,
         "target_resolution": [target_w, target_h],
         "target_duration_sec": actual_total,
         "raw_total_duration_sec": round(total_raw, 2),
         "segments": segments,
+        "chapters": chapters,
     }
 
 
 def _extract_clip_preview_frame_b64(clip_abs_path: str, duration_sec: float) -> str:
     """Grab 1 lightweight 360px JPEG frame at 35% of the clip duration as base64 for AI vision."""
-    import base64
-
     ffmpeg_bin = find_binary("ffmpeg")
     seek_t = round(max(0.0, float(duration_sec or 1.0) * 0.35), 2)
     try:
@@ -213,6 +425,273 @@ def _extract_clip_preview_frame_jpg(clip_abs_path: str, duration_sec: float, out
         return False
 
 
+def _deduplicate_sentences(text: str, seen: list[str]) -> str:
+    """Remove duplicate or near-duplicate sentences (SequenceMatcher > 0.78) across chapters."""
+    sents = [s.strip() for s in re.split(r"(?<=[.!?])\s+", (text or "").strip()) if s.strip()]
+    kept: list[str] = []
+    for s in sents:
+        norm = re.sub(r"[^\w\s]", "", s.lower()).strip()
+        if not norm:
+            continue
+        is_dup = any(SequenceMatcher(None, norm, prev).ratio() >= 0.78 for prev in seen)
+        if not is_dup:
+            seen.append(norm)
+            kept.append(s)
+    return " ".join(kept)
+
+
+def _extract_json_block(raw: str) -> dict[str, Any] | None:
+    cleaned = (raw or "").strip()
+    cleaned = re.sub(r"```json\s*|```\s*", "", cleaned).strip()
+    m = re.search(r"\{.*\}", cleaned, flags=re.S)
+    if not m:
+        return None
+    try:
+        obj = json.loads(m.group(0))
+        return obj if isinstance(obj, dict) else None
+    except Exception:
+        return None
+
+
+def generate_longform_chapter_script(
+    plan: dict[str, Any],
+    ordered_clips: list[dict[str, Any]],
+    topic_note: str = "",
+    content_vibe: str = "outdoor_picnic",
+    vlog_title: str = "",
+    gemini_api_key: str = "",
+    agy_caller: Any = None,
+    preview_dir: Path | None = None,
+) -> dict[str, Any]:
+    """Generate structured non-repeating Vlog chapters with Intro/Chapter cards/Outro & breathing narration."""
+    vibe_meta = _sd.get_content_vibe_meta(content_vibe if content_vibe != "learned_dna" else "outdoor_picnic")
+    topic = (topic_note or "").strip() or "Chuyến dã ngoại trải nghiệm thiên nhiên cuối tuần"
+    chapters_plan = plan.get("chapters") or [
+        {"index": 1, "start_sec": 0.0, "end_sec": float(plan.get("target_duration_sec") or 300.0)}
+    ]
+    n_chap = len(chapters_plan)
+    total_dur = float(plan.get("target_duration_sec") or 300.0)
+    # Calm vlog density: ~1.35 words per sec total -> ~40-50% B-roll breathing time
+    target_total_words = max(140, min(1400, int(round(total_dur * 1.35))))
+    words_per_chap = max(45, int(round(target_total_words / max(1, n_chap))))
+
+    clip_summary = ", ".join(
+        f"Cảnh {c['order']}: {Path(c['name']).stem} ({c['duration_sec']:.0f}s)" for c in ordered_clips[:24]
+    )
+    chapter_desc = "\n".join(
+        f"- Chương {ch['index']} ({ch['start_sec']:.0f}s -> {ch['end_sec']:.0f}s)"
+        for ch in chapters_plan
+    )
+
+    json_prompt = (
+        f"Bạn là Đạo diễn Vlog YouTube & TikTok chuyên nghiệp. Hãy viết kịch bản lời bình cho video Vlog dài {total_dur:.0f} giây (~{total_dur/60:.1f} phút) "
+        f"chia thành đúng {n_chap} Chương theo trình tự thời gian:\n{chapter_desc}\n\n"
+        f"Chủ đề / Ghi chú: {topic}\n"
+        f"Tiêu đề gợi ý: {vlog_title or topic}\n"
+        f"Phong cách: {vibe_meta.get('prompt_hint') or vibe_meta.get('label')}\n"
+        f"Danh sách clip thô theo thứ tự: {clip_summary}\n\n"
+        "YÊU CẦU CỰC KỲ QUAN TRỌNG:\n"
+        f"- Tổng lời thoại toàn video chỉ khoảng {target_total_words} từ (~{words_per_chap} từ mỗi chương, chia thành 2 đoạn ngắn/chương) để CHỪA KHOẢNG THỞ 4-7 GIÂY cho cảnh quay B-roll đẹp và âm thanh thiên nhiên.\n"
+        "- TUYỆT ĐỐI KHÔNG lặp lại câu văn hoặc ý diễn đạt giữa các chương.\n"
+        "- TUYỆT ĐỐI KHÔNG nhắc giỏ hàng, chốt đơn, freeship hay bán hàng.\n"
+        "- Trả về DUY NHẤT JSON hợp lệ theo đúng cấu trúc sau (không giải thích thêm):\n"
+        "{\n"
+        '  "video_title": "TIÊU ĐỀ NGẮN GỌN ẤN TƯỢNG (<= 45 ký tự)",\n'
+        '  "video_subtitle": "Dòng mô tả ngắn (<= 65 ký tự)",\n'
+        '  "outro_title": "CẢM ƠN BẠN ĐÃ ĐỒNG HÀNH!",\n'
+        f'  "outro_cta": "{vibe_meta.get("cta_default") or "Theo dõi để xem những hành trình tiếp theo nhé!"}",\n'
+        '  "chapters": [\n'
+        '    {\n'
+        '      "index": 1,\n'
+        '      "chapter_title": "TÊN CHƯƠNG NGẮN (<= 26 ký tự)",\n'
+        '      "chapter_subtitle": "Mô tả nhanh 1 dòng (<= 45 ký tự)",\n'
+        '      "narration_blocks": [\n'
+        '        {"offset_ratio": 0.14, "text": "Đoạn lời bình mở chương tự nhiên 2-3 câu (~25-35 từ)."},\n'
+        '        {"offset_ratio": 0.60, "text": "Đoạn lời bình tiếp nối khác hoàn toàn 2-3 câu (~25-35 từ)."}\n'
+        '      ]\n'
+        '    }\n'
+        '  ]\n'
+        '}'
+    )
+
+    sample_clips = ordered_clips[:8]
+    if len(ordered_clips) > 8:
+        step = len(ordered_clips) / 8.0
+        sample_clips = [ordered_clips[int(i * step)] for i in range(8)]
+
+    parsed_ai: dict[str, Any] | None = None
+    ai_source = "structured_fallback"
+
+    api_key = str(gemini_api_key or "").strip()
+    if api_key:
+        try:
+            import urllib.request
+
+            parts_payload: list[dict[str, Any]] = [{"text": json_prompt}]
+            for sc in sample_clips:
+                b64 = _extract_clip_preview_frame_b64(str(sc.get("abs_path") or ""), float(sc.get("duration_sec") or 2.0))
+                if b64:
+                    parts_payload.append({"inline_data": {"mime_type": "image/jpeg", "data": b64}})
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
+            req = urllib.request.Request(
+                url,
+                data=json.dumps({"contents": [{"parts": parts_payload}]}).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(req, timeout=90) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                cands = data.get("candidates") or []
+                if cands:
+                    raw_txt = " ".join(
+                        str(p.get("text") or "") for p in ((cands[0].get("content") or {}).get("parts") or [])
+                    )
+                    cand_json = _extract_json_block(raw_txt)
+                    if cand_json and isinstance(cand_json.get("chapters"), list) and cand_json["chapters"]:
+                        parsed_ai = cand_json
+                        ai_source = "gemini_vision"
+        except Exception as exc:
+            print(f"[LongForm] Gemini Vision script error ({exc})")
+
+    if parsed_ai is None and agy_caller is not None:
+        try:
+            frame_lines: list[str] = []
+            if preview_dir is not None:
+                shutil.rmtree(preview_dir, ignore_errors=True)
+                preview_dir.mkdir(parents=True, exist_ok=True)
+                for idx, sc in enumerate(sample_clips, start=1):
+                    out_jpg = preview_dir / f"scene_{idx:02d}.jpg"
+                    if _extract_clip_preview_frame_jpg(
+                        str(sc.get("abs_path") or ""), float(sc.get("duration_sec") or 2.0), out_jpg
+                    ):
+                        frame_lines.append(f"- Cảnh {sc.get('order')}: {out_jpg}")
+            agy_prompt = json_prompt
+            if frame_lines:
+                agy_prompt += "\n\nHãy xem nhanh các khung hình đại diện theo đúng trình tự:\n" + "\n".join(frame_lines)
+            agy_raw = str(agy_caller(agy_prompt) or "").strip()
+            cand_json = _extract_json_block(agy_raw)
+            if cand_json and isinstance(cand_json.get("chapters"), list) and cand_json["chapters"]:
+                parsed_ai = cand_json
+                ai_source = "agy_cli"
+            elif len(agy_raw.split()) >= 80:
+                # AI returned plain prose instead of JSON: slice prose cleanly across chapters
+                clean_prose = re.sub(r"```[a-zA-Z]*\s*", "", agy_raw).replace("```", "")
+                clean_prose = re.sub(r"^#+\s+.*$", "", clean_prose, flags=re.M).strip()
+                sents = [s.strip() for s in re.split(r"(?<=[.!?])\s+", clean_prose) if s.strip()]
+                per_c = max(2, len(sents) // max(1, n_chap))
+                synth_chapters = []
+                for ci, ch in enumerate(chapters_plan):
+                    chunk = sents[ci * per_c : (ci + 1) * per_c if ci < n_chap - 1 else len(sents)]
+                    mid = max(1, len(chunk) // 2)
+                    blocks = []
+                    if chunk[:mid]:
+                        blocks.append({"offset_ratio": 0.14, "text": " ".join(chunk[:mid])})
+                    if chunk[mid:]:
+                        blocks.append({"offset_ratio": 0.58, "text": " ".join(chunk[mid:])})
+                    synth_chapters.append(
+                        {
+                            "index": ch["index"],
+                            "chapter_title": f"CHẶNG {ch['index']}",
+                            "chapter_subtitle": "",
+                            "narration_blocks": blocks,
+                        }
+                    )
+                parsed_ai = {
+                    "video_title": (vlog_title or topic)[:45],
+                    "video_subtitle": "Nhật ký hành trình & trải nghiệm",
+                    "chapters": synth_chapters,
+                }
+                ai_source = "agy_cli"
+        except Exception as exc:
+            print(f"[LongForm] agy CLI script error ({exc})")
+
+    # Build rich, strictly non-repeating fallback / normalize AI chapters
+    seen_norms: list[str] = []
+    phase_order = ["opening", "journey", "discovery", "activity", "relaxation", "golden_hour"]
+    default_titles = [
+        ("KHỞI HÀNH", "Chuẩn bị & bắt đầu hành trình"),
+        ("TRÊN ĐƯỜNG ĐI", "Những khung hình dọc đường"),
+        ("KHÁM PHÁ ĐIỂM DỪNG", "Không gian thoáng đãng & thiên nhiên"),
+        ("TRẢI NGHIỆM & THƯỞNG THỨC", "Những khoảnh khắc cùng bạn bè"),
+        ("HOÀNG HÔN & CHILL", "Khoảng lặng êm ả cuối ngày"),
+        ("TỔNG KẾT KỶ NIỆM", "Lưu giữ hành trình đáng nhớ"),
+    ]
+    used_fallback: set[str] = set()
+
+    def _pick_unique_fallback(phase_key: str, count: int = 2) -> str:
+        pool = FALLBACK_VLOG_POOL.get(phase_key, []) + FALLBACK_VLOG_POOL["activity"]
+        picked: list[str] = []
+        for s in pool:
+            if s not in used_fallback:
+                used_fallback.add(s)
+                picked.append(s)
+                if len(picked) >= count:
+                    break
+        return " ".join(picked)
+
+    ai_chapters = (parsed_ai or {}).get("chapters") or []
+    final_chapters: list[dict[str, Any]] = []
+    for ci, ch_plan in enumerate(chapters_plan):
+        ai_ch = ai_chapters[ci] if ci < len(ai_chapters) and isinstance(ai_chapters[ci], dict) else {}
+        def_t, def_sub = default_titles[min(ci, len(default_titles) - 1)]
+        c_title = str(ai_ch.get("chapter_title") or def_t).strip()[:30]
+        c_sub = str(ai_ch.get("chapter_subtitle") or def_sub).strip()[:50]
+        raw_blocks = ai_ch.get("narration_blocks") if isinstance(ai_ch.get("narration_blocks"), list) else []
+
+        clean_blocks: list[dict[str, Any]] = []
+        phase_key = phase_order[min(ci, len(phase_order) - 1)]
+        if ci == n_chap - 1 and n_chap > 2:
+            phase_key = "closing"
+
+        for bi, blk in enumerate(raw_blocks[:3]):
+            if not isinstance(blk, dict):
+                continue
+            deduped = _deduplicate_sentences(str(blk.get("text") or ""), seen_norms)
+            if deduped:
+                clean_blocks.append(
+                    {
+                        "offset_ratio": float(blk.get("offset_ratio") if blk.get("offset_ratio") is not None else (0.14 + bi * 0.42)),
+                        "text": deduped,
+                    }
+                )
+
+        if not clean_blocks:
+            t1 = _deduplicate_sentences(_pick_unique_fallback(phase_key, 2), seen_norms)
+            t2 = _deduplicate_sentences(
+                _pick_unique_fallback("closing" if ci == n_chap - 1 else phase_order[min(ci + 1, len(phase_order) - 1)], 2),
+                seen_norms,
+            )
+            if t1:
+                clean_blocks.append({"offset_ratio": 0.14, "text": t1})
+            if t2:
+                clean_blocks.append({"offset_ratio": 0.58, "text": t2})
+
+        final_chapters.append(
+            {
+                "index": ch_plan["index"],
+                "chapter_title": c_title,
+                "chapter_subtitle": c_sub,
+                "start_sec": float(ch_plan["start_sec"]),
+                "end_sec": float(ch_plan["end_sec"]),
+                "narration_blocks": clean_blocks,
+            }
+        )
+
+    final_title = str(vlog_title or (parsed_ai or {}).get("video_title") or topic).strip()[:48]
+    final_sub = str((parsed_ai or {}).get("video_subtitle") or vibe_meta.get("label") or "Nhật ký Vlog").strip()[:68]
+    outro_title = str((parsed_ai or {}).get("outro_title") or "CẢM ƠN BẠN ĐÃ ĐỒNG HÀNH!").strip()[:50]
+    outro_cta = str((parsed_ai or {}).get("outro_cta") or vibe_meta.get("cta_default") or "Lưu lại & hẹn gặp ở tập sau nha!").strip()[:70]
+
+    return {
+        "ai_source": ai_source,
+        "video_title": final_title,
+        "video_subtitle": final_sub,
+        "outro_title": outro_title,
+        "outro_cta": outro_cta,
+        "chapters": final_chapters,
+    }
+
+
 def generate_longform_vlog_script(
     ordered_clips: list[dict[str, Any]],
     target_duration_sec: float,
@@ -222,116 +701,417 @@ def generate_longform_vlog_script(
     agy_caller: Any = None,
     preview_dir: Path | None = None,
 ) -> tuple[str, str]:
-    """Generate a cohesive chapter-based narration script for 2-20 min vlog (no shopping CTAs)."""
-    vibe_meta = _sd.get_content_vibe_meta(content_vibe if content_vibe != "learned_dna" else "outdoor_picnic")
-    topic = (topic_note or "").strip() or "chuyến đi trải nghiệm đáng nhớ hôm nay"
-    # Vlog narration pace is calmer (~2.4-2.8 words/sec with natural pauses)
-    target_words = max(180, min(2800, int(round(target_duration_sec * 2.4))))
-    clip_summary = ", ".join(f"Cảnh {c['order']}: {Path(c['name']).stem} ({c['duration_sec']:.0f}s)" for c in ordered_clips[:24])
-
-    sample_clips = ordered_clips[:8]
-    if len(ordered_clips) > 8:
-        step = len(ordered_clips) / 8.0
-        sample_clips = [ordered_clips[int(i * step)] for i in range(8)]
-
-    base_prompt = (
-        f"Hãy viết một bài lời bình Vlog tiếng Việt liền mạch, tự nhiên, chia theo trình tự thời gian từ đầu đến cuối "
-        f"cho video dài khoảng {target_duration_sec:.0f} giây (~{target_words} từ).\n"
-        f"Chủ đề / Ghi chú: {topic}\n"
-        f"Phong cách: {vibe_meta.get('prompt_hint') or vibe_meta.get('label')}\n"
-        f"Thứ tự các cảnh quay thực tế: {clip_summary}\n"
-        "Yêu cầu bắt buộc:\n"
-        "- Quan sát các khung hình tương ứng theo đúng trình tự từ đầu đến cuối và viết thành các đoạn văn liền mạch mô tả sát bối cảnh thực tế (Mở đầu -> Diễn biến từng cảnh -> Cảm nhận & Kết).\n"
-        "- Chỉ trả về văn bản lời đọc thuần túy (không tiêu đề markdown, không số thứ tự, không ngoặc chú thích).\n"
-        "- TUYỆT ĐỐI KHÔNG nhắc giỏ hàng, chốt đơn, freeship hay bán hàng.\n"
-        f"- Câu kết nhẹ nhàng tự nhiên: {vibe_meta.get('cta_default')}"
+    """Compatibility helper returning flat (display_text, tts_text) from structured chapter script."""
+    dummy_plan = build_longform_timeline_plan(ordered_clips, target_duration_sec=target_duration_sec)
+    ch_script = generate_longform_chapter_script(
+        plan=dummy_plan,
+        ordered_clips=ordered_clips,
+        topic_note=topic_note,
+        content_vibe=content_vibe,
+        gemini_api_key=gemini_api_key,
+        agy_caller=agy_caller,
+        preview_dir=preview_dir,
     )
+    disp = " ".join(
+        blk["text"]
+        for ch in ch_script["chapters"]
+        for blk in ch["narration_blocks"]
+    ).strip()
+    return disp, _sd.convert_display_to_tts_script(disp)
 
-    display_text = ""
-    api_key = str(gemini_api_key or "").strip()
-    if api_key:
-        try:
+
+def _synth_edge_tts_wav(text: str, out_wav: Path, voice: str, rate: str, pitch: str) -> bool:
+    try:
+        import edge_tts
+
+        mp3_p = out_wav.with_suffix(".mp3")
+
+        async def _run() -> None:
+            comm = edge_tts.Communicate(text=text, voice=voice, rate=rate, pitch=pitch)
+            await comm.save(str(mp3_p))
+
+        asyncio.run(_run())
+        ffmpeg_bin = find_binary("ffmpeg")
+        subprocess.run(
+            [ffmpeg_bin, "-y", "-hide_banner", "-loglevel", "error", "-i", str(mp3_p), "-ar", "24000", "-ac", "1", "-c:a", "pcm_s16le", str(out_wav)],
+            check=True,
+            timeout=60,
+        )
+        mp3_p.unlink(missing_ok=True)
+        return out_wav.exists() and out_wav.stat().st_size > 1000
+    except Exception as exc:
+        print(f"[LongForm TTS] Edge-TTS error: {exc}")
+        return False
+
+
+def _synth_piper_wav(text: str, out_wav: Path, model_key: str, length_scale: float, speaker_id: int | None) -> bool:
+    try:
+        from piper.voice import PiperVoice
+        from piper.config import SynthesisConfig
+
+        meta = _ve.PIPER_VOICE_MODELS.get(model_key) or _ve.PIPER_VOICE_MODELS["vi_VN-vais1000-medium"]
+        _ve.PIPER_VOICES_DIR.mkdir(parents=True, exist_ok=True)
+        onnx_p = _ve.PIPER_VOICES_DIR / meta["filename"]
+        if not onnx_p.exists():
             import urllib.request
 
-            content_parts: list[dict[str, Any]] = [{"text": base_prompt}]
-            for sc in sample_clips:
-                b64 = _extract_clip_preview_frame_b64(str(sc.get("abs_path") or ""), float(sc.get("duration_sec") or 2.0))
-                if b64:
-                    content_parts.append({"inline_data": {"mime_type": "image/jpeg", "data": b64}})
+            urllib.request.urlretrieve(f"{_ve.PIPER_HF_BASE}{meta['hf_path']}", str(onnx_p))
+            urllib.request.urlretrieve(f"{_ve.PIPER_HF_BASE}{meta['hf_path']}.json", f"{onnx_p}.json")
 
-            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
-            req = urllib.request.Request(
-                url,
-                data=json.dumps({"contents": [{"parts": content_parts}]}).encode("utf-8"),
-                headers={"Content-Type": "application/json"},
-                method="POST",
-            )
-            with urllib.request.urlopen(req, timeout=90) as resp:
-                data = json.loads(resp.read().decode("utf-8"))
-                cands = data.get("candidates") or []
-                if cands:
-                    parts = ((cands[0].get("content") or {}).get("parts") or [])
-                    display_text = " ".join(str(p.get("text") or "") for p in parts).strip()
-        except Exception as exc:
-            print(f"[LongForm] Gemini fallback ({exc})")
-
-    if (not display_text or len(display_text.split()) < 60) and agy_caller is not None:
-        try:
-            frame_lines: list[str] = []
-            if preview_dir is not None:
-                shutil.rmtree(preview_dir, ignore_errors=True)
-                preview_dir.mkdir(parents=True, exist_ok=True)
-                for idx, sc in enumerate(sample_clips, start=1):
-                    out_jpg = preview_dir / f"scene_{idx:02d}.jpg"
-                    if _extract_clip_preview_frame_jpg(str(sc.get("abs_path") or ""), float(sc.get("duration_sec") or 2.0), out_jpg):
-                        frame_lines.append(f"- Cảnh {sc.get('order')}: {out_jpg}")
-            agy_prompt = base_prompt
-            if frame_lines:
-                agy_prompt += "\n\nHãy xem các ảnh khung hình đại diện theo đúng thứ tự dưới đây trước khi viết:\n" + "\n".join(frame_lines)
-            agy_raw = str(agy_caller(agy_prompt) or "").strip()
-            # Clean any accidental markdown headings/fences
-            agy_raw = re.sub(r"```[a-zA-Z]*\s*", "", agy_raw).replace("```", "")
-            agy_raw = re.sub(r"^#+\s+.*$", "", agy_raw, flags=re.M).strip()
-            if len(agy_raw.split()) >= 60:
-                display_text = agy_raw
-        except Exception as exc:
-            print(f"[LongForm] agy CLI fallback ({exc})")
-
-    if not display_text or len(display_text.split()) < 60:
-        intro = (
-            f"Xin chào mọi người, hôm nay tụi mình cùng nhau bắt đầu {topic}. "
-            "Từ những bước chuẩn bị đầu tiên, không khí đã mang lại cảm giác rất hào hứng và thư thái."
+        voice = PiperVoice.load(str(onnx_p))
+        syn_cfg = SynthesisConfig(length_scale=length_scale, speaker_id=(speaker_id if speaker_id is not None and speaker_id >= 0 else None))
+        tmp_raw = out_wav.with_name(f"{out_wav.stem}_raw.wav")
+        with wave.open(str(tmp_raw), "wb") as wf:
+            voice.synthesize_wav(text, wf, syn_config=syn_cfg)
+        ffmpeg_bin = find_binary("ffmpeg")
+        subprocess.run(
+            [ffmpeg_bin, "-y", "-hide_banner", "-loglevel", "error", "-i", str(tmp_raw), "-ar", "24000", "-ac", "1", "-c:a", "pcm_s16le", str(out_wav)],
+            check=True,
+            timeout=60,
         )
-        chapter_templates = [
-            "Ở chặng tiếp theo, khung cảnh mở ra trước mắt thật sự bình yên, ánh sáng tự nhiên làm mọi chi tiết trở nên sống động hơn hẳn.",
-            "Đi qua từng góc quay, mình tranh thủ ghi lại những khoảnh khắc chân thật nhất để giữ làm kỷ niệm cho cả nhóm.",
-            "Có những lúc chỉ cần dừng lại vài phút, hít thở thật sâu và lắng nghe âm thanh xung quanh là thấy bao mệt mỏi tan biến hết.",
-            "Mỗi khung hình nối tiếp nhau như một cuốn nhật ký nhỏ, ghi lại trọn vẹn nhịp điệu chậm rãi và dễ chịu của chuyến đi.",
-            "Khoảng thời gian thư giãn bên nhau như thế này luôn mang lại nguồn năng lượng tích cực rất khó tả.",
-            "Càng về sau, ánh nắng dịu dần tạo nên tông màu ấm áp, giúp từng thước phim quay bằng điện thoại cũng có chiều sâu riêng.",
+        tmp_raw.unlink(missing_ok=True)
+        return out_wav.exists() and out_wav.stat().st_size > 1000
+    except Exception as exc:
+        print(f"[LongForm TTS] Piper error: {exc}")
+        return False
+
+
+def _split_display_caption_lines(text: str, max_words: int = 9) -> list[str]:
+    words = [w for w in (text or "").strip().split() if w]
+    lines: list[str] = []
+    cur: list[str] = []
+    for w in words:
+        cur.append(w)
+        if len(cur) >= max_words or (len(cur) >= 5 and w.endswith((",", ".", "!", "?"))):
+            lines.append(" ".join(cur))
+            cur = []
+    if cur:
+        lines.append(" ".join(cur))
+    return lines
+
+
+def _clean_tts_text(text: str) -> str:
+    txt = re.sub(r"[*_`~#\[\](){}<>]", " ", str(text or ""))
+    txt = re.sub(r"\s+", " ", txt).strip()
+    return txt
+
+
+def _trim_pcm_silence(pcm: np.ndarray, sample_rate: int, thresh: float = 0.008) -> np.ndarray:
+    arr = np.asarray(pcm, dtype=np.float32).reshape(-1)
+    if len(arr) < int(sample_rate * 0.05):
+        return arr
+    idx = np.where(np.abs(arr) >= thresh)[0]
+    if len(idx) == 0:
+        return arr
+    pad = int(sample_rate * 0.03)
+    st = max(0, int(idx[0]) - pad)
+    en = min(len(arr), int(idx[-1]) + pad)
+    return arr[st:en]
+
+
+def build_longform_voice_and_srt(
+    chapter_script: dict[str, Any],
+    plan: dict[str, Any],
+    out_wav_path: Path,
+    out_srt_path: Path,
+    voice_preset: str = "edge_hoaimy_koc",
+) -> dict[str, Any]:
+    """Synthesize calm chapter narration blocks with 3.5-8s breathing gaps and write exact synced SRT."""
+    preset = _ve.resolve_voice_preset(voice_preset)
+    engine = str(preset.get("tts_engine") or "edge_tts")
+    sr = 24000
+    total_dur = float(plan.get("target_duration_sec") or 300.0)
+    master_samples = np.zeros(int(round(total_dur * sr)), dtype=np.float32)
+
+    ffmpeg_bin = find_binary("ffmpeg")
+    srt_entries: list[tuple[float, float, str]] = []
+    placed_blocks = 0
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmp_p = Path(tmpdir)
+        min_next_start = 2.6 if total_dur >= 20.0 else 0.3  # Never speak over the initial 2.6s of VlogIntro
+        max_end_guard = max(min_next_start + 3.0, total_dur - (4.2 if total_dur >= 20.0 else 0.4))  # Leave calm room before VlogOutro
+
+        for ch in chapter_script.get("chapters") or []:
+            ch_st = float(ch.get("start_sec") or 0.0)
+            ch_en = float(ch.get("end_sec") or total_dur)
+            ch_dur = max(6.0, ch_en - ch_st)
+            for bi, blk in enumerate(ch.get("narration_blocks") or [], start=1):
+                disp_txt = str(blk.get("text") or "").strip()
+                if not disp_txt:
+                    continue
+                speak_txt = _clean_tts_text(disp_txt)
+                if not speak_txt:
+                    continue
+
+                blk_wav = tmp_p / f"ch{ch['index']}_b{bi}.wav"
+                ok = False
+                if engine == "piper_tts":
+                    ok = _synth_piper_wav(
+                        speak_txt,
+                        blk_wav,
+                        str(preset.get("piper_model") or "vi_VN-vais1000-medium"),
+                        float(preset.get("piper_length_scale") or 0.96),
+                        preset.get("piper_speaker"),
+                    )
+                if not ok and engine in ("edge_tts", "piper_tts"):
+                    ok = _synth_edge_tts_wav(
+                        speak_txt,
+                        blk_wav,
+                        str(preset.get("edge_voice") or "vi-VN-HoaiMyNeural"),
+                        str(preset.get("edge_rate") or "+2%"),
+                        str(preset.get("edge_pitch") or "+0Hz"),
+                    )
+                if not ok:
+                    # Fallback via voice_engine.py CLI (supports f5_tts or auto fallback)
+                    cli_cmd = [
+                        sys.executable,
+                        str(PROJECT_ROOT / "scripts" / "voice_engine.py"),
+                        "--text",
+                        speak_txt,
+                        "--voice-preset",
+                        str(preset.get("id") or "edge_hoaimy_koc"),
+                        "--output-audio",
+                        str(blk_wav),
+                        "--no-srt",
+                    ]
+                    subprocess.run(cli_cmd, capture_output=True, timeout=180)
+                    ok = blk_wav.exists() and blk_wav.stat().st_size > 1000
+
+                if not ok:
+                    continue
+
+                pcm, p_sr = sf.read(str(blk_wav), dtype="float32")
+                pcm_1d = _trim_pcm_silence(np.asarray(pcm, dtype=np.float32).reshape(-1), int(p_sr))
+                if len(pcm_1d) < 400:
+                    continue
+
+                dur_blk = len(pcm_1d) / float(sr)
+                desired_start = ch_st + float(blk.get("offset_ratio") or 0.15) * ch_dur
+                actual_start = max(min_next_start, desired_start)
+                if actual_start + dur_blk > max_end_guard:
+                    # Trim or shift slightly if near end of video
+                    if max_end_guard - dur_blk >= min_next_start:
+                        actual_start = max_end_guard - dur_blk
+                    else:
+                        continue
+
+                st_idx = int(round(actual_start * sr))
+                en_idx = min(len(master_samples), st_idx + len(pcm_1d))
+                copy_len = en_idx - st_idx
+                if copy_len <= 0:
+                    continue
+                master_samples[st_idx:en_idx] += pcm_1d[:copy_len]
+                actual_end = actual_start + copy_len / float(sr)
+                placed_blocks += 1
+
+                # Maintain at least 3.5s breathing gap between narration blocks
+                min_next_start = actual_end + 3.5
+
+                # Build exact proportional SRT captions cleanly without needing Whisper
+                lines = _split_display_caption_lines(disp_txt, max_words=9)
+                total_chars = max(1, sum(len(ln) for ln in lines))
+                cur_t = actual_start
+                for ln in lines:
+                    ln_dur = max(0.9, (len(ln) / float(total_chars)) * (actual_end - actual_start))
+                    ln_end = min(actual_end, cur_t + ln_dur)
+                    if ln_end > cur_t + 0.2:
+                        srt_entries.append((cur_t, ln_end, ln))
+                    cur_t = ln_end
+
+    out_wav_path.parent.mkdir(parents=True, exist_ok=True)
+    raw_master = out_wav_path.with_name(f"{out_wav_path.stem}_raw.wav")
+    sf.write(str(raw_master), np.clip(master_samples, -0.98, 0.98), sr)
+
+    eq_prefix = _ve.VOCAL_EQ_FILTERS.get(str(preset.get("vocal_eq") or "neutral"), "")
+    try:
+        subprocess.run(
+            [
+                ffmpeg_bin,
+                "-y",
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-i",
+                str(raw_master),
+                "-af",
+                f"highpass=f=75,lowpass=f=11500,{eq_prefix}acompressor=threshold=-18dB:ratio=2.5:attack=12:release=140:makeup=2dB,alimiter=limit=0.95",
+                "-ar",
+                str(sr),
+                "-ac",
+                "1",
+                "-c:a",
+                "pcm_s16le",
+                str(out_wav_path),
+            ],
+            check=True,
+            timeout=90,
+        )
+        raw_master.unlink(missing_ok=True)
+    except Exception:
+        os.replace(str(raw_master), str(out_wav_path))
+
+    srt_blocks: list[str] = []
+    for idx, (st_s, en_s, txt) in enumerate(srt_entries, start=1):
+        srt_blocks.append(f"{idx}\n{_ve.format_srt_timestamp(st_s)} --> {_ve.format_srt_timestamp(en_s)}\n{txt}\n")
+    out_srt_path.parent.mkdir(parents=True, exist_ok=True)
+    out_srt_path.write_text("\n".join(srt_blocks), encoding="utf-8")
+
+    return {
+        "ok": True,
+        "placed_blocks": placed_blocks,
+        "srt_lines": len(srt_entries),
+        "preset_id": preset.get("id"),
+        "preset_label": preset.get("label"),
+    }
+
+
+def _find_remotion_tools() -> tuple[str | None, str | None]:
+    npx = shutil.which("npx.cmd") or shutil.which("npx")
+    browser = None
+    for cand in (
+        Path(r"C:\Program Files\Google\Chrome\Application\chrome.exe"),
+        Path(r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe"),
+        Path(r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"),
+        Path(r"C:\Program Files\Microsoft\Edge\Application\msedge.exe"),
+    ):
+        if cand.exists():
+            browser = str(cand)
+            break
+    return npx, browser
+
+
+def render_vlog_remotion_overlays(
+    plan: dict[str, Any],
+    chapter_script: dict[str, Any],
+    out_dir: Path,
+    aspect_ratio: str = "16:9",
+    channel_name: str = "VLOG JOURNAL",
+) -> list[dict[str, Any]]:
+    """Render transparent Remotion WebM overlays for VlogIntro, VlogChapterCards, and VlogOutro."""
+    npx, browser_exe = _find_remotion_tools()
+    if not npx or not (DIR_REMOTION / "src" / "Root.tsx").exists():
+        return []
+
+    out_dir.mkdir(parents=True, exist_ok=True)
+    is_portrait = aspect_ratio != "16:9"
+    # Render Remotion overlays at crisp 1080p/1920x1080 then upscale onto 4K/2K master cleanly (~3x faster)
+    ov_w, ov_h = (1080, 1920) if is_portrait else (1920, 1080)
+    total_dur = float(plan.get("target_duration_sec") or 300.0)
+    overlays: list[dict[str, Any]] = []
+
+    bundle_dir = out_dir / "_bundle"
+    entry_arg = "src/index.ts"
+    try:
+        b_proc = subprocess.run(
+            [npx, "remotion", "bundle", "src/index.ts", str(bundle_dir), "--log=error"],
+            cwd=str(DIR_REMOTION),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=120,
+        )
+        if b_proc.returncode == 0 and (bundle_dir / "index.html").exists():
+            entry_arg = str(bundle_dir)
+    except Exception:
+        pass
+
+    def _render_one(comp_id: str, props_dict: dict[str, Any], filename: str, start_sec: float) -> None:
+        props_file = out_dir / f"{Path(filename).stem}_props.json"
+        out_webm = out_dir / filename
+        props_file.write_text(json.dumps(props_dict, ensure_ascii=False), encoding="utf-8")
+        cmd = [
+            npx,
+            "remotion",
+            "render",
+            entry_arg,
+            comp_id,
+            str(out_webm),
+            f"--props={props_file}",
+            "--image-format=png",
+            "--codec=vp9",
+            "--pixel-format=yuva420p",
         ]
-        outro = f"Một hành trình thật trọn vẹn và nhiều tiếng cười. {vibe_meta.get('cta_default') or 'Cảm ơn mọi người đã xem hết video nha.'}"
+        if browser_exe:
+            cmd.append(f"--browser-executable={browser_exe}")
+        try:
+            proc = subprocess.run(
+                cmd,
+                cwd=str(DIR_REMOTION),
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=180,
+            )
+            if proc.returncode == 0 and out_webm.exists() and out_webm.stat().st_size > 2000:
+                overlays.append({"path": out_webm, "start_sec": round(max(0.0, start_sec), 2)})
+            else:
+                err_tail = ((proc.stderr or "") + "\n" + (proc.stdout or "")).strip()[-300:]
+                print(f"[LongForm Remotion WARN] {comp_id} failed ({proc.returncode}): {err_tail}")
+        except Exception as exc:
+            print(f"[LongForm Remotion] Skip {comp_id} ({exc})")
 
-        sentences = [intro]
-        total_clip_dur = max(1.0, sum(float(c.get("duration_sec") or 1.0) for c in ordered_clips))
-        approx_sentences = max(4, min(65, int(round(target_words / 24))))
-        sent_idx = 0
-        for ci, cl in enumerate(ordered_clips):
-            share = max(1, int(round((float(cl.get("duration_sec") or 1.0) / total_clip_dur) * approx_sentences)))
-            for _ in range(share):
-                if len(sentences) - 1 >= approx_sentences:
-                    break
-                sentences.append(chapter_templates[sent_idx % len(chapter_templates)])
-                sent_idx += 1
-        while len(sentences) - 1 < approx_sentences:
-            sentences.append(chapter_templates[sent_idx % len(chapter_templates)])
-            sent_idx += 1
-        sentences.append(outro)
-        display_text = " ".join(sentences)
+    # 1. Intro Card (4.5s at 0.2s)
+    _render_one(
+        "VlogIntro",
+        {
+            "title": chapter_script.get("video_title") or "CHUYẾN ĐI ĐÁNG NHỚ",
+            "subtitle": chapter_script.get("video_subtitle") or "",
+            "badgeText": f"{channel_name.upper()} · {plan.get('quality_label', '4K')}",
+            "accentColor": "#F59E0B",
+            "durationSec": 4.5,
+            "width": ov_w,
+            "height": ov_h,
+            "aspectRatio": aspect_ratio,
+        },
+        "intro_overlay.webm",
+        0.2,
+    )
 
-    display_text = re.sub(r"\s+", " ", display_text).strip()
-    tts_text = _sd.convert_display_to_tts_script(display_text)
-    return display_text, tts_text
+    # 2. Chapter Cards (3.5s each at start of chapters 1..N; ch1 delayed after Intro at 5.2s)
+    for ch in chapter_script.get("chapters") or []:
+        c_idx = int(ch.get("index") or 1)
+        ch_start = float(ch.get("start_sec") or 0.0)
+        place_t = max(5.2, ch_start + 0.4) if c_idx == 1 else ch_start + 0.3
+        if place_t >= total_dur - 8.5:
+            continue
+        _render_one(
+            "VlogChapterCard",
+            {
+                "chapterNumber": f"{c_idx:02d}",
+                "title": ch.get("chapter_title") or f"CHẶNG {c_idx}",
+                "subtitle": ch.get("chapter_subtitle") or "",
+                "accentColor": "#34D399",
+                "durationSec": 3.5,
+                "width": ov_w,
+                "height": ov_h,
+                "aspectRatio": aspect_ratio,
+            },
+            f"chapter_{c_idx:02d}.webm",
+            place_t,
+        )
+
+    # 3. Outro Card (6.0s at end of video)
+    outro_dur = min(6.0, max(3.5, total_dur * 0.1))
+    _render_one(
+        "VlogOutro",
+        {
+            "title": chapter_script.get("outro_title") or "CẢM ƠN BẠN ĐÃ ĐỒNG HÀNH!",
+            "subtitle": "Hẹn gặp lại trong những hành trình tiếp theo",
+            "ctaText": chapter_script.get("outro_cta") or "",
+            "channelName": channel_name,
+            "accentColor": "#F59E0B",
+            "durationSec": outro_dur,
+            "width": ov_w,
+            "height": ov_h,
+            "aspectRatio": aspect_ratio,
+        },
+        "outro_overlay.webm",
+        max(0.0, total_dur - outro_dur),
+    )
+    return overlays
 
 
 def _sec_to_ass_time(sec: float) -> str:
@@ -349,11 +1129,12 @@ def srt_to_ass_file(
     height: int = 1080,
     font_name: str = "Baloo 2",
 ) -> Path:
-    """Convert SRT subtitles into clean, crisp ASS subtitles scaled for 16:9 or 9:16."""
+    """Convert SRT subtitles into clean, crisp ASS subtitles scaled proportionally to 4K/2K/1080p."""
     is_landscape = width > height
-    font_size = 54 if is_landscape else 64
-    margin_v = 56 if is_landscape else 310
-    margin_lr = 120 if is_landscape else 70
+    font_size = int(round(height * (0.044 if is_landscape else 0.036)))
+    margin_v = int(round(height * (0.052 if is_landscape else 0.16)))
+    margin_lr = int(round(width * 0.06))
+    outline_px = max(3, int(round(font_size * 0.07)))
 
     header = (
         "[Script Info]\n"
@@ -366,8 +1147,8 @@ def srt_to_ass_file(
         "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, "
         "Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, "
         "Alignment, MarginL, MarginR, MarginV, Encoding\n"
-        f"Style: Default,{font_name},{font_size},&H00FFFFFF,&H0000FFFF,&H00000000,&H88000000,"
-        f"-1,0,0,0,100,100,0,0,1,4,2,2,{margin_lr},{margin_lr},{margin_v},1\n\n"
+        f"Style: Default,{font_name},{font_size},&H00FFFFFF,&H0000FFFF,&H00000000,&H99000000,"
+        f"-1,0,0,0,100,100,0,0,1,{outline_px},2,2,{margin_lr},{margin_lr},{margin_v},1\n\n"
         "[Events]\n"
         "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"
     )
@@ -398,7 +1179,14 @@ def srt_to_ass_file(
     return ass_path
 
 
-def _detect_h264_encoder(ffmpeg_bin: str) -> tuple[str, list[str]]:
+def _detect_h264_encoder(ffmpeg_bin: str, width: int = 1920, is_master: bool = True) -> tuple[str, list[str]]:
+    if width >= 3000:
+        b_target, b_max, b_buf = ("28M", "45M", "60M") if is_master else ("42M", "65M", "80M")
+    elif width >= 2200:
+        b_target, b_max, b_buf = ("16M", "24M", "32M") if is_master else ("26M", "38M", "48M")
+    else:
+        b_target, b_max, b_buf = ("10M", "16M", "22M") if is_master else ("16M", "24M", "30M")
+
     try:
         probe = subprocess.run(
             [
@@ -421,10 +1209,12 @@ def _detect_h264_encoder(ffmpeg_bin: str) -> tuple[str, list[str]]:
             timeout=10,
         )
         if probe.returncode == 0:
-            return "h264_nvenc", ["-preset", "p4", "-cq", "21", "-b:v", "0"]
+            cq = "16" if is_master else "13"
+            return "h264_nvenc", ["-preset", "p6" if is_master else "p5", "-rc", "vbr", "-cq", cq, "-b:v", b_target, "-maxrate", b_max, "-bufsize", b_buf]
     except Exception:
         pass
-    return "libx264", ["-preset", "veryfast", "-crf", "20"]
+    crf = "16" if is_master else "13"
+    return "libx264", ["-preset", "medium" if is_master else "fast", "-crf", crf, "-maxrate", b_max, "-bufsize", b_buf]
 
 
 def _has_audio_stream(ffprobe_bin: str, media_path: Path) -> bool:
@@ -457,17 +1247,20 @@ def render_longform_ffmpeg_vlog(
     srt_path: Path | None,
     bgm_path: Path | None,
     output_mp4: Path,
-    bgm_volume: float = 0.14,
+    overlays: list[dict[str, Any]] | None = None,
+    bgm_volume: float = 0.20,
     keep_clip_audio: bool = False,
     font_name: str = "Baloo 2",
     progress_cb: Any = None,
 ) -> dict[str, Any]:
-    """Render a cohesive 2-20 min vlog timeline rapidly with FFmpeg (consistent style, BGM, and ASS subtitles)."""
+    """Render 4K/2K/1080p Vlog master with Remotion transparent overlays, sidechain ducking, & crisp ASS subs."""
     ffmpeg_bin = find_binary("ffmpeg")
     ffprobe_bin = find_binary("ffprobe")
-    vcodec, vcodec_args = _detect_h264_encoder(ffmpeg_bin)
     res_wh = plan.get("target_resolution") or [1920, 1080]
     target_w, target_h = int(res_wh[0]), int(res_wh[1])
+    vcodec_seg, vargs_seg = _detect_h264_encoder(ffmpeg_bin, width=max(target_w, target_h), is_master=False)
+    vcodec_master, vargs_master = _detect_h264_encoder(ffmpeg_bin, width=max(target_w, target_h), is_master=True)
+
     segments = plan.get("segments") or []
     if not segments:
         raise RuntimeError("Không có segment nào trong timeline vlog.")
@@ -485,99 +1278,45 @@ def render_longform_ffmpeg_vlog(
             st = float(seg.get("start") or 0.0)
             dur = max(0.5, float(seg.get("duration") or 3.0))
             seg_out = tmp_path / f"seg_{idx:04d}.mp4"
+            fade_part = ",fade=t=in:st=0:d=0.35" if seg.get("is_chapter_start") and idx > 1 else ""
             vf = (
                 f"crop='min(iw,ih*{target_w}/{target_h})':'min(ih,iw*{target_h}/{target_w})',"
-                f"scale={target_w}:{target_h}:flags=lanczos,eq=contrast=1.03:saturation=1.06,setsar=1,fps=30,format=yuv420p"
+                f"scale={target_w}:{target_h}:flags=lanczos,unsharp=3:3:0.35:3:3:0.0,"
+                f"eq=contrast=1.02:saturation=1.05,setsar=1,fps=30,format=yuv420p{fade_part}"
             )
-            cmd = [
-                ffmpeg_bin,
-                "-y",
-                "-ss",
-                f"{st:.3f}",
-                "-t",
-                f"{dur:.3f}",
-                "-i",
-                str(src_p),
-                "-vf",
-                vf,
-                "-c:v",
-                vcodec,
-                *vcodec_args,
-                "-pix_fmt",
-                "yuv420p",
-            ]
-            if keep_clip_audio:
-                if _has_audio_stream(ffprobe_bin, src_p):
-                    cmd.extend(["-af", "aresample=44100,volume=0.35", "-c:a", "aac", "-ar", "44100", "-ac", "2", "-b:a", "128k"])
-                else:
-                    cmd = [
-                        ffmpeg_bin,
-                        "-y",
-                        "-ss",
-                        f"{st:.3f}",
-                        "-t",
-                        f"{dur:.3f}",
-                        "-i",
-                        str(src_p),
-                        "-f",
-                        "lavfi",
-                        "-t",
-                        f"{dur:.3f}",
-                        "-i",
-                        "anullsrc=r=44100:cl=stereo",
-                        "-map",
-                        "0:v:0",
-                        "-map",
-                        "1:a:0",
-                        "-vf",
-                        vf,
-                        "-c:v",
-                        vcodec,
-                        *vcodec_args,
-                        "-pix_fmt",
-                        "yuv420p",
-                        "-c:a",
-                        "aac",
-                        "-ar",
-                        "44100",
-                        "-ac",
-                        "2",
-                        "-b:a",
-                        "128k",
-                        "-shortest",
-                    ]
+            color_tags = ["-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709"]
+            if keep_clip_audio and not _has_audio_stream(ffprobe_bin, src_p):
+                cmd = [
+                    ffmpeg_bin, "-y", "-ss", f"{st:.3f}", "-t", f"{dur:.3f}", "-i", str(src_p),
+                    "-f", "lavfi", "-t", f"{dur:.3f}", "-i", "anullsrc=r=44100:cl=stereo",
+                    "-map", "0:v:0", "-map", "1:a:0", "-vf", vf,
+                    "-c:v", vcodec_seg, *vargs_seg, "-pix_fmt", "yuv420p", *color_tags,
+                    "-c:a", "aac", "-ar", "44100", "-ac", "2", "-b:a", "192k", "-shortest", str(seg_out),
+                ]
             else:
-                cmd.append("-an")
-            cmd.append(str(seg_out))
-            subprocess.run(cmd, capture_output=True, check=True, timeout=180)
+                cmd = [
+                    ffmpeg_bin, "-y", "-ss", f"{st:.3f}", "-t", f"{dur:.3f}", "-i", str(src_p),
+                    "-vf", vf, "-c:v", vcodec_seg, *vargs_seg, "-pix_fmt", "yuv420p", *color_tags,
+                ]
+                if keep_clip_audio:
+                    cmd.extend(["-af", "aresample=44100,volume=0.45", "-c:a", "aac", "-ar", "44100", "-ac", "2", "-b:a", "192k"])
+                else:
+                    cmd.append("-an")
+                cmd.append(str(seg_out))
+            subprocess.run(cmd, capture_output=True, check=True, timeout=240)
             seg_files.append(seg_out)
 
         concat_list = tmp_path / "concat.txt"
-        concat_list.write_text(
-            "\n".join(f"file '{p.as_posix()}'" for p in seg_files),
-            encoding="utf-8",
-        )
+        concat_list.write_text("\n".join(f"file '{p.as_posix()}'" for p in seg_files), encoding="utf-8")
         merged_video = tmp_path / "merged_raw.mp4"
         subprocess.run(
-            [
-                ffmpeg_bin,
-                "-y",
-                "-f",
-                "concat",
-                "-safe",
-                "0",
-                "-i",
-                str(concat_list),
-                "-c",
-                "copy",
-                str(merged_video),
-            ],
+            [ffmpeg_bin, "-y", "-f", "concat", "-safe", "0", "-i", str(concat_list), "-c", "copy", str(merged_video)],
             capture_output=True,
             check=True,
-            timeout=180,
+            timeout=240,
         )
 
-        # Final composite: ASS subtitles + unified Voice + continuous BGM across entire video
+        # Single final master pass: Remotion transparent overlays + ASS subs + sidechain ducked audio
         ass_file = tmp_path / "subs.ass"
         has_ass = False
         if srt_path and srt_path.exists():
@@ -585,66 +1324,99 @@ def render_longform_ffmpeg_vlog(
             has_ass = True
 
         comp_cmd = [ffmpeg_bin, "-y", "-i", str(merged_video)]
-        audio_inputs: list[tuple[str, float]] = []
-        has_voice = bool(voice_wav and voice_wav.exists())
-        has_bgm = bool(bgm_path and bgm_path.exists())
-
-        if has_voice:
-            comp_cmd.extend(["-i", str(voice_wav)])
-            audio_inputs.append(("voice", 1.0))
-        if has_bgm:
-            comp_cmd.extend(["-stream_loop", "-1", "-i", str(bgm_path)])
-            audio_inputs.append(("bgm", float(bgm_volume)))
-
-        vf_final = ""
-        if has_ass:
-            ass_esc = ass_file.as_posix().replace(":", "\\:")
-            vf_final = f"ass='{ass_esc}'"
-
-        filter_complex_parts: list[str] = []
-        if vf_final:
-            filter_complex_parts.append(f"[0:v]{vf_final}[vout]")
-            v_map = "[vout]"
-        else:
-            v_map = "0:v"
-
-        mix_labels: list[str] = []
         next_idx = 1
-        if keep_clip_audio:
-            filter_complex_parts.append("[0:a]aresample=44100,volume=0.38[clipa]")
-            mix_labels.append("[clipa]")
-        for kind, vol in audio_inputs:
-            lbl = f"a_{kind}"
-            filter_complex_parts.append(f"[{next_idx}:a]aresample=44100,volume={vol:.3f}[{lbl}]")
-            mix_labels.append(f"[{lbl}]")
+
+        valid_overlays = [
+            ov for ov in (overlays or [])
+            if isinstance(ov, dict) and ov.get("path") and Path(ov["path"]).exists()
+        ]
+        ov_inputs: list[tuple[int, float]] = []
+        for ov in valid_overlays:
+            st_sec = max(0.0, float(ov.get("start_sec") or 0.0))
+            comp_cmd.extend(["-itsoffset", f"{st_sec:.3f}", "-c:v", "libvpx-vp9", "-i", str(ov["path"])])
+            ov_inputs.append((next_idx, st_sec))
             next_idx += 1
 
-        a_map = ""
-        if len(mix_labels) > 1:
-            filter_complex_parts.append(
-                f"{''.join(mix_labels)}amix=inputs={len(mix_labels)}:duration=longest:dropout_transition=2:normalize=0,alimiter=limit=0.95[aout]"
-            )
-            a_map = "[aout]"
-        elif len(mix_labels) == 1:
-            a_map = mix_labels[0]
+        has_voice = bool(voice_wav and voice_wav.exists())
+        has_bgm = bool(bgm_path and bgm_path.exists())
+        voice_idx = None
+        bgm_idx = None
+        if has_voice:
+            comp_cmd.extend(["-i", str(voice_wav)])
+            voice_idx = next_idx
+            next_idx += 1
+        if has_bgm:
+            comp_cmd.extend(["-stream_loop", "-1", "-i", str(bgm_path)])
+            bgm_idx = next_idx
+            next_idx += 1
 
-        if filter_complex_parts:
-            comp_cmd.extend(["-filter_complex", ";".join(filter_complex_parts)])
+        filter_parts: list[str] = []
+        cur_v = "0:v"
+        if has_ass:
+            ass_esc = ass_file.as_posix().replace(":", "\\:")
+            filter_parts.append(f"[{cur_v}]ass='{ass_esc}'[vsub]")
+            cur_v = "vsub"
+
+        for oi, (in_idx, _st_sec) in enumerate(ov_inputs):
+            ov_lbl = f"ov{oi}"
+            out_lbl = f"vov{oi}"
+            filter_parts.append(f"[{in_idx}:v]scale={target_w}:{target_h}:flags=lanczos,format=yuva420p[{ov_lbl}]")
+            filter_parts.append(f"[{cur_v}][{ov_lbl}]overlay=0:0:eof_action=pass:shortest=0[{out_lbl}]")
+            cur_v = out_lbl
+
+        v_map = f"[{cur_v}]" if cur_v != "0:v" else "0:v"
+
+        # Audio pipeline with true sidechain ducking when narration speaks
+        bed_labels: list[str] = []
+        if keep_clip_audio:
+            filter_parts.append("[0:a]aresample=44100,aformat=channel_layouts=stereo,volume=0.45[clipa]")
+            bed_labels.append("[clipa]")
+        if bgm_idx is not None:
+            filter_parts.append(f"[{bgm_idx}:a]aresample=44100,aformat=channel_layouts=stereo,volume={float(bgm_volume):.3f}[bgma]")
+            bed_labels.append("[bgma]")
+
+        a_map = ""
+        if voice_idx is not None and bed_labels:
+            if len(bed_labels) > 1:
+                filter_parts.append(f"{''.join(bed_labels)}amix=inputs={len(bed_labels)}:duration=first:normalize=0[bed_mix]")
+                bed_lbl = "[bed_mix]"
+            else:
+                bed_lbl = bed_labels[0]
+            filter_parts.append(f"[{voice_idx}:a]aresample=44100,aformat=channel_layouts=stereo,asplit=2[v_sc][v_mix]")
+            filter_parts.append(f"{bed_lbl}[v_sc]sidechaincompress=threshold=0.025:ratio=6:attack=80:release=650:makeup=1[bed_ducked]")
+            filter_parts.append("[v_mix][bed_ducked]amix=inputs=2:duration=first:normalize=0,alimiter=limit=0.95[aout]")
+            a_map = "[aout]"
+        elif voice_idx is not None:
+            filter_parts.append(f"[{voice_idx}:a]aresample=44100,aformat=channel_layouts=stereo,alimiter=limit=0.95[aout]")
+            a_map = "[aout]"
+        elif len(bed_labels) > 1:
+            filter_parts.append(f"{''.join(bed_labels)}amix=inputs={len(bed_labels)}:duration=first:normalize=0,alimiter=limit=0.95[aout]")
+            a_map = "[aout]"
+        elif len(bed_labels) == 1:
+            a_map = bed_labels[0]
+
+        if filter_parts:
+            comp_cmd.extend(["-filter_complex", ";".join(filter_parts)])
         comp_cmd.extend(["-map", v_map])
         if a_map:
-            comp_cmd.extend(["-map", a_map, "-c:a", "aac", "-ar", "44100", "-b:a", "192k"])
+            comp_cmd.extend(["-map", a_map, "-c:a", "aac", "-ar", "44100", "-b:a", "256k"])
         else:
             comp_cmd.extend(["-an"])
 
-        if vf_final:
-            comp_cmd.extend(["-c:v", vcodec, *vcodec_args, "-pix_fmt", "yuv420p"])
-        else:
+        if v_map == "0:v":
             comp_cmd.extend(["-c:v", "copy"])
+        else:
+            comp_cmd.extend(
+                [
+                    "-c:v", vcodec_master, *vargs_master,
+                    "-pix_fmt", "yuv420p",
+                    "-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709",
+                ]
+            )
 
         comp_cmd.extend(["-shortest", "-movflags", "+faststart", str(output_mp4)])
-        subprocess.run(comp_cmd, capture_output=True, check=True, timeout=600)
+        subprocess.run(comp_cmd, capture_output=True, check=True, timeout=900)
 
-    ffprobe_bin = find_binary("ffprobe")
     final_dur = round(float(probe_duration(ffprobe_bin, output_mp4)), 2)
     return {
         "ok": True,
@@ -652,5 +1424,8 @@ def render_longform_ffmpeg_vlog(
         "duration_sec": final_dur,
         "width": target_w,
         "height": target_h,
+        "quality_label": plan.get("quality_label") or f"{target_w}x{target_h}",
         "segments_count": len(segments),
+        "chapters_count": len(plan.get("chapters") or []),
+        "overlays_count": len(ov_inputs),
     }
