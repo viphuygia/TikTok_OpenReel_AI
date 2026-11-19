@@ -5217,9 +5217,9 @@ def _execute_longform_vlog_pipeline(req: OneClickPipelineReq) -> None:
         log_line="[Bước 4/5] Đang xuất MP4 bằng FFmpeg Timeline Engine...",
     )
     bgm_name = str(req.bgm_track or "bgm_upbeat_tiktok.wav").strip()
-    bgm_file = ROOT_DIR / "06_assets_audio" / "bgm" / Path(bgm_name).name
+    bgm_file = PROJECT_ROOT / "06_assets_audio" / "bgm" / Path(bgm_name).name
     if not bgm_file.exists():
-        bgm_cand = sorted((ROOT_DIR / "06_assets_audio" / "bgm").glob("*.wav"))
+        bgm_cand = sorted((PROJECT_ROOT / "06_assets_audio" / "bgm").glob("*.wav"))
         bgm_file = bgm_cand[0] if bgm_cand else bgm_file
 
     out_dir = ACTIVE_PROJECT_ROOT / "outputs"

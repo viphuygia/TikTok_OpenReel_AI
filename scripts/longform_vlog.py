@@ -400,12 +400,55 @@ def srt_to_ass_file(
 
 def _detect_h264_encoder(ffmpeg_bin: str) -> tuple[str, list[str]]:
     try:
-        res = subprocess.run([ffmpeg_bin, "-hide_banner", "-encoders"], capture_output=True, text=True, timeout=15)
-        if "h264_nvenc" in (res.stdout or ""):
+        probe = subprocess.run(
+            [
+                ffmpeg_bin,
+                "-y",
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-f",
+                "lavfi",
+                "-i",
+                "color=c=black:s=256x256:d=0.1",
+                "-c:v",
+                "h264_nvenc",
+                "-f",
+                "null",
+                "-",
+            ],
+            capture_output=True,
+            timeout=10,
+        )
+        if probe.returncode == 0:
             return "h264_nvenc", ["-preset", "p4", "-cq", "21", "-b:v", "0"]
     except Exception:
         pass
     return "libx264", ["-preset", "veryfast", "-crf", "20"]
+
+
+def _has_audio_stream(ffprobe_bin: str, media_path: Path) -> bool:
+    try:
+        res = subprocess.run(
+            [
+                ffprobe_bin,
+                "-v",
+                "error",
+                "-select_streams",
+                "a:0",
+                "-show_entries",
+                "stream=codec_type",
+                "-of",
+                "default=noprint_wrappers=1:nokey=1",
+                str(media_path),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+        return bool((res.stdout or "").strip())
+    except Exception:
+        return False
 
 
 def render_longform_ffmpeg_vlog(
@@ -421,6 +464,7 @@ def render_longform_ffmpeg_vlog(
 ) -> dict[str, Any]:
     """Render a cohesive 2-20 min vlog timeline rapidly with FFmpeg (consistent style, BGM, and ASS subtitles)."""
     ffmpeg_bin = find_binary("ffmpeg")
+    ffprobe_bin = find_binary("ffprobe")
     vcodec, vcodec_args = _detect_h264_encoder(ffmpeg_bin)
     res_wh = plan.get("target_resolution") or [1920, 1080]
     target_w, target_h = int(res_wh[0]), int(res_wh[1])
@@ -463,7 +507,45 @@ def render_longform_ffmpeg_vlog(
                 "yuv420p",
             ]
             if keep_clip_audio:
-                cmd.extend(["-af", "aresample=44100,volume=0.35", "-c:a", "aac", "-ar", "44100", "-ac", "2", "-b:a", "128k"])
+                if _has_audio_stream(ffprobe_bin, src_p):
+                    cmd.extend(["-af", "aresample=44100,volume=0.35", "-c:a", "aac", "-ar", "44100", "-ac", "2", "-b:a", "128k"])
+                else:
+                    cmd = [
+                        ffmpeg_bin,
+                        "-y",
+                        "-ss",
+                        f"{st:.3f}",
+                        "-t",
+                        f"{dur:.3f}",
+                        "-i",
+                        str(src_p),
+                        "-f",
+                        "lavfi",
+                        "-t",
+                        f"{dur:.3f}",
+                        "-i",
+                        "anullsrc=r=44100:cl=stereo",
+                        "-map",
+                        "0:v:0",
+                        "-map",
+                        "1:a:0",
+                        "-vf",
+                        vf,
+                        "-c:v",
+                        vcodec,
+                        *vcodec_args,
+                        "-pix_fmt",
+                        "yuv420p",
+                        "-c:a",
+                        "aac",
+                        "-ar",
+                        "44100",
+                        "-ac",
+                        "2",
+                        "-b:a",
+                        "128k",
+                        "-shortest",
+                    ]
             else:
                 cmd.append("-an")
             cmd.append(str(seg_out))
