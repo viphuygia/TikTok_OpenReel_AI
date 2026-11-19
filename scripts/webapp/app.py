@@ -1716,7 +1716,7 @@ async def api_upload_files(
     dest_dir.mkdir(parents=True, exist_ok=True)
 
     uploaded: list[dict[str, Any]] = []
-    for up in files:
+    for idx, up in enumerate(files, start=1):
         orig_name = up.filename or "video.mp4"
         ext = Path(orig_name).suffix.lower()
         if ext not in MEDIA_EXTENSIONS:
@@ -1727,7 +1727,7 @@ async def api_upload_files(
         safe_stem = sanitize_filename(Path(orig_name).stem, fallback="upload")
         out_path = dest_dir / f"{safe_stem}{ext}"
         if out_path.exists():
-            out_path = dest_dir / f"{safe_stem}_{int(time.time())}{ext}"
+            out_path = dest_dir / f"{safe_stem}_{int(time.time())}_{idx}{ext}"
         with open(out_path, "wb") as f:
             while True:
                 chunk = await up.read(1024 * 1024)

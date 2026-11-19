@@ -750,9 +750,19 @@
               <h2 class="text-base font-semibold text-white">Tệp trong thư mục: <span id="tab1-cur-dir" class="text-indigo-400 mono text-sm">02_video_tho</span></h2>
               <p class="text-xs text-zinc-400">Phát trực tiếp từ ổ cứng hỗ trợ tua mượt (HTTP Range 206)</p>
             </div>
-            <div class="flex gap-2">
+            <div class="flex flex-wrap gap-2">
+              <button type="button" onclick="document.getElementById('tab1-upload-input').click()" class="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-xs font-semibold text-white transition">📱 Upload Video (iPhone / Máy)</button>
               <button onclick="loadTab1Files()" class="px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-xs text-zinc-200 border border-zinc-700">Làm mới</button>
               <button onclick="openExplorer(document.getElementById('dl-target-dir').value)" class="px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-xs text-zinc-200 border border-zinc-700">Mở thư mục Local</button>
+            </div>
+          </div>
+
+          <input id="tab1-upload-input" type="file" multiple accept="video/*,.mp4,.mov,.m4v,.mkv,.avi,.webm,audio/*,.wav,.mp3,.m4a" class="hidden" onchange="uploadTab1Files(this.files); this.value='';" />
+          <div id="tab1-dropzone" onclick="document.getElementById('tab1-upload-input').click()" class="cursor-pointer rounded-xl border-2 border-dashed border-indigo-500/40 hover:border-indigo-400 bg-indigo-950/20 px-4 py-3 text-center transition">
+            <div class="text-xs font-medium text-indigo-200">📱 Chạm để chọn video từ Thư viện ảnh iPhone / Tệp máy tính (hoặc kéo thả vào đây)</div>
+            <div id="tab1-upload-status" class="text-[11px] text-zinc-400 mt-1">Hỗ trợ nhiều file .MOV, .MP4 cùng lúc · Lưu thẳng vào thư mục đích đang chọn</div>
+            <div id="tab1-upload-bar-wrap" class="hidden mt-2 h-1.5 w-full rounded-full bg-zinc-800 overflow-hidden">
+              <div id="tab1-upload-bar" class="h-full bg-indigo-500 transition-all duration-150" style="width:0%"></div>
             </div>
           </div>
 
@@ -2897,30 +2907,54 @@
       }
     }
 
-    async function uploadWorkshopFiles(fileList) {
+    async function uploadMediaFilesWithProgress(fileList, targetDir, statusEl, barWrapEl, barEl, onSuccess) {
       if (!fileList || !fileList.length) return;
-      const targetDir = document.getElementById('ws-upload-dir')?.value || '02_video_tho';
-      const statusEl = document.getElementById('ws-upload-status');
       const fd = new FormData();
       fd.append('target_dir', targetDir);
       for (const file of fileList) {
         fd.append('files', file);
       }
-      statusEl.textContent = `Đang tải lên ${fileList.length} tệp vào ${targetDir}...`;
+      if (statusEl) statusEl.textContent = `Đang tải lên ${fileList.length} tệp vào ${targetDir}... 0%`;
+      if (barWrapEl) barWrapEl.classList.remove('hidden');
+      if (barEl) barEl.style.width = '0%';
       try {
-        const res = await api('/api/files/upload', { method: 'POST', body: fd });
-        statusEl.textContent = `Đã tải lên ${res.count} tệp vào ${res.target_dir}.`;
+        const res = await new Promise((resolve, reject) => {
+          const xhr = new XMLHttpRequest();
+          xhr.open('POST', '/api/files/upload');
+          xhr.upload.onprogress = (ev) => {
+            if (ev.lengthComputable) {
+              const pct = Math.min(100, Math.round((ev.loaded / ev.total) * 100));
+              const mbLoaded = (ev.loaded / (1024 * 1024)).toFixed(1);
+              const mbTotal = (ev.total / (1024 * 1024)).toFixed(1);
+              if (barEl) barEl.style.width = `${pct}%`;
+              if (statusEl) statusEl.textContent = `Đang tải lên ${fileList.length} tệp vào ${targetDir}: ${pct}% (${mbLoaded}/${mbTotal} MB)...`;
+            }
+          };
+          xhr.onload = () => {
+            try {
+              const data = JSON.parse(xhr.responseText || '{}');
+              if (xhr.status >= 200 && xhr.status < 300) resolve(data);
+              else reject(new Error(data.detail || `HTTP ${xhr.status}`));
+            } catch {
+              reject(new Error(`HTTP ${xhr.status}`));
+            }
+          };
+          xhr.onerror = () => reject(new Error('Lỗi kết nối mạng khi upload'));
+          xhr.send(fd);
+        });
+        if (statusEl) statusEl.textContent = `Đã tải lên ${res.count} tệp vào ${res.target_dir}.`;
         toast(`Đã thêm ${res.count} tệp vào ${res.target_dir}`, 'success');
-        await loadWorkshopState();
-        loadOverview();
+        if (onSuccess) await onSuccess(res);
       } catch (e) {
-        statusEl.textContent = `Lỗi tải lên: ${e.message}`;
+        if (statusEl) statusEl.textContent = `Lỗi tải lên: ${e.message}`;
         toast(e.message, 'error');
+      } finally {
+        if (barWrapEl) setTimeout(() => barWrapEl.classList.add('hidden'), 1200);
       }
     }
 
-    (function initWorkshopDropzone() {
-      const dz = document.getElementById('ws-dropzone');
+    function bindDropzone(dzId, handler) {
+      const dz = document.getElementById(dzId);
       if (!dz) return;
       ['dragenter', 'dragover'].forEach(ev => dz.addEventListener(ev, (e) => {
         e.preventDefault(); e.stopPropagation();
@@ -2932,9 +2966,44 @@
       }));
       dz.addEventListener('drop', (e) => {
         const files = e.dataTransfer?.files;
-        if (files && files.length) uploadWorkshopFiles(files);
+        if (files && files.length) handler(files);
       });
-    })();
+    }
+
+    async function uploadTab1Files(fileList) {
+      const targetDir = document.getElementById('dl-target-dir')?.value || '02_video_tho';
+      return uploadMediaFilesWithProgress(
+        fileList,
+        targetDir,
+        document.getElementById('tab1-upload-status'),
+        document.getElementById('tab1-upload-bar-wrap'),
+        document.getElementById('tab1-upload-bar'),
+        async () => {
+          await loadTab1Files();
+          loadOverview();
+          if (typeof loadWorkshopState === 'function') loadWorkshopState();
+        }
+      );
+    }
+
+    async function uploadWorkshopFiles(fileList) {
+      const targetDir = document.getElementById('ws-upload-dir')?.value || '02_video_tho';
+      return uploadMediaFilesWithProgress(
+        fileList,
+        targetDir,
+        document.getElementById('ws-upload-status'),
+        null,
+        null,
+        async () => {
+          await loadWorkshopState();
+          loadOverview();
+          loadTab1Files();
+        }
+      );
+    }
+
+    bindDropzone('tab1-dropzone', uploadTab1Files);
+    bindDropzone('ws-dropzone', uploadWorkshopFiles);
 
     function previewWorkshopRawFile(relPath) {
       const f = (state.workshop?.raw_videos || []).find(x => x.rel_path === relPath);
