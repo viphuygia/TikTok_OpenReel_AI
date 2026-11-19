@@ -33,7 +33,7 @@ try {
         git init -b main | Out-Null
         git remote add origin $RepoUrl
     } else {
-        $curOrigin = (git remote get-url origin 2>$null)
+        $curOrigin = (cmd /c "git remote get-url origin 2>nul")
         if (-not $curOrigin) {
             git remote add origin $RepoUrl
         }
@@ -42,18 +42,19 @@ try {
     # 2. Fetch latest commit & fast-sync code without touching user data
     Write-Info "Dang kiem tra ban cap nhat tu GitHub..."
     git fetch origin main --prune
-    $oldHead = (git rev-parse HEAD 2>$null)
-    $newHead = (git rev-parse origin/main 2>$null)
+    $oldHead = ((cmd /c "git rev-parse --verify HEAD 2>nul") | Out-String).Trim()
+    $newHead = ((cmd /c "git rev-parse --verify origin/main 2>nul") | Out-String).Trim()
 
     if ($oldHead -and $newHead -and ($oldHead -eq $newHead) -and (-not $ForceDeps)) {
         Write-Ok "Ma nguon da o phien ban moi nhat ($($newHead.Substring(0,7)))."
     } else {
         if ($oldHead) {
             Write-Info "Cap nhat code: $($oldHead.Substring(0,7)) -> $($newHead.Substring(0,7))"
+            git reset --hard origin/main
         } else {
             Write-Info "Dong bo code lan dau tu origin/main ($($newHead.Substring(0,7)))..."
+            git checkout -f -B main origin/main
         }
-        git reset --hard origin/main
 
         # Clean obsolete tracked/untracked code files while strictly preserving user data & local models
         git clean -fd `
