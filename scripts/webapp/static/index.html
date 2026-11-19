@@ -212,16 +212,16 @@
   </div>
 
   <!-- Auto Create Video Settings Modal -->
-  <div id="auto-pipeline-modal" class="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm hidden items-center justify-center p-4" onclick="closeAutoPipelineModal()">
-    <div class="w-full max-w-2xl bg-studio-card border border-zinc-700 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[92vh]" onclick="event.stopPropagation()">
-      <div class="px-5 py-4 border-b border-zinc-800 flex items-center justify-between">
-        <div>
-          <h3 class="text-base font-semibold text-white">Cấu Hình Tạo Video Auto</h3>
-          <p class="text-xs text-zinc-400">Chọn Engine dựng hình (Remotion Classic / Innovation Remotion / HyperFrames) và các tùy chọn trước khi chạy</p>
+  <div id="auto-pipeline-modal" class="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm hidden items-center justify-center p-2 sm:p-4" onclick="closeAutoPipelineModal()">
+    <div class="w-full max-w-4xl bg-studio-card border border-zinc-700 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[94vh]" onclick="event.stopPropagation()">
+      <div class="px-4 sm:px-6 py-3 sm:py-4 border-b border-zinc-800 flex items-center justify-between gap-2">
+        <div class="min-w-0">
+          <h3 class="text-sm sm:text-base font-semibold text-white truncate">Cấu Hình Tạo Video Auto</h3>
+          <p class="hidden sm:block text-xs text-zinc-400">Chọn Engine dựng hình (Remotion Classic / Innovation Remotion / HyperFrames) và các tùy chọn trước khi chạy</p>
         </div>
-        <button type="button" onclick="closeAutoPipelineModal()" class="px-3 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-xs text-zinc-200">Đóng</button>
+        <button type="button" onclick="closeAutoPipelineModal()" class="shrink-0 px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-xs text-zinc-200">Đóng</button>
       </div>
-      <div class="p-5 space-y-4 text-xs overflow-y-auto">
+      <div class="p-3.5 sm:p-6 space-y-3.5 sm:space-y-4 text-xs overflow-y-auto">
         <!-- 0. Multi-Project Sequential Selector -->
         <div class="rounded-xl bg-zinc-900/70 border border-zinc-800 p-3 space-y-2">
           <div class="flex flex-wrap items-center justify-between gap-2">
@@ -304,69 +304,71 @@
         <!-- Quick Visual / Audio / Pipeline Toggles -->
         <div class="rounded-xl bg-zinc-900/70 border border-zinc-800 p-3 space-y-2.5">
           <div class="text-[11px] font-semibold uppercase tracking-wide text-zinc-400">3. Giọng Đọc AI, Nhịp Dựng &amp; Nhạc Nền (Dùng cho cả 3 Engine)</div>
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-            <div>
-              <label class="block text-[11px] text-sky-300 font-medium mb-1">📐 Tỷ lệ Khung hình Video</label>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 items-end">
+            <div class="min-w-0">
+              <label class="block text-[11px] text-sky-300 font-medium mb-1 truncate">📐 Tỷ lệ Khung hình</label>
               <select id="auto-aspect-ratio" class="w-full rounded-lg bg-zinc-950 border border-zinc-700 px-2.5 py-2 text-xs text-zinc-100">
-                <option value="9:16" selected>📱 9:16 Dọc (1080×1920 · TikTok / Reels / Shorts)</option>
-                <option value="16:9">🖥️ 16:9 Ngang (1920×1080 · YouTube / Vlog Ngang)</option>
+                <option value="9:16" selected>📱 9:16 Dọc (TikTok / Reels)</option>
+                <option value="16:9">🖥️ 16:9 Ngang (YouTube / Vlog)</option>
               </select>
             </div>
-            <div>
-              <label class="block text-[11px] text-pink-300 font-medium mb-1">🎬 Phong cách / Vibe Nội dung (Không ghi đè Style DNA gốc)</label>
+            <div class="min-w-0">
+              <label class="block text-[11px] text-pink-300 font-medium mb-1 truncate">🎬 Vibe Nội dung <span class="hidden md:inline text-zinc-400">(Không ghi đè DNA)</span></label>
               <select id="auto-content-vibe" class="w-full rounded-lg bg-zinc-950 border border-zinc-700 px-2.5 py-2 text-xs text-zinc-100">
-                <option value="learned_dna" selected>✨ Theo Style DNA đã học (Mặc định · Giữ nguyên kênh)</option>
-                <option value="outdoor_picnic">🏕️ Dã ngoại / Camping / Picnic (Không giỏ hàng)</option>
-                <option value="travel_vlog">✈️ Du lịch / Travel Vlog (Cinematic &amp; Khám phá)</option>
-                <option value="food_cafe">🍜 Ẩm thực / Cafe / Chill (Review không gian)</option>
-                <option value="daily_story">📖 Daily Vlog / Storytelling (Đời sống nhẹ nhàng)</option>
-                <option value="creative_internet">🌐 Tự do Sáng tạo (Style Vlog/Trend trên mạng)</option>
+                <option value="learned_dna" selected>✨ Theo DNA đã học (Mặc định)</option>
+                <option value="outdoor_picnic">🏕️ Dã ngoại / Camping / Picnic</option>
+                <option value="travel_vlog">✈️ Du lịch / Travel Vlog</option>
+                <option value="food_cafe">🍜 Ẩm thực / Cafe / Chill</option>
+                <option value="daily_story">📖 Daily Vlog / Storytelling</option>
+                <option value="creative_internet">🌐 Tự do Sáng tạo (Trend mạng)</option>
               </select>
             </div>
           </div>
-          <div>
-            <label class="block text-[11px] text-cyan-300 font-medium mb-1">🎙️ Kho Giọng Đọc Miễn Phí 0đ (20+ Giọng &amp; Random Thông Minh)</label>
+          <div class="min-w-0">
+            <label class="block text-[11px] text-cyan-300 font-medium mb-1 truncate">🎙️ Giọng Đọc Miễn Phí 0đ <span class="hidden sm:inline">(20+ Giọng &amp; Random)</span></label>
             <select id="auto-tts-engine" class="w-full rounded-lg bg-zinc-950 border border-zinc-700 px-2.5 py-2 text-xs text-zinc-100">
-              <option value="random_neural" selected>🎲 Random Thông Minh: 3 Giọng Edge Neural KOC Khác Nhau (Khuyên dùng)</option>
-              <option value="random_piper_neural">🎲 Random Đa Dạng: Mix Edge Neural + Piper Offline</option>
-              <option value="random_all">🎲 Random Toàn Kho (20+ Giọng Miễn Phí 0đ)</option>
-              <option value="edge_hoaimy_koc">✨ Nữ Hoài My · KOC Tự Nhiên (Neural)</option>
-              <option value="edge_namminh_review">✨ Nam Minh · Review Công Nghệ Chuẩn</option>
-              <option value="piper_vais1000">🎙️ Piper · VAIS1000 Rõ Ràng (Offline)</option>
-              <option value="f5_clone_default">🎙️ F5-TTS · Clone Giọng Mẫu Chuẩn (Local GPU)</option>
+              <option value="random_neural" selected>🎲 Random: 3 Giọng Edge Neural KOC</option>
+              <option value="random_piper_neural">🎲 Random: Mix Edge Neural + Piper</option>
+              <option value="random_all">🎲 Random Toàn Kho (20+ Giọng 0đ)</option>
+              <option value="edge_hoaimy_koc">✨ Nữ Hoài My · KOC Tự Nhiên</option>
+              <option value="edge_namminh_review">✨ Nam Minh · Review Công Nghệ</option>
+              <option value="piper_vais1000">🎙️ Piper · VAIS1000 (Offline)</option>
+              <option value="f5_clone_default">🎙️ F5-TTS · Clone Giọng Mẫu</option>
             </select>
           </div>
-          <div>
-            <label class="block text-[11px] text-emerald-300 font-medium mb-1">🔊 Hiệu ứng Âm thanh (SFX) Chuyển Cảnh</label>
-            <select id="auto-sfx-level" class="w-full rounded-lg bg-zinc-950 border border-zinc-700 px-2.5 py-2 text-xs text-zinc-100">
-              <option value="subtle" selected>🌿 Tinh tế (Khuyên dùng · Tối đa 3–4 tiếng pop/swoosh nhẹ, bỏ tiếng game)</option>
-              <option value="balanced">⚖️ Cân bằng (Thêm nhịp pop nhẹ ở callout chính)</option>
-              <option value="off">🔇 Tắt hoàn toàn SFX (Chỉ Giọng đọc + Nhạc nền)</option>
-            </select>
-          </div>
-          <div>
-            <label class="block text-[11px] text-emerald-300 font-medium mb-1">Mức độ Hiệu ứng, Nhịp cắt &amp; Chuyển cảnh (AI dùng để viết kịch bản + chia số cảnh + render)</label>
-            <select id="auto-transition-level" class="w-full rounded-lg bg-zinc-950 border border-zinc-700 px-2.5 py-2 text-xs text-zinc-100">
-              <option value="gentle">🌿 Nhẹ &amp; Tinh tế (4–6 cảnh dài, câu mượt, zoom êm, ít chuyển cảnh)</option>
-              <option value="balanced" selected>⚖️ Cân bằng (Khuyên dùng · 6–8 cảnh vừa phải, chuyển cảnh mượt)</option>
-              <option value="energetic">💥 Dày &amp; Mạnh (9–12 cảnh cắt nhanh theo beat, chuyển cảnh dày)</option>
-            </select>
-          </div>
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-            <div>
-              <label class="block text-[11px] text-amber-300 font-medium mb-1">🎨 Mức độ Icon chữ (Twemoji Vector)</label>
-              <select id="auto-icon-density" class="w-full rounded-lg bg-zinc-950 border border-zinc-700 px-2.5 py-1.5 text-xs text-zinc-100">
-                <option value="minimal">🌿 Ít / Sạch (Chỉ CTA Giỏ Hàng)</option>
-                <option value="balanced" selected>⚖️ Cân bằng (CTA + Nhãn + Ticker)</option>
-                <option value="expressive">🌈 Nhiều màu sắc (Đầy đủ cả USP)</option>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 items-end">
+            <div class="min-w-0">
+              <label class="block text-[11px] text-emerald-300 font-medium mb-1 truncate">🔊 Hiệu ứng Âm thanh (SFX)</label>
+              <select id="auto-sfx-level" class="w-full rounded-lg bg-zinc-950 border border-zinc-700 px-2.5 py-2 text-xs text-zinc-100">
+                <option value="subtle" selected>🌿 Tinh tế (3–4 pop/swoosh nhẹ)</option>
+                <option value="balanced">⚖️ Cân bằng (Thêm pop callout)</option>
+                <option value="off">🔇 Tắt hoàn toàn SFX</option>
               </select>
             </div>
-            <div>
-              <label class="block text-[11px] text-pink-300 font-medium mb-1">✨ Mức độ Sticker Động (Lottie + Chat)</label>
+            <div class="min-w-0">
+              <label class="block text-[11px] text-emerald-300 font-medium mb-1 truncate">🎞️ Nhịp cắt &amp; Chuyển cảnh <span class="hidden md:inline">(AI chia cảnh)</span></label>
+              <select id="auto-transition-level" class="w-full rounded-lg bg-zinc-950 border border-zinc-700 px-2.5 py-2 text-xs text-zinc-100">
+                <option value="gentle">🌿 Nhẹ &amp; Tinh tế (4–6 cảnh)</option>
+                <option value="balanced" selected>⚖️ Cân bằng (6–8 cảnh mượt)</option>
+                <option value="energetic">💥 Dày &amp; Mạnh (9–12 cảnh nhanh)</option>
+              </select>
+            </div>
+          </div>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 items-end">
+            <div class="min-w-0">
+              <label class="block text-[11px] text-amber-300 font-medium mb-1 truncate">🎨 Mức độ Icon chữ <span class="hidden sm:inline">(Twemoji)</span></label>
+              <select id="auto-icon-density" class="w-full rounded-lg bg-zinc-950 border border-zinc-700 px-2.5 py-1.5 text-xs text-zinc-100">
+                <option value="minimal">🌿 Ít / Sạch (Chỉ CTA)</option>
+                <option value="balanced" selected>⚖️ Cân bằng (CTA + Nhãn)</option>
+                <option value="expressive">🌈 Nhiều màu sắc</option>
+              </select>
+            </div>
+            <div class="min-w-0">
+              <label class="block text-[11px] text-pink-300 font-medium mb-1 truncate">✨ Mức độ Sticker <span class="hidden sm:inline">(Lottie + Chat)</span></label>
               <select id="auto-sticker-density" class="w-full rounded-lg bg-zinc-950 border border-zinc-700 px-2.5 py-1.5 text-xs text-zinc-100">
                 <option value="off">🚫 Tắt Sticker Động</option>
-                <option value="normal" selected>⚖️ Vừa phải (4 Sticker + Chat)</option>
-                <option value="rich">🎉 Sôi động (7-8 Sticker + Giỏ Hàng động)</option>
+                <option value="normal" selected>⚖️ Vừa phải (4 Sticker)</option>
+                <option value="rich">🎉 Sôi động (7–8 Sticker)</option>
               </select>
             </div>
           </div>
