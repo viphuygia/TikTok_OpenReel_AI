@@ -471,9 +471,9 @@ def generate_longform_chapter_script(
     ]
     n_chap = len(chapters_plan)
     total_dur = float(plan.get("target_duration_sec") or 300.0)
-    # Calm vlog density: ~1.35 words per sec total -> ~40-50% B-roll breathing time
-    target_total_words = max(140, min(1400, int(round(total_dur * 1.35))))
-    words_per_chap = max(45, int(round(target_total_words / max(1, n_chap))))
+    # Calm vlog density: ~1.05 words per sec total -> ~55% B-roll breathing time
+    target_total_words = max(120, min(1100, int(round(total_dur * 1.05))))
+    words_per_chap = max(38, int(round(target_total_words / max(1, n_chap))))
 
     clip_summary = ", ".join(
         f"Cảnh {c['order']}: {Path(c['name']).stem} ({c['duration_sec']:.0f}s)" for c in ordered_clips[:24]
@@ -491,7 +491,8 @@ def generate_longform_chapter_script(
         f"Phong cách: {vibe_meta.get('prompt_hint') or vibe_meta.get('label')}\n"
         f"Danh sách clip thô theo thứ tự: {clip_summary}\n\n"
         "YÊU CẦU CỰC KỲ QUAN TRỌNG:\n"
-        f"- Tổng lời thoại toàn video chỉ khoảng {target_total_words} từ (~{words_per_chap} từ mỗi chương, chia thành 2 đoạn ngắn/chương) để CHỪA KHOẢNG THỞ 4-7 GIÂY cho cảnh quay B-roll đẹp và âm thanh thiên nhiên.\n"
+        f"- Tổng lời thoại toàn video CHỈ khoảng {target_total_words} từ (~{words_per_chap} từ mỗi chương, chia thành 2 đoạn ngắn 20-28 từ/đoạn) để CHỪA KHOẢNG THỞ 5-9 GIÂY cho người xem ngắm cảnh B-roll và nghe âm thanh thiên nhiên.\n"
+        "- Viết dàn trải đều cho TẤT CẢ các chương từ đầu tới cuối video, không dồn chữ vào đầu video.\n"
         "- TUYỆT ĐỐI KHÔNG lặp lại câu văn hoặc ý diễn đạt giữa các chương.\n"
         "- TUYỆT ĐỐI KHÔNG nhắc giỏ hàng, chốt đơn, freeship hay bán hàng.\n"
         "- Trả về DUY NHẤT JSON hợp lệ theo đúng cấu trúc sau (không giải thích thêm):\n"
@@ -506,8 +507,8 @@ def generate_longform_chapter_script(
         '      "chapter_title": "TÊN CHƯƠNG NGẮN (<= 26 ký tự)",\n'
         '      "chapter_subtitle": "Mô tả nhanh 1 dòng (<= 45 ký tự)",\n'
         '      "narration_blocks": [\n'
-        '        {"offset_ratio": 0.14, "text": "Đoạn lời bình mở chương tự nhiên 2-3 câu (~25-35 từ)."},\n'
-        '        {"offset_ratio": 0.60, "text": "Đoạn lời bình tiếp nối khác hoàn toàn 2-3 câu (~25-35 từ)."}\n'
+        '        {"offset_ratio": 0.12, "text": "Đoạn lời bình mở chương tự nhiên 2 câu ngắn gọn (~20-26 từ)."},\n'
+        '        {"offset_ratio": 0.56, "text": "Đoạn lời bình tiếp nối khác hoàn toàn 2 câu ngắn gọn (~20-26 từ)."}\n'
         '      ]\n'
         '    }\n'
         '  ]\n'
@@ -809,6 +810,13 @@ def _trim_pcm_silence(pcm: np.ndarray, sample_rate: int, thresh: float = 0.008) 
     return arr[st:en]
 
 
+def _vlog_edge_rate(raw_rate: str) -> str:
+    r = (raw_rate or "+0%").strip()
+    if r.startswith("-") and len(r) >= 3:
+        return r
+    return "-5%"
+
+
 def build_longform_voice_and_srt(
     chapter_script: dict[str, Any],
     plan: dict[str, Any],
@@ -816,108 +824,186 @@ def build_longform_voice_and_srt(
     out_srt_path: Path,
     voice_preset: str = "edge_hoaimy_koc",
 ) -> dict[str, Any]:
-    """Synthesize calm chapter narration blocks with 3.5-8s breathing gaps and write exact synced SRT."""
+    """Synthesize calm sentence-spaced vlog narration distributed evenly across the entire video."""
     preset = _ve.resolve_voice_preset(voice_preset)
     engine = str(preset.get("tts_engine") or "edge_tts")
+    vlog_edge_rate = _vlog_edge_rate(str(preset.get("edge_rate") or "+0%"))
+    vlog_piper_scale = max(1.08, float(preset.get("piper_length_scale") or 1.0) * 1.10)
     sr = 24000
     total_dur = float(plan.get("target_duration_sec") or 300.0)
     master_samples = np.zeros(int(round(total_dur * sr)), dtype=np.float32)
 
     ffmpeg_bin = find_binary("ffmpeg")
     srt_entries: list[tuple[float, float, str]] = []
-    placed_blocks = 0
+    sentence_pause_sec = 0.85
 
+    piper_voice_obj = None
+    piper_syn_cfg = None
+    if engine == "piper_tts":
+        try:
+            from piper.voice import PiperVoice
+            from piper.config import SynthesisConfig
+
+            model_key = str(preset.get("piper_model") or "vi_VN-vais1000-medium")
+            meta = _ve.PIPER_VOICE_MODELS.get(model_key) or _ve.PIPER_VOICE_MODELS["vi_VN-vais1000-medium"]
+            _ve.PIPER_VOICES_DIR.mkdir(parents=True, exist_ok=True)
+            onnx_p = _ve.PIPER_VOICES_DIR / meta["filename"]
+            if not onnx_p.exists():
+                import urllib.request
+
+                urllib.request.urlretrieve(f"{_ve.PIPER_HF_BASE}{meta['hf_path']}", str(onnx_p))
+                urllib.request.urlretrieve(f"{_ve.PIPER_HF_BASE}{meta['hf_path']}.json", f"{onnx_p}.json")
+            piper_voice_obj = PiperVoice.load(str(onnx_p))
+            sp_id = preset.get("piper_speaker")
+            piper_syn_cfg = SynthesisConfig(
+                length_scale=vlog_piper_scale,
+                speaker_id=(sp_id if sp_id is not None and sp_id >= 0 else None),
+            )
+        except Exception as exc:
+            print(f"[LongForm Piper Init WARN] {exc}")
+            piper_voice_obj = None
+
+    def _synth_one_sentence(sent_txt: str, out_w: Path) -> bool:
+        if piper_voice_obj is not None and piper_syn_cfg is not None:
+            try:
+                tmp_raw = out_w.with_name(f"{out_w.stem}_praw.wav")
+                with wave.open(str(tmp_raw), "wb") as wf:
+                    piper_voice_obj.synthesize_wav(sent_txt, wf, syn_config=piper_syn_cfg)
+                subprocess.run(
+                    [ffmpeg_bin, "-y", "-hide_banner", "-loglevel", "error", "-i", str(tmp_raw), "-ar", "24000", "-ac", "1", "-c:a", "pcm_s16le", str(out_w)],
+                    check=True,
+                    timeout=60,
+                )
+                tmp_raw.unlink(missing_ok=True)
+                if out_w.exists() and out_w.stat().st_size > 800:
+                    return True
+            except Exception:
+                pass
+        if engine in ("edge_tts", "piper_tts"):
+            if _synth_edge_tts_wav(
+                sent_txt,
+                out_w,
+                str(preset.get("edge_voice") or "vi-VN-HoaiMyNeural"),
+                vlog_edge_rate,
+                str(preset.get("edge_pitch") or "+0Hz"),
+            ):
+                return True
+        cli_cmd = [
+            sys.executable,
+            str(PROJECT_ROOT / "scripts" / "voice_engine.py"),
+            "--text",
+            sent_txt,
+            "--voice-preset",
+            str(preset.get("id") or "edge_hoaimy_koc"),
+            "--output-audio",
+            str(out_w),
+            "--no-srt",
+        ]
+        subprocess.run(cli_cmd, capture_output=True, timeout=180)
+        return out_w.exists() and out_w.stat().st_size > 800
+
+    # Pass 1: Synthesize all blocks sentence-by-sentence with 0.85s natural breathing pauses
+    synthesized_blocks: list[dict[str, Any]] = []
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp_p = Path(tmpdir)
-        min_next_start = 2.6 if total_dur >= 20.0 else 0.3  # Never speak over the initial 2.6s of VlogIntro
-        max_end_guard = max(min_next_start + 3.0, total_dur - (4.2 if total_dur >= 20.0 else 0.4))  # Leave calm room before VlogOutro
-
         for ch in chapter_script.get("chapters") or []:
-            ch_st = float(ch.get("start_sec") or 0.0)
-            ch_en = float(ch.get("end_sec") or total_dur)
-            ch_dur = max(6.0, ch_en - ch_st)
+            ch_idx = int(ch.get("index") or 1)
             for bi, blk in enumerate(ch.get("narration_blocks") or [], start=1):
                 disp_txt = str(blk.get("text") or "").strip()
                 if not disp_txt:
                     continue
-                speak_txt = _clean_tts_text(disp_txt)
-                if not speak_txt:
-                    continue
-
-                blk_wav = tmp_p / f"ch{ch['index']}_b{bi}.wav"
-                ok = False
-                if engine == "piper_tts":
-                    ok = _synth_piper_wav(
-                        speak_txt,
-                        blk_wav,
-                        str(preset.get("piper_model") or "vi_VN-vais1000-medium"),
-                        float(preset.get("piper_length_scale") or 0.96),
-                        preset.get("piper_speaker"),
-                    )
-                if not ok and engine in ("edge_tts", "piper_tts"):
-                    ok = _synth_edge_tts_wav(
-                        speak_txt,
-                        blk_wav,
-                        str(preset.get("edge_voice") or "vi-VN-HoaiMyNeural"),
-                        str(preset.get("edge_rate") or "+2%"),
-                        str(preset.get("edge_pitch") or "+0Hz"),
-                    )
-                if not ok:
-                    # Fallback via voice_engine.py CLI (supports f5_tts or auto fallback)
-                    cli_cmd = [
-                        sys.executable,
-                        str(PROJECT_ROOT / "scripts" / "voice_engine.py"),
-                        "--text",
-                        speak_txt,
-                        "--voice-preset",
-                        str(preset.get("id") or "edge_hoaimy_koc"),
-                        "--output-audio",
-                        str(blk_wav),
-                        "--no-srt",
-                    ]
-                    subprocess.run(cli_cmd, capture_output=True, timeout=180)
-                    ok = blk_wav.exists() and blk_wav.stat().st_size > 1000
-
-                if not ok:
-                    continue
-
-                pcm, p_sr = sf.read(str(blk_wav), dtype="float32")
-                pcm_1d = _trim_pcm_silence(np.asarray(pcm, dtype=np.float32).reshape(-1), int(p_sr))
-                if len(pcm_1d) < 400:
-                    continue
-
-                dur_blk = len(pcm_1d) / float(sr)
-                desired_start = ch_st + float(blk.get("offset_ratio") or 0.15) * ch_dur
-                actual_start = max(min_next_start, desired_start)
-                if actual_start + dur_blk > max_end_guard:
-                    # Trim or shift slightly if near end of video
-                    if max_end_guard - dur_blk >= min_next_start:
-                        actual_start = max_end_guard - dur_blk
-                    else:
+                raw_sents = [s.strip() for s in re.split(r"(?<=[.!?])\s+", disp_txt) if s.strip()] or [disp_txt]
+                sent_pcms: list[np.ndarray] = []
+                sent_disp: list[str] = []
+                for si, s_disp in enumerate(raw_sents, start=1):
+                    s_speak = _clean_tts_text(s_disp)
+                    if not s_speak:
                         continue
-
-                st_idx = int(round(actual_start * sr))
-                en_idx = min(len(master_samples), st_idx + len(pcm_1d))
-                copy_len = en_idx - st_idx
-                if copy_len <= 0:
+                    s_wav = tmp_p / f"ch{ch_idx}_b{bi}_s{si}.wav"
+                    if not _synth_one_sentence(s_speak, s_wav):
+                        continue
+                    pcm, p_sr = sf.read(str(s_wav), dtype="float32")
+                    pcm_1d = _trim_pcm_silence(np.asarray(pcm, dtype=np.float32).reshape(-1), int(p_sr))
+                    if len(pcm_1d) >= 300:
+                        sent_pcms.append(pcm_1d)
+                        sent_disp.append(s_disp)
+                if not sent_pcms:
                     continue
-                master_samples[st_idx:en_idx] += pcm_1d[:copy_len]
-                actual_end = actual_start + copy_len / float(sr)
-                placed_blocks += 1
 
-                # Maintain at least 3.5s breathing gap between narration blocks
-                min_next_start = actual_end + 3.5
+                # Join sentences with 0.85s calm breathing pause
+                pause_arr = np.zeros(int(round(sentence_pause_sec * sr)), dtype=np.float32)
+                joined_parts: list[np.ndarray] = []
+                sent_offsets: list[tuple[float, float, str]] = []
+                cur_offset = 0.0
+                for idx_s, (spcm, sdisp) in enumerate(zip(sent_pcms, sent_disp)):
+                    if idx_s > 0:
+                        joined_parts.append(pause_arr)
+                        cur_offset += sentence_pause_sec
+                    sdur = len(spcm) / float(sr)
+                    joined_parts.append(spcm)
+                    sent_offsets.append((cur_offset, cur_offset + sdur, sdisp))
+                    cur_offset += sdur
 
-                # Build exact proportional SRT captions cleanly without needing Whisper
-                lines = _split_display_caption_lines(disp_txt, max_words=9)
+                blk_pcm = np.concatenate(joined_parts)
+                synthesized_blocks.append(
+                    {
+                        "chapter_index": ch_idx,
+                        "pcm": blk_pcm,
+                        "duration": len(blk_pcm) / float(sr),
+                        "sent_offsets": sent_offsets,
+                    }
+                )
+
+    # Pass 2: Distribute all blocks evenly across the whole video [safe_start .. safe_end]
+    safe_start = 4.8 if total_dur >= 20.0 else 0.3
+    safe_end = max(safe_start + 3.0, total_dur - (6.5 if total_dur >= 20.0 else 0.4))
+    avail_span = safe_end - safe_start
+
+    # If total speech exceeds 70% of avail_span, trim trailing blocks only if strictly necessary; otherwise spread evenly
+    total_speech = sum(b["duration"] for b in synthesized_blocks)
+    n_blk = len(synthesized_blocks)
+    placed_blocks = 0
+
+    if n_blk > 0:
+        # Compute inter-block gap weights (1.65x when transitioning to a new chapter for generous B-roll pause)
+        gap_weights: list[float] = []
+        for idx_b in range(n_blk - 1):
+            is_new_chap = synthesized_blocks[idx_b + 1]["chapter_index"] != synthesized_blocks[idx_b]["chapter_index"]
+            gap_weights.append(1.65 if is_new_chap else 1.0)
+        total_weight = sum(gap_weights)
+        free_gap_pool = max(0.0, avail_span - total_speech)
+
+        cursor_t = safe_start
+        for idx_b, b_info in enumerate(synthesized_blocks):
+            b_pcm = b_info["pcm"]
+            b_dur = float(b_info["duration"])
+            if cursor_t + 1.0 >= safe_end:
+                break
+            st_idx = int(round(cursor_t * sr))
+            en_idx = min(len(master_samples), st_idx + len(b_pcm))
+            copy_len = en_idx - st_idx
+            if copy_len <= 0:
+                break
+            master_samples[st_idx:en_idx] += b_pcm[:copy_len]
+            placed_blocks += 1
+
+            for s_off_st, s_off_en, s_disp in b_info["sent_offsets"]:
+                abs_st = cursor_t + s_off_st
+                abs_en = min(cursor_t + s_off_en, cursor_t + copy_len / float(sr))
+                if abs_en <= abs_st + 0.15:
+                    continue
+                lines = _split_display_caption_lines(s_disp, max_words=9)
                 total_chars = max(1, sum(len(ln) for ln in lines))
-                cur_t = actual_start
+                cur_l = abs_st
                 for ln in lines:
-                    ln_dur = max(0.9, (len(ln) / float(total_chars)) * (actual_end - actual_start))
-                    ln_end = min(actual_end, cur_t + ln_dur)
-                    if ln_end > cur_t + 0.2:
-                        srt_entries.append((cur_t, ln_end, ln))
-                    cur_t = ln_end
+                    ln_dur = max(0.8, (len(ln) / float(total_chars)) * (abs_en - abs_st))
+                    ln_end = min(abs_en, cur_l + ln_dur)
+                    if ln_end > cur_l + 0.18:
+                        srt_entries.append((cur_l, ln_end, ln))
+                    cur_l = ln_end
+
+            gap_after = (free_gap_pool * (gap_weights[idx_b] / total_weight)) if idx_b < len(gap_weights) and total_weight > 0 else 0.0
+            cursor_t += (copy_len / float(sr)) + gap_after
 
     out_wav_path.parent.mkdir(parents=True, exist_ok=True)
     raw_master = out_wav_path.with_name(f"{out_wav_path.stem}_raw.wav")
