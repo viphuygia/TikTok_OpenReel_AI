@@ -1197,6 +1197,10 @@ class OneClickPipelineReq(BaseModel):
     sfx_level: str = "subtle"
     aspect_ratio: str = "9:16"
     content_vibe: str = "learned_dna"
+    pipeline_category: str = "short_tiktok"
+    ordered_clips: list[str] = Field(default_factory=list)
+    keep_clip_audio: bool = False
+    auto_fit_duration: bool = False
     project_ids: list[str] = Field(default_factory=list)
     sync: bool = False
 
@@ -4621,6 +4625,15 @@ def api_remotion_ai_director(req: OpenReelDirectorReq):
     }
 
 
+@app.get("/api/longform/clips")
+def api_longform_clips():
+    import longform_vlog as _lf
+
+    clips = _lf.collect_ordered_raw_clips(DIR_VIDEO_THO)
+    total_dur = round(sum(float(c.get("duration_sec") or 0.0) for c in clips), 2)
+    return {"ok": True, "clips": clips, "count": len(clips), "total_duration_sec": total_dur}
+
+
 @app.get("/api/style/vibes")
 def api_style_vibes():
     import style_dna as _sd
@@ -5077,8 +5090,139 @@ def _build_fallback_script_from_brief(brief: dict[str, Any], target_dur: float) 
     return tts_script, display_script
 
 
+def _execute_longform_vlog_pipeline(req: OneClickPipelineReq) -> None:
+    """Dedicated pipeline for Clip Dai / Vlog Timeline (> 90s up to 20 min) with strict chronological order."""
+    import longform_vlog as _lf
+    import voice_engine as _ve
+
+    req_aspect = str(getattr(req, "aspect_ratio", "16:9") or "16:9").strip()
+    if req_aspect not in ("9:16", "16:9"):
+        req_aspect = "16:9"
+    req_vibe = str(getattr(req, "content_vibe", "outdoor_picnic") or "outdoor_picnic").strip()
+    if req_vibe == "learned_dna":
+        req_vibe = "outdoor_picnic"
+
+    _update_pipeline(
+        current_step=1,
+        current_tab="tab4",
+        percent=10,
+        message="Bước 1/5 (Timeline Vlog): Quét video thô & khóa thứ tự thời gian...",
+        step_status=(1, "running", "Khóa thứ tự Timeline"),
+        log_line="[Clip Dài > 90s] Quét clip trong 02_video_tho/ theo đúng thứ tự Timeline...",
+    )
+    ordered = _lf.collect_ordered_raw_clips(DIR_VIDEO_THO, ordered_names=req.ordered_clips or None)
+    if not ordered:
+        raise RuntimeError("Chưa có video thô nào trong 02_video_tho/. Vui lòng upload video trước khi tạo Clip Dài.")
+
+    plan = _lf.build_longform_timeline_plan(
+        ordered,
+        target_duration_sec=float(req.target_duration_sec or 600.0),
+        auto_fit_duration=bool(getattr(req, "auto_fit_duration", False)),
+        aspect_ratio=req_aspect,
+    )
+    actual_target = float(plan["target_duration_sec"])
+    _update_pipeline(
+        step_status=(1, "done", f"{len(ordered)} clip · {actual_target:.0f}s"),
+        percent=22,
+        log_line=f"[Bước 1/5] Đã khóa {len(plan['segments'])} đoạn đúng thứ tự ({req_aspect}, tổng {actual_target:.0f}s).",
+    )
+
+    _update_pipeline(
+        current_step=2,
+        percent=30,
+        message=f"Bước 2/5 (Kịch Bản Vlog): Đang viết lời kể liền mạch cho {actual_target:.0f}s...",
+        step_status=(2, "running", f"~{actual_target:.0f}s"),
+        log_line="[Bước 2/5] Tạo lời bình Vlog theo chương (không giỏ hàng/chốt đơn)...",
+    )
+    api_key = str(load_config().get("gemini_api_key") or "").strip()
+    disp_txt, tts_txt = _lf.generate_longform_vlog_script(
+        ordered,
+        target_duration_sec=actual_target,
+        topic_note=req.product_note or "",
+        content_vibe=req_vibe,
+        gemini_api_key=api_key,
+    )
+    FILE_SCRIPT.write_text(tts_txt + "\n", encoding="utf-8")
+    (DIR_WORKSPACE / "kich_ban_hien_thi.md").write_text(disp_txt + "\n", encoding="utf-8")
+    _update_pipeline(
+        step_status=(2, "done", f"{len(tts_txt.split())} từ · Vlog OK"),
+        percent=42,
+    )
+
+    _update_pipeline(
+        current_step=3,
+        percent=50,
+        message="Bước 3/5 (Giọng Đọc Đồng Bộ): Đang tạo 1 giọng đọc AI duy nhất xuyên suốt...",
+        step_status=(3, "running", "1 Giọng xuyên suốt"),
+        log_line="[Bước 3/5] Tạo giọng đọc AI đồng bộ toàn video...",
+    )
+    sync_voice_clone_files()
+    vp = str(getattr(req, "voice_preset", "") or "edge_hoaimy_koc").strip()
+    if vp.startswith("random_"):
+        vp = _ve.pick_random_voice_presets(vp, count=1)[0]["id"]
+    tts_res = run_python_script(
+        "scripts/voice_engine.py",
+        [
+            "--script",
+            "04_workspace/kich_ban.txt",
+            "--voice-preset",
+            vp,
+            "--whisper-model",
+            "small",
+            "--target-duration",
+            f"{actual_target:.2f}",
+        ],
+    )
+    if not tts_res.get("ok"):
+        raise RuntimeError(f"voice_engine.py lỗi: {tts_res.get('log', '')[-400:]}")
+    _update_pipeline(step_status=(3, "done", "Giọng & Phụ đề OK"), percent=66)
+
+    _update_pipeline(
+        current_step=4,
+        percent=72,
+        message="Bước 4/5 (Dựng Video Dài FFmpeg): Đang nối clip đúng thứ tự, trộn BGM & phụ đề...",
+        step_status=(4, "running", "FFmpeg Timeline"),
+        log_line="[Bước 4/5] Đang xuất MP4 bằng FFmpeg Timeline Engine...",
+    )
+    bgm_name = str(req.bgm_track or "bgm_upbeat_tiktok.wav").strip()
+    bgm_file = ROOT_DIR / "06_assets_audio" / "bgm" / Path(bgm_name).name
+    if not bgm_file.exists():
+        bgm_cand = sorted((ROOT_DIR / "06_assets_audio" / "bgm").glob("*.wav"))
+        bgm_file = bgm_cand[0] if bgm_cand else bgm_file
+
+    out_dir = ACTIVE_PROJECT_ROOT / "outputs"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    out_mp4 = out_dir / f"VLOG_{int(round(actual_target))}s_{req_aspect.replace(':', 'x')}_{int(time.time())}.mp4"
+
+    render_res = _lf.render_longform_ffmpeg_vlog(
+        plan=plan,
+        voice_wav=FILE_TTS_WAV if FILE_TTS_WAV.exists() else None,
+        srt_path=FILE_SRT if FILE_SRT.exists() else None,
+        bgm_path=bgm_file if bgm_file.exists() else None,
+        output_mp4=out_mp4,
+        bgm_volume=0.14,
+        keep_clip_audio=bool(getattr(req, "keep_clip_audio", False)),
+    )
+    _update_pipeline(step_status=(4, "done", "Nối & Master OK"), percent=92)
+    _update_pipeline(
+        running=False,
+        done=True,
+        ok=True,
+        current_step=5,
+        percent=100,
+        message=f"Hoàn tất Clip Dài ({render_res['duration_sec']:.0f}s · {out_mp4.name})!",
+        step_status=(5, "done", f"{render_res['duration_sec']:.0f}s OK"),
+        output_file=str(out_mp4),
+        output_url=f"/files/outputs/{out_mp4.name}",
+        log_line=f"[HOÀN TẤT] Đã xuất Vlog dài: {out_mp4.name} ({render_res['duration_sec']:.1f}s)",
+    )
+
+
 def _run_single_project_pipeline(req: OneClickPipelineReq) -> None:
     try:
+        if getattr(req, "pipeline_category", "short_tiktok") == "long_vlog" or float(req.target_duration_sec or 0) > 90.0:
+            _execute_longform_vlog_pipeline(req)
+            return
         # Step 1: Pre-Production - Nạp Style DNA, Brief nhãn hàng & kiểm tra nguyên liệu
         _update_pipeline(
             current_step=1,

@@ -222,6 +222,56 @@
         <button type="button" onclick="closeAutoPipelineModal()" class="shrink-0 px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-xs text-zinc-200">Đóng</button>
       </div>
       <div class="p-3.5 sm:p-6 space-y-3.5 sm:space-y-4 text-xs overflow-y-auto">
+        <!-- Category Selector: Short TikTok (<=90s) vs Long-Form Vlog (>90s) -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+          <button type="button" id="cat-btn-short" onclick="selectPipelineCategory('short_tiktok')" class="text-left rounded-xl border-2 border-emerald-500 bg-emerald-950/25 p-3 transition">
+            <div class="font-semibold text-white">⚡ Video Ngắn TikTok / Review (≤ 90s)</div>
+            <div class="text-[11px] text-zinc-300 mt-0.5">Cắt nhanh theo beat, Hook + CTA, Mix 3 style &amp; Batch 3</div>
+          </button>
+          <button type="button" id="cat-btn-long" onclick="selectPipelineCategory('long_vlog')" class="text-left rounded-xl border border-zinc-700 bg-zinc-900/70 p-3 transition">
+            <div class="font-semibold text-amber-200">🎬 Clip Dài / Vlog Timeline (&gt; 90s · 2–20p)</div>
+            <div class="text-[11px] text-zinc-400 mt-0.5">Giữ đúng thứ tự timeline, 1 giọng &amp; 1 style xuyên suốt</div>
+          </button>
+        </div>
+
+        <!-- Long-Form Vlog Timeline Config (visible only when long_vlog is active) -->
+        <div id="longform-config-box" class="hidden rounded-xl bg-amber-950/20 border border-amber-500/40 p-3.5 space-y-3">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <div class="text-[11px] font-semibold uppercase tracking-wide text-amber-300">🎬 Cấu Hình Đề Xuất Cho Clip Dài (&gt; 90s)</div>
+            <span id="longform-raw-total" class="text-[11px] text-amber-200/80 mono">Đang quét clip...</span>
+          </div>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 items-end">
+            <div class="min-w-0">
+              <label class="block text-[11px] text-amber-200 font-medium mb-1">⏱️ Thời lượng Video Dài mục tiêu</label>
+              <select id="longform-duration-sec" class="w-full rounded-lg bg-zinc-950 border border-zinc-700 px-2.5 py-2 text-xs text-zinc-100">
+                <option value="120">2 phút (120 giây)</option>
+                <option value="180">3 phút (180 giây)</option>
+                <option value="300">5 phút (300 giây)</option>
+                <option value="600" selected>10 phút (600 giây · Khuyên dùng)</option>
+                <option value="900">15 phút (900 giây)</option>
+                <option value="1200">20 phút (1200 giây)</option>
+              </select>
+            </div>
+            <div class="flex flex-col gap-1.5 pb-1">
+              <label class="flex items-center gap-2 text-amber-100 cursor-pointer">
+                <input id="chk-longform-autofit" type="checkbox" class="rounded bg-zinc-800 border-amber-500 text-amber-500" />
+                <span>🎯 Tự khớp theo tổng độ dài clip đã quay</span>
+              </label>
+              <label class="flex items-center gap-2 text-emerald-200 cursor-pointer">
+                <input id="chk-longform-keep-audio" type="checkbox" checked class="rounded bg-zinc-800 border-emerald-500 text-emerald-500" />
+                <span>🎙️ Giữ thêm âm thanh gốc clip (tiếng gió/nước/nói)</span>
+              </label>
+            </div>
+          </div>
+          <div class="space-y-1.5">
+            <div class="flex items-center justify-between">
+              <span class="text-[11px] font-medium text-zinc-300">📋 Thứ tự Timeline (Giữ đúng trình tự 1 → N, bấm ⬆️/⬇️ để đổi):</span>
+              <button type="button" onclick="loadLongformClips()" class="text-[11px] text-amber-300 hover:text-amber-200">Làm mới</button>
+            </div>
+            <div id="longform-clip-list" class="max-h-40 overflow-y-auto space-y-1 pr-1"></div>
+          </div>
+        </div>
+
         <!-- 0. Multi-Project Sequential Selector -->
         <div class="rounded-xl bg-zinc-900/70 border border-zinc-800 p-3 space-y-2">
           <div class="flex flex-wrap items-center justify-between gap-2">
@@ -235,7 +285,7 @@
         </div>
 
         <!-- 3 Engine Cards -->
-        <div class="space-y-1.5">
+        <div id="shortform-engine-box" class="space-y-1.5">
           <div class="text-[11px] font-semibold uppercase tracking-wide text-zinc-400">1. Chọn Engine Dựng Video</div>
           <div class="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
             <label id="eng-card-remotion_classic" onclick="selectAutoEngine('remotion_classic')" class="cursor-pointer rounded-xl border-2 border-emerald-500 bg-emerald-950/25 p-3 space-y-1 transition">
@@ -276,7 +326,7 @@
         </div>
 
         <!-- Export Mode -->
-        <div class="rounded-xl bg-zinc-900/70 border border-zinc-800 p-3 space-y-2">
+        <div id="shortform-batch-box" class="rounded-xl bg-zinc-900/70 border border-zinc-800 p-3 space-y-2">
           <div class="text-[11px] font-semibold uppercase tracking-wide text-zinc-400">2. Chế Độ Xuất &amp; Kịch Bản</div>
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
             <label class="flex items-center gap-2 rounded-lg border border-zinc-700 bg-zinc-950/60 px-3 py-2 cursor-pointer">
@@ -4168,6 +4218,7 @@
       const tab3Bgm = document.getElementById('rm-bgm-track');
       if (tab3Bgm) tab3Bgm.value = bgmVal;
 
+      const batchMode = state.pipelineCategory === 'long_vlog' ? 'single' : (document.querySelector('input[name="auto-batch-mode"]:checked')?.value || 'single');
       const projectIds = Array.from(document.querySelectorAll('input[name="auto-proj-id"]:checked')).map((el) => el.value);
       if (!projectIds.length) {
         return toast('Vui lòng chọn ít nhất 1 Project sẵn sàng (đủ Brief & Video thô)!', 'warn');
@@ -4177,13 +4228,104 @@
       await runOneClickPipeline(batchMode === 'batch3', projectIds);
     }
 
+    state.pipelineCategory = 'short_tiktok';
+    state.longformClips = [];
+
+    function selectPipelineCategory(cat) {
+      state.pipelineCategory = cat === 'long_vlog' ? 'long_vlog' : 'short_tiktok';
+      const isLong = state.pipelineCategory === 'long_vlog';
+      const btnShort = document.getElementById('cat-btn-short');
+      const btnLong = document.getElementById('cat-btn-long');
+      if (btnShort) {
+        btnShort.className = isLong
+          ? 'text-left rounded-xl border border-zinc-700 bg-zinc-900/70 p-3 transition'
+          : 'text-left rounded-xl border-2 border-emerald-500 bg-emerald-950/25 p-3 transition';
+      }
+      if (btnLong) {
+        btnLong.className = isLong
+          ? 'text-left rounded-xl border-2 border-amber-500 bg-amber-950/25 p-3 transition'
+          : 'text-left rounded-xl border border-zinc-700 bg-zinc-900/70 p-3 transition';
+      }
+      document.getElementById('longform-config-box')?.classList.toggle('hidden', !isLong);
+      document.getElementById('shortform-engine-box')?.classList.toggle('hidden', isLong);
+      document.getElementById('shortform-batch-box')?.classList.toggle('hidden', isLong);
+
+      if (isLong) {
+        // Apply recommended unified settings for Long-Form Vlog (>90s)
+        const ar = document.getElementById('auto-aspect-ratio');
+        const vibe = document.getElementById('auto-content-vibe');
+        const tts = document.getElementById('auto-tts-engine');
+        const sfx = document.getElementById('auto-sfx-level');
+        const tr = document.getElementById('auto-transition-level');
+        if (ar) ar.value = '16:9';
+        if (vibe && vibe.value === 'learned_dna') vibe.value = 'outdoor_picnic';
+        if (tts && (tts.value || '').startsWith('random_')) tts.value = 'edge_hoaimy_koc';
+        if (sfx) sfx.value = 'off';
+        if (tr) tr.value = 'gentle';
+        loadLongformClips();
+      }
+    }
+
+    async function loadLongformClips() {
+      const listEl = document.getElementById('longform-clip-list');
+      const totEl = document.getElementById('longform-raw-total');
+      if (!listEl) return;
+      try {
+        const res = await api('/api/longform/clips');
+        state.longformClips = res.clips || [];
+        if (totEl) totEl.textContent = `${state.longformClips.length} clip · Tổng ${Math.round(res.total_duration_sec || 0)}s`;
+        renderLongformClipList();
+      } catch (e) {
+        if (totEl) totEl.textContent = 'Lỗi tải clip';
+      }
+    }
+
+    function renderLongformClipList() {
+      const listEl = document.getElementById('longform-clip-list');
+      if (!listEl) return;
+      const clips = state.longformClips || [];
+      if (!clips.length) {
+        listEl.innerHTML = '<div class="text-[11px] text-zinc-500 p-2 border border-dashed border-zinc-800 rounded-lg">Chưa có video thô trong 02_video_tho/.</div>';
+        return;
+      }
+      listEl.innerHTML = clips.map((c, idx) => `
+        <div class="flex items-center justify-between gap-2 rounded-lg bg-zinc-950/80 border border-zinc-800 px-2.5 py-1.5 text-[11px]">
+          <div class="min-w-0 flex items-center gap-2">
+            <span class="shrink-0 w-5 h-5 rounded-full bg-amber-500/20 text-amber-300 font-bold flex items-center justify-center">${idx + 1}</span>
+            <span class="truncate text-zinc-200">${escapeHtml(c.rel_path)}</span>
+            <span class="shrink-0 text-zinc-400 mono">${Number(c.duration_sec || 0).toFixed(1)}s</span>
+          </div>
+          <div class="shrink-0 flex items-center gap-1">
+            <button type="button" onclick="moveLongformClip(${idx}, -1)" ${idx === 0 ? 'disabled' : ''} class="px-1.5 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 disabled:opacity-30">⬆️</button>
+            <button type="button" onclick="moveLongformClip(${idx}, 1)" ${idx === clips.length - 1 ? 'disabled' : ''} class="px-1.5 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 disabled:opacity-30">⬇️</button>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function moveLongformClip(idx, delta) {
+      const arr = state.longformClips || [];
+      const target = idx + delta;
+      if (target < 0 || target >= arr.length) return;
+      const tmp = arr[idx];
+      arr[idx] = arr[target];
+      arr[target] = tmp;
+      renderLongformClipList();
+    }
+
     async function runOneClickPipeline(batchAll = false, projectIds = []) {
-      if (!projectIds.length && !isBrandBriefReadyClient()) {
+      const isLongVlog = state.pipelineCategory === 'long_vlog';
+      if (!isLongVlog && !projectIds.length && !isBrandBriefReadyClient()) {
         toast('Bước 1 bắt buộc: Vui lòng điền & Lưu Brief Nhãn Hàng trước khi chạy 1-Click!', 'warn');
         switchTab('tab4');
         return openBrandBriefModal();
       }
-      const target_duration_sec = parseFloat(document.getElementById('global-target-duration')?.value || '30') || 30.0;
+      const target_duration_sec = isLongVlog
+        ? (parseFloat(document.getElementById('longform-duration-sec')?.value || '600') || 600.0)
+        : (parseFloat(document.getElementById('global-target-duration')?.value || '30') || 30.0);
+      const ordered_clips = isLongVlog ? (state.longformClips || []).map((c) => c.rel_path) : [];
+      const keep_clip_audio = isLongVlog ? !!document.getElementById('chk-longform-keep-audio')?.checked : false;
+      const auto_fit_duration = isLongVlog ? !!document.getElementById('chk-longform-autofit')?.checked : false;
       const product_note = document.getElementById('ws-product-note')?.value?.trim() || '';
       const regenerate_script = !!document.getElementById('chk-pipeline-regen')?.checked;
       const preserve_clips = getPreserveClipsFlag();
@@ -4244,6 +4386,10 @@
             sfx_level,
             aspect_ratio,
             content_vibe,
+            pipeline_category: state.pipelineCategory || 'short_tiktok',
+            ordered_clips,
+            keep_clip_audio,
+            auto_fit_duration,
             project_ids: projectIds,
             sync: false
           })
