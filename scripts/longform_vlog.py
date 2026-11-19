@@ -182,12 +182,45 @@ def _extract_clip_preview_frame_b64(clip_abs_path: str, duration_sec: float) -> 
     return ""
 
 
+def _extract_clip_preview_frame_jpg(clip_abs_path: str, duration_sec: float, out_jpg: Path) -> bool:
+    """Save 1 lightweight 480px JPEG frame at 35% of clip duration to disk for agy CLI vision."""
+    ffmpeg_bin = find_binary("ffmpeg")
+    seek_t = round(max(0.0, float(duration_sec or 1.0) * 0.35), 2)
+    out_jpg.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        proc = subprocess.run(
+            [
+                ffmpeg_bin,
+                "-y",
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-ss",
+                f"{seek_t:.2f}",
+                "-i",
+                str(clip_abs_path),
+                "-frames:v",
+                "1",
+                "-vf",
+                "scale=480:-1",
+                str(out_jpg),
+            ],
+            capture_output=True,
+            timeout=12,
+        )
+        return proc.returncode == 0 and out_jpg.exists() and out_jpg.stat().st_size > 200
+    except Exception:
+        return False
+
+
 def generate_longform_vlog_script(
     ordered_clips: list[dict[str, Any]],
     target_duration_sec: float,
     topic_note: str = "",
     content_vibe: str = "outdoor_picnic",
     gemini_api_key: str = "",
+    agy_caller: Any = None,
+    preview_dir: Path | None = None,
 ) -> tuple[str, str]:
     """Generate a cohesive chapter-based narration script for 2-20 min vlog (no shopping CTAs)."""
     vibe_meta = _sd.get_content_vibe_meta(content_vibe if content_vibe != "learned_dna" else "outdoor_picnic")
@@ -196,29 +229,31 @@ def generate_longform_vlog_script(
     target_words = max(180, min(2800, int(round(target_duration_sec * 2.4))))
     clip_summary = ", ".join(f"Cảnh {c['order']}: {Path(c['name']).stem} ({c['duration_sec']:.0f}s)" for c in ordered_clips[:24])
 
+    sample_clips = ordered_clips[:8]
+    if len(ordered_clips) > 8:
+        step = len(ordered_clips) / 8.0
+        sample_clips = [ordered_clips[int(i * step)] for i in range(8)]
+
+    base_prompt = (
+        f"Hãy viết một bài lời bình Vlog tiếng Việt liền mạch, tự nhiên, chia theo trình tự thời gian từ đầu đến cuối "
+        f"cho video dài khoảng {target_duration_sec:.0f} giây (~{target_words} từ).\n"
+        f"Chủ đề / Ghi chú: {topic}\n"
+        f"Phong cách: {vibe_meta.get('prompt_hint') or vibe_meta.get('label')}\n"
+        f"Thứ tự các cảnh quay thực tế: {clip_summary}\n"
+        "Yêu cầu bắt buộc:\n"
+        "- Quan sát các khung hình tương ứng theo đúng trình tự từ đầu đến cuối và viết thành các đoạn văn liền mạch mô tả sát bối cảnh thực tế (Mở đầu -> Diễn biến từng cảnh -> Cảm nhận & Kết).\n"
+        "- Chỉ trả về văn bản lời đọc thuần túy (không tiêu đề markdown, không số thứ tự, không ngoặc chú thích).\n"
+        "- TUYỆT ĐỐI KHÔNG nhắc giỏ hàng, chốt đơn, freeship hay bán hàng.\n"
+        f"- Câu kết nhẹ nhàng tự nhiên: {vibe_meta.get('cta_default')}"
+    )
+
     display_text = ""
     api_key = str(gemini_api_key or "").strip()
     if api_key:
         try:
             import urllib.request
 
-            prompt = (
-                f"Hãy viết một bài lời bình Vlog tiếng Việt liền mạch, tự nhiên, chia theo trình tự thời gian từ đầu đến cuối "
-                f"cho video dài khoảng {target_duration_sec:.0f} giây (~{target_words} từ).\n"
-                f"Chủ đề / Ghi chú: {topic}\n"
-                f"Phong cách: {vibe_meta.get('prompt_hint') or vibe_meta.get('label')}\n"
-                f"Thứ tự các cảnh quay thực tế (tương ứng các ảnh đính kèm theo thứ tự thời gian): {clip_summary}\n"
-                "Yêu cầu bắt buộc:\n"
-                "- Quan sát các khung hình đính kèm và viết thành các đoạn văn liền mạch mô tả sát bối cảnh thực tế theo đúng trình tự Mở đầu -> Diễn biến từng cảnh -> Cảm nhận & Kết.\n"
-                "- Chỉ trả về văn bản lời đọc thuần túy (không tiêu đề markdown, không số thứ tự, không ngoặc chú thích).\n"
-                "- TUYỆT ĐỐI KHÔNG nhắc giỏ hàng, chốt đơn, freeship hay bán hàng.\n"
-                f"- Câu kết nhẹ nhàng tự nhiên: {vibe_meta.get('cta_default')}"
-            )
-            content_parts: list[dict[str, Any]] = [{"text": prompt}]
-            sample_clips = ordered_clips[:8]
-            if len(ordered_clips) > 8:
-                step = len(ordered_clips) / 8.0
-                sample_clips = [ordered_clips[int(i * step)] for i in range(8)]
+            content_parts: list[dict[str, Any]] = [{"text": base_prompt}]
             for sc in sample_clips:
                 b64 = _extract_clip_preview_frame_b64(str(sc.get("abs_path") or ""), float(sc.get("duration_sec") or 2.0))
                 if b64:
@@ -239,6 +274,28 @@ def generate_longform_vlog_script(
                     display_text = " ".join(str(p.get("text") or "") for p in parts).strip()
         except Exception as exc:
             print(f"[LongForm] Gemini fallback ({exc})")
+
+    if (not display_text or len(display_text.split()) < 60) and agy_caller is not None:
+        try:
+            frame_lines: list[str] = []
+            if preview_dir is not None:
+                shutil.rmtree(preview_dir, ignore_errors=True)
+                preview_dir.mkdir(parents=True, exist_ok=True)
+                for idx, sc in enumerate(sample_clips, start=1):
+                    out_jpg = preview_dir / f"scene_{idx:02d}.jpg"
+                    if _extract_clip_preview_frame_jpg(str(sc.get("abs_path") or ""), float(sc.get("duration_sec") or 2.0), out_jpg):
+                        frame_lines.append(f"- Cảnh {sc.get('order')}: {out_jpg}")
+            agy_prompt = base_prompt
+            if frame_lines:
+                agy_prompt += "\n\nHãy xem các ảnh khung hình đại diện theo đúng thứ tự dưới đây trước khi viết:\n" + "\n".join(frame_lines)
+            agy_raw = str(agy_caller(agy_prompt) or "").strip()
+            # Clean any accidental markdown headings/fences
+            agy_raw = re.sub(r"```[a-zA-Z]*\s*", "", agy_raw).replace("```", "")
+            agy_raw = re.sub(r"^#+\s+.*$", "", agy_raw, flags=re.M).strip()
+            if len(agy_raw.split()) >= 60:
+                display_text = agy_raw
+        except Exception as exc:
+            print(f"[LongForm] agy CLI fallback ({exc})")
 
     if not display_text or len(display_text.split()) < 60:
         intro = (

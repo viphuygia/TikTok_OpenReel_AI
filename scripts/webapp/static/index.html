@@ -270,6 +270,10 @@
             </div>
             <div id="longform-clip-list" class="max-h-40 overflow-y-auto space-y-1 pr-1"></div>
           </div>
+          <div>
+            <label class="block text-[11px] text-amber-200 font-medium mb-1">📝 Chủ đề / Bối cảnh Vlog (Để AI viết lời bình sát nội dung)</label>
+            <input id="longform-topic-note" type="text" placeholder="vd: Cắm trại cuối tuần bên hồ Trị An, nấu ăn và chill cùng bạn bè..." class="w-full rounded-lg bg-zinc-950 border border-zinc-700 px-2.5 py-2 text-xs text-zinc-100 placeholder-zinc-500" />
+          </div>
         </div>
 
         <!-- 0. Multi-Project Sequential Selector -->
@@ -440,11 +444,11 @@
             </div>
           </div>
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
-            <label class="flex items-center gap-2 text-emerald-300 cursor-pointer">
+            <label id="wrap-preserve-clips" class="flex items-center gap-2 text-emerald-300 cursor-pointer">
               <input id="chk-preserve-clips" type="checkbox" checked onchange="syncPreserveClipsBadge()" class="rounded bg-zinc-800 border-emerald-500 text-emerald-500" />
               <span>🔒 Giữ nguyên Clips 9:16 (Không ghi đè)</span>
             </label>
-            <label class="flex items-center gap-2 text-zinc-300 cursor-pointer">
+            <label id="wrap-pipeline-regen" class="flex items-center gap-2 text-zinc-300 cursor-pointer">
               <input id="chk-pipeline-regen" type="checkbox" class="rounded bg-zinc-800 border-zinc-600 text-indigo-500" />
               <span>🔄 Tạo mới 3 kịch bản theo Brief</span>
             </label>
@@ -4248,6 +4252,8 @@
       document.getElementById('longform-config-box')?.classList.toggle('hidden', !isLong);
       document.getElementById('shortform-engine-box')?.classList.toggle('hidden', isLong);
       document.getElementById('shortform-batch-box')?.classList.toggle('hidden', isLong);
+      document.getElementById('wrap-preserve-clips')?.classList.toggle('hidden', isLong);
+      document.getElementById('wrap-pipeline-regen')?.classList.toggle('hidden', isLong);
 
       if (isLong) {
         // Apply recommended unified settings for Long-Form Vlog (>90s)
@@ -4325,7 +4331,9 @@
       const ordered_clips = isLongVlog ? (state.longformClips || []).map((c) => c.rel_path) : [];
       const keep_clip_audio = isLongVlog ? !!document.getElementById('chk-longform-keep-audio')?.checked : false;
       const auto_fit_duration = isLongVlog ? !!document.getElementById('chk-longform-autofit')?.checked : false;
-      const product_note = document.getElementById('ws-product-note')?.value?.trim() || '';
+      const product_note = isLongVlog
+        ? (document.getElementById('longform-topic-note')?.value?.trim() || document.getElementById('ws-product-note')?.value?.trim() || '')
+        : (document.getElementById('ws-product-note')?.value?.trim() || '');
       const regenerate_script = !!document.getElementById('chk-pipeline-regen')?.checked;
       const preserve_clips = getPreserveClipsFlag();
       const selected_option_id = state.workshop?.script_options?.selected_id || '';

@@ -5148,13 +5148,31 @@ def _execute_longform_vlog_pipeline(req: OneClickPipelineReq) -> None:
         step_status=(2, "running", f"~{actual_target:.0f}s"),
         log_line="[Bước 2/5] Tạo lời bình Vlog theo chương (không giỏ hàng/chốt đơn)...",
     )
-    api_key = str(load_config().get("gemini_api_key") or "").strip()
+    cfg = load_config()
+    api_key = str(cfg.get("gemini_api_key") or "").strip()
+    agy_caller = None
+    if find_agy_executable():
+        agy_model = str(cfg.get("agy_model") or "").strip() or None
+        agy_effort = str(cfg.get("agy_effort") or "").strip() or None
+        agy_caller = lambda p: str(
+            call_agy_cli(
+                p,
+                model=agy_model,
+                effort=agy_effort,
+                mode="auto",
+                disable_slash_commands=True,
+                timeout=240,
+            ).get("text")
+            or ""
+        )
     disp_txt, tts_txt = _lf.generate_longform_vlog_script(
         ordered,
         target_duration_sec=actual_target,
         topic_note=req.product_note or "",
         content_vibe=req_vibe,
         gemini_api_key=api_key,
+        agy_caller=agy_caller,
+        preview_dir=DIR_WORKSPACE / "frames" / "longform_preview",
     )
     FILE_SCRIPT.write_text(tts_txt + "\n", encoding="utf-8")
     (DIR_WORKSPACE / "kich_ban_hien_thi.md").write_text(disp_txt + "\n", encoding="utf-8")
