@@ -6258,11 +6258,11 @@ def api_system_update(request: Request):
             if os.name == "nt":
                 flags = getattr(subprocess, "CREATE_NEW_CONSOLE", 0x10) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0x200)
                 cmd_str = (
-                    f'title TikTok OpenReel AI - Server && ping -n 4 127.0.0.1 >nul && '
-                    f'"{py_exe}" -m uvicorn scripts.webapp.app:app --host 0.0.0.0 --port {int(port)}'
+                    f"title TikTok OpenReel AI - Server && ping -n 4 127.0.0.1 >nul && "
+                    f"03_voice_clone\\venv\\Scripts\\python.exe -m uvicorn scripts.webapp.app:app --host 0.0.0.0 --port {int(port)}"
                 )
                 subprocess.Popen(
-                    ["cmd", "/k", cmd_str],
+                    f'cmd.exe /k "{cmd_str}"',
                     cwd=str(PROJECT_ROOT),
                     creationflags=flags,
                     close_fds=True,
