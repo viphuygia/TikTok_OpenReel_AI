@@ -1355,9 +1355,9 @@ def render_hyperframes_video(
         b_mode = "overlay" if is_paper_ov else "screen"
         b_op = 0.16 if is_paper_ov else (0.24 if "grain" in ov_file else 0.30)
         filter_parts = [
-            f"[0:v]{eq_filter},format=yuv420p[bgv];"
-            f"[{ov_idx}:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1,format=yuv420p[ovv];"
-            f"[bgv][ovv]blend=all_mode={b_mode}:all_opacity={b_op}:shortest=1[bgv_ov];"
+            f"[0:v]{eq_filter},format=gbrp[bgv];"
+            f"[{ov_idx}:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1,format=gbrp[ovv];"
+            f"[bgv][ovv]blend=all_mode={b_mode}:all_opacity={b_op}:shortest=1,format=yuv420p[bgv_ov];"
             f"[bgv_ov][1:v]overlay=0:0:shortest=1[vout]"
         ]
     else:
