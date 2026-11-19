@@ -6256,15 +6256,15 @@ def api_system_update(request: Request):
         if os.environ.get("OPENREEL_SUPERVISOR") != "24_7":
             py_exe = sys.executable
             if os.name == "nt":
-                flags = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0x200) | getattr(subprocess, "DETACHED_PROCESS", 0x8)
-                cmd_str = f'timeout /t 2 /nobreak >nul & "{py_exe}" -m uvicorn scripts.webapp.app:app --host 0.0.0.0 --port {int(port)}'
+                flags = getattr(subprocess, "CREATE_NEW_CONSOLE", 0x10) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0x200)
+                cmd_str = (
+                    f'title TikTok OpenReel AI - Server && ping -n 4 127.0.0.1 >nul && '
+                    f'"{py_exe}" -m uvicorn scripts.webapp.app:app --host 0.0.0.0 --port {int(port)}'
+                )
                 subprocess.Popen(
-                    ["cmd", "/c", cmd_str],
+                    ["cmd", "/k", cmd_str],
                     cwd=str(PROJECT_ROOT),
                     creationflags=flags,
-                    stdin=subprocess.DEVNULL,
-                    stdout=subprocess.DEVNULL,
-                    stderr=subprocess.DEVNULL,
                     close_fds=True,
                 )
             else:
