@@ -132,10 +132,16 @@ def collect_ordered_raw_clips(
         return []
     ffprobe_bin = find_binary("ffprobe")
     all_files: dict[str, Path] = {}
-    for p in sorted(raw_dir.rglob("*"), key=lambda x: _natural_sort_key(x.relative_to(raw_dir).as_posix())):
-        if p.is_file() and p.suffix.lower() in MEDIA_VIDEO_EXTS:
-            rel = p.relative_to(raw_dir).as_posix()
-            all_files[rel] = p
+    raw_candidates = [
+        p for p in raw_dir.rglob("*")
+        if p.is_file() and p.suffix.lower() in MEDIA_VIDEO_EXTS
+    ]
+    raw_candidates.sort(
+        key=lambda x: (int(x.stat().st_mtime), _natural_sort_key(x.relative_to(raw_dir).as_posix()))
+    )
+    for p in raw_candidates:
+        rel = p.relative_to(raw_dir).as_posix()
+        all_files[rel] = p
 
     ordered_rels: list[str] = []
     if ordered_names:
@@ -358,10 +364,10 @@ def build_longform_timeline_plan(
     }
 
 
-def _extract_clip_preview_frame_b64(clip_abs_path: str, duration_sec: float) -> str:
-    """Grab 1 lightweight 360px JPEG frame at 35% of the clip duration as base64 for AI vision."""
+def _extract_clip_preview_frame_b64(clip_abs_path: str, duration_sec: float, seek_sec: float | None = None) -> str:
+    """Grab 1 lightweight 360px JPEG frame at seek_sec (or 35% of clip duration) as base64 for AI vision."""
     ffmpeg_bin = find_binary("ffmpeg")
-    seek_t = round(max(0.0, float(duration_sec or 1.0) * 0.35), 2)
+    seek_t = round(max(0.0, float(seek_sec)) if seek_sec is not None else max(0.0, float(duration_sec or 1.0) * 0.35), 2)
     try:
         proc = subprocess.run(
             [
@@ -394,10 +400,15 @@ def _extract_clip_preview_frame_b64(clip_abs_path: str, duration_sec: float) -> 
     return ""
 
 
-def _extract_clip_preview_frame_jpg(clip_abs_path: str, duration_sec: float, out_jpg: Path) -> bool:
-    """Save 1 lightweight 480px JPEG frame at 35% of clip duration to disk for agy CLI vision."""
+def _extract_clip_preview_frame_jpg(
+    clip_abs_path: str,
+    duration_sec: float,
+    out_jpg: Path,
+    seek_sec: float | None = None,
+) -> bool:
+    """Save 1 lightweight 480px JPEG frame at seek_sec (or 35% of clip duration) to disk for agy CLI vision."""
     ffmpeg_bin = find_binary("ffmpeg")
-    seek_t = round(max(0.0, float(duration_sec or 1.0) * 0.35), 2)
+    seek_t = round(max(0.0, float(seek_sec)) if seek_sec is not None else max(0.0, float(duration_sec or 1.0) * 0.35), 2)
     out_jpg.parent.mkdir(parents=True, exist_ok=True)
     try:
         proc = subprocess.run(
@@ -475,23 +486,90 @@ def generate_longform_chapter_script(
     target_total_words = max(120, min(1100, int(round(total_dur * 1.05))))
     words_per_chap = max(38, int(round(target_total_words / max(1, n_chap))))
 
+    segments_plan = plan.get("segments") or []
     clip_summary = ", ".join(
         f"Cảnh {c['order']}: {Path(c['name']).stem} ({c['duration_sec']:.0f}s)" for c in ordered_clips[:24]
     )
-    chapter_desc = "\n".join(
-        f"- Chương {ch['index']} ({ch['start_sec']:.0f}s -> {ch['end_sec']:.0f}s)"
-        for ch in chapters_plan
-    )
+
+    # Group timeline segments & representative frames strictly by Chapter so AI sees what happens in EACH chapter
+    chapter_frame_specs: list[dict[str, Any]] = []
+    chap_desc_lines: list[str] = []
+    frames_per_chap = 3 if n_chap <= 4 else 2
+    for ch in chapters_plan:
+        ch_idx = int(ch.get("index") or 1)
+        ch_st = float(ch.get("start_sec") or 0.0)
+        ch_en = float(ch.get("end_sec") or total_dur)
+        ch_segs = [s for s in segments_plan if int(s.get("chapter_index") or 0) == ch_idx]
+        if not ch_segs and segments_plan:
+            ch_segs = [
+                s for s in segments_plan
+                if float(s.get("timeline_end") or 0.0) > ch_st and float(s.get("timeline_start") or 0.0) < ch_en
+            ]
+        ch_clip_names: list[str] = []
+        for s in ch_segs:
+            nm = Path(str(s.get("source") or s.get("abs_path") or "")).stem
+            if nm and nm not in ch_clip_names:
+                ch_clip_names.append(nm)
+        clip_tag = f" [Cảnh quay: {', '.join(ch_clip_names[:5])}]" if ch_clip_names else ""
+        chap_desc_lines.append(f"- Chương {ch_idx} ({ch_st:.0f}s -> {ch_en:.0f}s){clip_tag}")
+
+        if ch_segs:
+            ratios = [0.18, 0.52, 0.84] if frames_per_chap == 3 else [0.24, 0.72]
+            picked_indices: list[int] = []
+            for r in ratios:
+                si = min(len(ch_segs) - 1, max(0, int(round(r * (len(ch_segs) - 1)))))
+                if si not in picked_indices or len(ch_segs) == 1:
+                    picked_indices.append(si)
+                    seg = ch_segs[si]
+                    seg_dur = float(seg.get("duration") or 2.0)
+                    seek_in_clip = float(seg.get("start") or 0.0) + seg_dur * (0.25 if len(picked_indices) == 1 else 0.65)
+                    tl_t = float(seg.get("timeline_start") or ch_st) + seg_dur * 0.5
+                    chapter_frame_specs.append(
+                        {
+                            "chapter_index": ch_idx,
+                            "ch_start": ch_st,
+                            "ch_end": ch_en,
+                            "timeline_sec": tl_t,
+                            "abs_path": str(seg.get("abs_path") or ""),
+                            "duration_sec": seg_dur,
+                            "seek_sec": seek_in_clip,
+                            "clip_name": Path(str(seg.get("source") or seg.get("abs_path") or "")).name,
+                        }
+                    )
+
+    if not chapter_frame_specs:
+        # Fallback if plan has no segments
+        sample_clips = ordered_clips[:8]
+        if len(ordered_clips) > 8:
+            step = len(ordered_clips) / 8.0
+            sample_clips = [ordered_clips[int(i * step)] for i in range(8)]
+        for i, sc in enumerate(sample_clips):
+            ch_idx = min(n_chap, 1 + int(i * n_chap / max(1, len(sample_clips))))
+            chapter_frame_specs.append(
+                {
+                    "chapter_index": ch_idx,
+                    "ch_start": 0.0,
+                    "ch_end": total_dur,
+                    "timeline_sec": 0.0,
+                    "abs_path": str(sc.get("abs_path") or ""),
+                    "duration_sec": float(sc.get("duration_sec") or 2.0),
+                    "seek_sec": None,
+                    "clip_name": str(sc.get("name") or ""),
+                }
+            )
+
+    chapter_desc = "\n".join(chap_desc_lines)
 
     json_prompt = (
         f"Bạn là Đạo diễn Vlog YouTube & TikTok chuyên nghiệp. Hãy viết kịch bản lời bình cho video Vlog dài {total_dur:.0f} giây (~{total_dur/60:.1f} phút) "
-        f"chia thành đúng {n_chap} Chương theo trình tự thời gian:\n{chapter_desc}\n\n"
+        f"chia thành đúng {n_chap} Chương theo đúng trình tự thời gian:\n{chapter_desc}\n\n"
         f"Chủ đề / Ghi chú: {topic}\n"
         f"Tiêu đề gợi ý: {vlog_title or topic}\n"
         f"Phong cách: {vibe_meta.get('prompt_hint') or vibe_meta.get('label')}\n"
         f"Danh sách clip thô theo thứ tự: {clip_summary}\n\n"
         "YÊU CẦU CỰC KỲ QUAN TRỌNG:\n"
-        f"- Tổng lời thoại toàn video CHỈ khoảng {target_total_words} từ (~{words_per_chap} từ mỗi chương, chia thành 2 đoạn ngắn 20-28 từ/đoạn) để CHỪA KHOẢNG THỞ 5-9 GIÂY cho người xem ngắm cảnh B-roll và nghe âm thanh thiên nhiên.\n"
+        "- ĐÚNG NGỮ CẢNH TỪNG CHƯƠNG: Lời bình của Chương nào CHỈ được mô tả đúng hình ảnh thực tế của Chương đó (dựa trên các khung hình được gắn nhãn [Chương X]). TUYỆT ĐỐI không kể trước sự việc của Chương sau (ví dụ chưa đốt lửa thì không được nói lửa tắt).\n"
+        f"- Tổng lời thoại toàn video CHỈ khoảng {target_total_words} từ (~{words_per_chap} từ mỗi chương, chia thành 2 đoạn ngắn 20-26 từ/đoạn) để CHỪA KHOẢNG THỞ 5-9 GIÂY cho người xem ngắm cảnh B-roll và nghe âm thanh thiên nhiên.\n"
         "- Viết dàn trải đều cho TẤT CẢ các chương từ đầu tới cuối video, không dồn chữ vào đầu video.\n"
         "- TUYỆT ĐỐI KHÔNG lặp lại câu văn hoặc ý diễn đạt giữa các chương.\n"
         "- TUYỆT ĐỐI KHÔNG nhắc giỏ hàng, chốt đơn, freeship hay bán hàng.\n"
@@ -507,18 +585,13 @@ def generate_longform_chapter_script(
         '      "chapter_title": "TÊN CHƯƠNG NGẮN (<= 26 ký tự)",\n'
         '      "chapter_subtitle": "Mô tả nhanh 1 dòng (<= 45 ký tự)",\n'
         '      "narration_blocks": [\n'
-        '        {"offset_ratio": 0.12, "text": "Đoạn lời bình mở chương tự nhiên 2 câu ngắn gọn (~20-26 từ)."},\n'
-        '        {"offset_ratio": 0.56, "text": "Đoạn lời bình tiếp nối khác hoàn toàn 2 câu ngắn gọn (~20-26 từ)."}\n'
+        '        {"offset_ratio": 0.14, "text": "Đoạn lời bình mở chương bám sát ảnh đầu chương (~20-26 từ)."},\n'
+        '        {"offset_ratio": 0.58, "text": "Đoạn lời bình tiếp nối bám sát ảnh sau của chương (~20-26 từ)."}\n'
         '      ]\n'
         '    }\n'
         '  ]\n'
         '}'
     )
-
-    sample_clips = ordered_clips[:8]
-    if len(ordered_clips) > 8:
-        step = len(ordered_clips) / 8.0
-        sample_clips = [ordered_clips[int(i * step)] for i in range(8)]
 
     parsed_ai: dict[str, Any] | None = None
     ai_source = "structured_fallback"
@@ -529,9 +602,21 @@ def generate_longform_chapter_script(
             import urllib.request
 
             parts_payload: list[dict[str, Any]] = [{"text": json_prompt}]
-            for sc in sample_clips:
-                b64 = _extract_clip_preview_frame_b64(str(sc.get("abs_path") or ""), float(sc.get("duration_sec") or 2.0))
+            for spec in chapter_frame_specs:
+                b64 = _extract_clip_preview_frame_b64(
+                    spec["abs_path"],
+                    float(spec["duration_sec"]),
+                    seek_sec=spec.get("seek_sec"),
+                )
                 if b64:
+                    parts_payload.append(
+                        {
+                            "text": (
+                                f"[Chương {spec['chapter_index']} | {spec['ch_start']:.0f}s->{spec['ch_end']:.0f}s "
+                                f"| Mốc {spec['timeline_sec']:.0f}s | {spec['clip_name']}]"
+                            )
+                        }
+                    )
                     parts_payload.append({"inline_data": {"mime_type": "image/jpeg", "data": b64}})
             url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
             req = urllib.request.Request(
@@ -560,15 +645,21 @@ def generate_longform_chapter_script(
             if preview_dir is not None:
                 shutil.rmtree(preview_dir, ignore_errors=True)
                 preview_dir.mkdir(parents=True, exist_ok=True)
-                for idx, sc in enumerate(sample_clips, start=1):
-                    out_jpg = preview_dir / f"scene_{idx:02d}.jpg"
+                for idx, spec in enumerate(chapter_frame_specs, start=1):
+                    out_jpg = preview_dir / f"ch{spec['chapter_index']:02d}_scene_{idx:02d}.jpg"
                     if _extract_clip_preview_frame_jpg(
-                        str(sc.get("abs_path") or ""), float(sc.get("duration_sec") or 2.0), out_jpg
+                        spec["abs_path"],
+                        float(spec["duration_sec"]),
+                        out_jpg,
+                        seek_sec=spec.get("seek_sec"),
                     ):
-                        frame_lines.append(f"- Cảnh {sc.get('order')}: {out_jpg}")
+                        frame_lines.append(
+                            f"- [Chương {spec['chapter_index']} | {spec['ch_start']:.0f}s->{spec['ch_end']:.0f}s "
+                            f"| Mốc {spec['timeline_sec']:.0f}s | {spec['clip_name']}]: {out_jpg}"
+                        )
             agy_prompt = json_prompt
             if frame_lines:
-                agy_prompt += "\n\nHãy xem nhanh các khung hình đại diện theo đúng trình tự:\n" + "\n".join(frame_lines)
+                agy_prompt += "\n\nHãy xem khung hình đại diện được gắn đúng từng Chương theo trình tự thời gian:\n" + "\n".join(frame_lines)
             agy_raw = str(agy_caller(agy_prompt) or "").strip()
             cand_json = _extract_json_block(agy_raw)
             if cand_json and isinstance(cand_json.get("chapters"), list) and cand_json["chapters"]:
@@ -948,39 +1039,67 @@ def build_longform_voice_and_srt(
                 synthesized_blocks.append(
                     {
                         "chapter_index": ch_idx,
+                        "offset_ratio": float(blk.get("offset_ratio") if blk.get("offset_ratio") is not None else 0.14),
                         "pcm": blk_pcm,
                         "duration": len(blk_pcm) / float(sr),
                         "sent_offsets": sent_offsets,
                     }
                 )
 
-    # Pass 2: Distribute all blocks evenly across the whole video [safe_start .. safe_end]
+    # Pass 2: Chapter-Locked Placement — keep each chapter's narration strictly inside its own [start_sec .. end_sec]
     safe_start = 4.8 if total_dur >= 20.0 else 0.3
     safe_end = max(safe_start + 3.0, total_dur - (6.5 if total_dur >= 20.0 else 0.4))
-    avail_span = safe_end - safe_start
 
-    # If total speech exceeds 70% of avail_span, trim trailing blocks only if strictly necessary; otherwise spread evenly
-    total_speech = sum(b["duration"] for b in synthesized_blocks)
-    n_blk = len(synthesized_blocks)
+    chapters_plan = plan.get("chapters") or []
+    chap_windows: dict[int, tuple[float, float]] = {}
+    for ci, ch in enumerate(chapters_plan):
+        ch_idx = int(ch.get("index") or (ci + 1))
+        raw_st = float(ch.get("start_sec") or 0.0)
+        raw_en = float(ch.get("end_sec") or total_dur)
+        is_first = ci == 0
+        is_last = ci == len(chapters_plan) - 1
+        win_st = max(safe_start if is_first else raw_st + 2.0, raw_st + (1.0 if is_first else 2.0))
+        win_en = min(safe_end if is_last else raw_en - 1.4, raw_en - (1.0 if is_last else 1.4))
+        if win_en <= win_st + 1.2:
+            win_st = max(safe_start, raw_st + 0.5)
+            win_en = min(safe_end, max(win_st + 1.5, raw_en - 0.5))
+        chap_windows[ch_idx] = (win_st, win_en)
+
+    blocks_by_chap: dict[int, list[dict[str, Any]]] = {}
+    for b_info in synthesized_blocks:
+        blocks_by_chap.setdefault(int(b_info["chapter_index"]), []).append(b_info)
+
     placed_blocks = 0
+    for ch_idx in sorted(blocks_by_chap.keys()):
+        ch_blocks = blocks_by_chap[ch_idx]
+        win_st, win_en = chap_windows.get(ch_idx, (safe_start, safe_end))
+        ch_span = max(0.5, win_en - win_st)
+        ch_speech = sum(float(b["duration"]) for b in ch_blocks)
+        n_c = len(ch_blocks)
+        free_pool = max(0.0, ch_span - ch_speech)
 
-    if n_blk > 0:
-        # Compute inter-block gap weights (1.65x when transitioning to a new chapter for generous B-roll pause)
-        gap_weights: list[float] = []
-        for idx_b in range(n_blk - 1):
-            is_new_chap = synthesized_blocks[idx_b + 1]["chapter_index"] != synthesized_blocks[idx_b]["chapter_index"]
-            gap_weights.append(1.65 if is_new_chap else 1.0)
-        total_weight = sum(gap_weights)
-        free_gap_pool = max(0.0, avail_span - total_speech)
+        if n_c == 1:
+            off_r = max(0.0, min(0.75, float(ch_blocks[0].get("offset_ratio") or 0.14)))
+            lead_gap = min(free_pool * 0.45, ch_span * off_r * 0.45)
+            cursor_t = win_st + lead_gap
+            gap_after_each = 0.0
+        else:
+            lead_gap = (free_pool / float(n_c)) * 0.28
+            gap_after_each = (free_pool - lead_gap) / float(max(1, n_c - 1)) if n_c > 1 else 0.0
+            # Keep last block comfortably before win_en so trailing B-roll breathes
+            if n_c >= 2 and free_pool > 2.5:
+                lead_gap = free_pool * 0.14
+                tail_reserve = free_pool * 0.22
+                gap_after_each = max(0.8, (free_pool - lead_gap - tail_reserve) / float(n_c - 1))
+            cursor_t = win_st + lead_gap
 
-        cursor_t = safe_start
-        for idx_b, b_info in enumerate(synthesized_blocks):
+        for b_info in ch_blocks:
             b_pcm = b_info["pcm"]
-            b_dur = float(b_info["duration"])
-            if cursor_t + 1.0 >= safe_end:
+            if cursor_t + 0.8 >= win_en:
                 break
+            max_samples_in_win = max(0, int(round((win_en - cursor_t) * sr)))
             st_idx = int(round(cursor_t * sr))
-            en_idx = min(len(master_samples), st_idx + len(b_pcm))
+            en_idx = min(len(master_samples), st_idx + len(b_pcm), st_idx + max_samples_in_win)
             copy_len = en_idx - st_idx
             if copy_len <= 0:
                 break
@@ -1002,8 +1121,7 @@ def build_longform_voice_and_srt(
                         srt_entries.append((cur_l, ln_end, ln))
                     cur_l = ln_end
 
-            gap_after = (free_gap_pool * (gap_weights[idx_b] / total_weight)) if idx_b < len(gap_weights) and total_weight > 0 else 0.0
-            cursor_t += (copy_len / float(sr)) + gap_after
+            cursor_t += (copy_len / float(sr)) + gap_after_each
 
     out_wav_path.parent.mkdir(parents=True, exist_ok=True)
     raw_master = out_wav_path.with_name(f"{out_wav_path.stem}_raw.wav")
@@ -1215,12 +1333,13 @@ def srt_to_ass_file(
     height: int = 1080,
     font_name: str = "Baloo 2",
 ) -> Path:
-    """Convert SRT subtitles into clean, crisp ASS subtitles scaled proportionally to 4K/2K/1080p."""
+    """Convert SRT subtitles into refined cinematic Vlog ASS subtitles with smooth fade & soft backdrop."""
     is_landscape = width > height
-    font_size = int(round(height * (0.044 if is_landscape else 0.036)))
-    margin_v = int(round(height * (0.052 if is_landscape else 0.16)))
-    margin_lr = int(round(width * 0.06))
-    outline_px = max(3, int(round(font_size * 0.07)))
+    font_size = int(round(height * (0.040 if is_landscape else 0.033)))
+    margin_v = int(round(height * (0.056 if is_landscape else 0.165)))
+    margin_lr = int(round(width * 0.07))
+    outline_px = max(2, int(round(font_size * 0.055)))
+    shadow_px = max(2, int(round(font_size * 0.05)))
 
     header = (
         "[Script Info]\n"
@@ -1233,8 +1352,8 @@ def srt_to_ass_file(
         "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, "
         "Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, "
         "Alignment, MarginL, MarginR, MarginV, Encoding\n"
-        f"Style: Default,{font_name},{font_size},&H00FFFFFF,&H0000FFFF,&H00000000,&H99000000,"
-        f"-1,0,0,0,100,100,0,0,1,{outline_px},2,2,{margin_lr},{margin_lr},{margin_v},1\n\n"
+        f"Style: Default,{font_name},{font_size},&H00F8FAFC,&H0067E8F9,&H220F172A,&H78000000,"
+        f"-1,0,0,0,100,100,0.4,0,1,{outline_px},{shadow_px},2,{margin_lr},{margin_lr},{margin_v},1\n\n"
         "[Events]\n"
         "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"
     )
@@ -1258,7 +1377,9 @@ def srt_to_ass_file(
             txt = re.sub(r"\s+", " ", txt)
             if not txt or en <= st:
                 continue
-            events.append(f"Dialogue: 0,{_sec_to_ass_time(st)},{_sec_to_ass_time(en)},Default,,0,0,0,,{txt}")
+            events.append(
+                f"Dialogue: 0,{_sec_to_ass_time(st)},{_sec_to_ass_time(en)},Default,,0,0,0,,{{\\fad(160,160)\\blur0.5}}{txt}"
+            )
 
     ass_path.parent.mkdir(parents=True, exist_ok=True)
     ass_path.write_text(header + "\n".join(events) + "\n", encoding="utf-8")
