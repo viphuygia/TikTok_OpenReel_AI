@@ -268,6 +268,227 @@ BGM_TRACK_CATALOG: list[dict[str, str]] = [
     {"id": "bgm_upbeat_default.wav", "label": "🎹 Nhạc Synth Mặc Định"},
 ]
 
+_EXTRA_BGM_PRESETS: list[dict[str, Any]] = [
+    # --- Vlog & Camping / Thiên nhiên ---
+    {
+        "id": "bgm_vlog_campfire_guitar.wav",
+        "label": "🏕️ [Vlog] Campfire Guitar (80 BPM · Lửa trại ấm áp)",
+        "bpm": 80.0, "seed": 501, "has_kick": False, "has_hat": False, "warm": True, "arp_step_mult": 1.0, "target_rms": 0.13,
+        "chords": [([196.00, 246.94, 293.66], 98.00), ([164.81, 196.00, 246.94], 82.41), ([130.81, 164.81, 196.00], 65.41), ([146.83, 185.00, 220.00], 73.42)],
+        "melody_notes": [392.00, 493.88, 587.33, 493.88, 440.00, 392.00],
+    },
+    {
+        "id": "bgm_vlog_morning_mist.wav",
+        "label": "🌄 [Vlog] Sương Sớm Rừng Thông (76 BPM · Bình minh nhẹ)",
+        "bpm": 76.0, "seed": 502, "has_kick": False, "has_hat": False, "warm": True, "arp_step_mult": 1.0, "target_rms": 0.12,
+        "chords": [([174.61, 220.00, 261.63, 329.63], 87.31), ([130.81, 164.81, 196.00, 246.94], 65.41)],
+        "melody_notes": [523.25, 440.00, 392.00, 329.63, 392.00, 440.00],
+    },
+    {
+        "id": "bgm_vlog_sunset_acoustic.wav",
+        "label": "🌅 [Vlog] Hoàng Hôn Bờ Hồ (86 BPM · Thư thái)",
+        "bpm": 86.0, "seed": 503, "has_kick": False, "has_hat": True, "warm": True, "arp_step_mult": 0.75, "target_rms": 0.13,
+        "chords": [([220.00, 277.18, 329.63], 110.00), ([196.00, 246.94, 293.66], 98.00), ([146.83, 185.00, 220.00], 73.42), ([164.81, 207.65, 246.94], 82.41)],
+        "melody_notes": [440.00, 554.37, 659.25, 587.33, 493.88, 440.00],
+    },
+    {
+        "id": "bgm_vlog_forest_breeze.wav",
+        "label": "🍃 [Vlog] Gió Rừng Thư Giãn (74 BPM · Thiên nhiên)",
+        "bpm": 74.0, "seed": 504, "has_kick": False, "has_hat": False, "warm": True, "arp_step_mult": 1.0, "target_rms": 0.12,
+        "chords": [([146.83, 174.61, 220.00, 261.63], 73.42), ([196.00, 233.08, 293.66, 349.23], 98.00)],
+        "melody_notes": [349.23, 440.00, 523.25, 440.00, 392.00, 349.23],
+    },
+    {
+        "id": "bgm_vlog_weekend_picnic.wav",
+        "label": "🧺 [Vlog] Dã Ngoại Cuối Tuần (98 BPM · Tươi sáng)",
+        "bpm": 98.0, "seed": 505, "has_kick": True, "has_hat": False, "warm": True, "arp_step_mult": 0.5, "target_rms": 0.15,
+        "chords": [([261.63, 329.63, 392.00], 130.81), ([196.00, 246.94, 293.66], 98.00), ([220.00, 261.63, 329.63], 110.00), ([174.61, 220.00, 261.63], 87.31)],
+        "melody_notes": [523.25, 659.25, 783.99, 659.25, 587.33, 523.25],
+    },
+    # --- Du lịch & Roadtrip ---
+    {
+        "id": "bgm_travel_coastal_drive.wav",
+        "label": "🚗 [Du Lịch] Coastal Roadtrip (106 BPM · Phóng khoáng)",
+        "bpm": 106.0, "seed": 506, "has_kick": True, "has_hat": True, "warm": True, "arp_step_mult": 0.5, "target_rms": 0.16,
+        "chords": [([293.66, 369.99, 440.00], 146.83), ([220.00, 277.18, 329.63], 110.00), ([246.94, 293.66, 369.99], 123.47), ([196.00, 246.94, 293.66], 98.00)],
+        "melody_notes": [587.33, 659.25, 739.99, 880.00, 739.99, 587.33],
+    },
+    {
+        "id": "bgm_travel_mountain_pass.wav",
+        "label": "⛰️ [Du Lịch] Vượt Đèo Đón Gió (102 BPM · Hùng vĩ)",
+        "bpm": 102.0, "seed": 507, "has_kick": True, "has_hat": False, "warm": True, "arp_step_mult": 0.5, "target_rms": 0.16,
+        "chords": [([164.81, 196.00, 246.94], 82.41), ([130.81, 164.81, 196.00], 65.41), ([196.00, 246.94, 293.66], 98.00), ([146.83, 185.00, 220.00], 73.42)],
+        "melody_notes": [392.00, 493.88, 659.25, 587.33, 493.88, 392.00],
+    },
+    {
+        "id": "bgm_travel_golden_horizon.wav",
+        "label": "☀️ [Du Lịch] Chân Trời Nắng Vàng (110 BPM · Rạng rỡ)",
+        "bpm": 110.0, "seed": 508, "has_kick": True, "has_hat": True, "warm": False, "arp_step_mult": 0.5, "target_rms": 0.17,
+        "chords": [([174.61, 220.00, 261.63], 87.31), ([261.63, 329.63, 392.00], 130.81), ([196.00, 246.94, 293.66], 98.00)],
+        "melody_notes": [523.25, 587.33, 698.46, 783.99, 659.25, 523.25],
+    },
+    {
+        "id": "bgm_travel_train_window.wav",
+        "label": "🚆 [Du Lịch] Khung Cửa Tàu Chiều (89 BPM · Hoài niệm)",
+        "bpm": 89.0, "seed": 509, "has_kick": False, "has_hat": True, "warm": True, "arp_step_mult": 0.75, "target_rms": 0.13,
+        "chords": [([220.00, 261.63, 329.63, 392.00], 110.00), ([174.61, 220.00, 261.63, 329.63], 87.31)],
+        "melody_notes": [659.25, 587.33, 523.25, 440.00, 493.88, 523.25],
+    },
+    {
+        "id": "bgm_travel_island_breeze.wav",
+        "label": "🏝️ [Du Lịch] Gió Biển Đảo Xanh (104 BPM · Mát lành)",
+        "bpm": 104.0, "seed": 510, "has_kick": True, "has_hat": True, "warm": True, "arp_step_mult": 0.5, "target_rms": 0.15,
+        "chords": [([246.94, 311.13, 369.99], 123.47), ([164.81, 207.65, 246.94], 82.41), ([220.00, 277.18, 329.63], 110.00)],
+        "melody_notes": [493.88, 622.25, 739.99, 659.25, 554.37, 493.88],
+    },
+    # --- Piano & Ambient Chậm ---
+    {
+        "id": "bgm_piano_rainy_window.wav",
+        "label": "🌧️ [Piano] Mưa Ngoài Cửa Sổ (72 BPM · Sâu lắng)",
+        "bpm": 72.0, "seed": 511, "has_kick": False, "has_hat": False, "warm": True, "arp_step_mult": 1.0, "target_rms": 0.12,
+        "chords": [([220.00, 261.63, 329.63], 110.00), ([174.61, 207.65, 261.63], 87.31), ([130.81, 164.81, 196.00], 65.41), ([196.00, 246.94, 293.66], 98.00)],
+        "melody_notes": [523.25, 493.88, 440.00, 392.00, 329.63, 392.00],
+    },
+    {
+        "id": "bgm_piano_midnight_letters.wav",
+        "label": "🌙 [Piano] Thư Đêm Yên Tĩnh (75 BPM · Trầm ấm)",
+        "bpm": 75.0, "seed": 512, "has_kick": False, "has_hat": False, "warm": True, "arp_step_mult": 1.0, "target_rms": 0.12,
+        "chords": [([146.83, 174.61, 220.00], 73.42), ([116.54, 146.83, 174.61], 58.27), ([130.81, 164.81, 196.00], 65.41), ([110.00, 138.59, 164.81], 55.00)],
+        "melody_notes": [440.00, 392.00, 349.23, 329.63, 293.66, 349.23],
+    },
+    {
+        "id": "bgm_piano_soft_sunrise.wav",
+        "label": "☀️ [Piano] Nắng Sớm Nhẹ Nhàng (80 BPM · Trong trẻo)",
+        "bpm": 80.0, "seed": 513, "has_kick": False, "has_hat": False, "warm": True, "arp_step_mult": 1.0, "target_rms": 0.13,
+        "chords": [([261.63, 329.63, 392.00, 493.88], 130.81), ([174.61, 220.00, 261.63, 329.63], 87.31)],
+        "melody_notes": [523.25, 659.25, 783.99, 987.77, 783.99, 659.25],
+    },
+    {
+        "id": "bgm_ambient_starry_night.wav",
+        "label": "✨ [Ambient] Đêm Sao Lấp Lánh (70 BPM · Chill sâu)",
+        "bpm": 70.0, "seed": 514, "has_kick": False, "has_hat": False, "warm": True, "arp_step_mult": 1.0, "target_rms": 0.12,
+        "chords": [([164.81, 196.00, 246.94, 293.66], 82.41), ([130.81, 164.81, 196.00, 246.94], 65.41)],
+        "melody_notes": [493.88, 587.33, 659.25, 587.33, 493.88, 392.00],
+    },
+    {
+        "id": "bgm_ambient_warm_horizon.wav",
+        "label": "🕯️ [Ambient] Ánh Nến Ấm Áp (78 BPM · Tâm sự)",
+        "bpm": 78.0, "seed": 515, "has_kick": False, "has_hat": False, "warm": True, "arp_step_mult": 1.0, "target_rms": 0.12,
+        "chords": [([196.00, 246.94, 293.66, 369.99], 98.00), ([146.83, 185.00, 220.00, 261.63], 73.42)],
+        "melody_notes": [440.00, 493.88, 587.33, 523.25, 440.00, 392.00],
+    },
+    # --- Lo-Fi & Café Chill ---
+    {
+        "id": "bgm_lofi_late_night.wav",
+        "label": "🌃 [Lo-Fi] Phố Đêm Tĩnh Lặng (82 BPM · Chill)",
+        "bpm": 82.0, "seed": 516, "has_kick": True, "has_hat": True, "warm": True, "arp_step_mult": 0.75, "target_rms": 0.14,
+        "chords": [([174.61, 207.65, 261.63, 311.13], 87.31), ([155.56, 196.00, 233.08, 293.66], 77.78)],
+        "melody_notes": [466.16, 523.25, 622.25, 587.33, 466.16, 392.00],
+    },
+    {
+        "id": "bgm_lofi_coffee_corner.wav",
+        "label": "☕ [Lo-Fi] Góc Quán Cà Phê (85 BPM · Mộc mạc)",
+        "bpm": 85.0, "seed": 517, "has_kick": True, "has_hat": True, "warm": True, "arp_step_mult": 0.75, "target_rms": 0.14,
+        "chords": [([196.00, 246.94, 293.66, 349.23], 98.00), ([261.63, 329.63, 392.00, 493.88], 130.81)],
+        "melody_notes": [523.25, 493.88, 440.00, 392.00, 493.88, 523.25],
+    },
+    {
+        "id": "bgm_lofi_study_clouds.wav",
+        "label": "☁️ [Lo-Fi] Trôi Theo Đám Mây (84 BPM · Nhẹ đầu)",
+        "bpm": 84.0, "seed": 518, "has_kick": True, "has_hat": False, "warm": True, "arp_step_mult": 1.0, "target_rms": 0.13,
+        "chords": [([220.00, 261.63, 329.63, 392.00], 110.00), ([196.00, 233.08, 293.66, 349.23], 98.00)],
+        "melody_notes": [587.33, 523.25, 440.00, 392.00, 440.00, 523.25],
+    },
+    {
+        "id": "bgm_lofi_vinyl_sunday.wav",
+        "label": "💿 [Lo-Fi] Chủ Nhật Đĩa Than (87 BPM · Cổ điển)",
+        "bpm": 87.0, "seed": 519, "has_kick": True, "has_hat": True, "warm": True, "arp_step_mult": 0.75, "target_rms": 0.14,
+        "chords": [([146.83, 174.61, 220.00, 261.63], 73.42), ([196.00, 246.94, 293.66, 349.23], 98.00), ([130.81, 164.81, 196.00, 246.94], 65.41)],
+        "melody_notes": [523.25, 587.33, 659.25, 523.25, 440.00, 392.00],
+    },
+    {
+        "id": "bgm_jazz_evening_lounge.wav",
+        "label": "🎷 [Jazz] Lounge Buổi Tối (92 BPM · Sang trọng)",
+        "bpm": 92.0, "seed": 520, "has_kick": False, "has_hat": True, "warm": True, "arp_step_mult": 0.75, "target_rms": 0.14,
+        "chords": [([164.81, 196.00, 246.94, 293.66], 82.41), ([220.00, 277.18, 329.63, 392.00], 110.00), ([146.83, 174.61, 220.00, 261.63], 73.42)],
+        "melody_notes": [659.25, 587.33, 523.25, 493.88, 392.00, 440.00],
+    },
+    # --- Review & Lifestyle Hiện Đại ---
+    {
+        "id": "bgm_lifestyle_clean_morning.wav",
+        "label": "🏡 [Lifestyle] Nhà Gọn Sáng Nay (100 BPM · Tinh tươm)",
+        "bpm": 100.0, "seed": 521, "has_kick": True, "has_hat": False, "warm": True, "arp_step_mult": 0.5, "target_rms": 0.15,
+        "chords": [([261.63, 329.63, 392.00], 130.81), ([220.00, 261.63, 329.63], 110.00), ([174.61, 220.00, 261.63], 87.31)],
+        "melody_notes": [523.25, 659.25, 783.99, 659.25, 523.25, 440.00],
+    },
+    {
+        "id": "bgm_lifestyle_kitchen_vibe.wav",
+        "label": "🍳 [Lifestyle] Góc Bếp Thơm Lừng (104 BPM · Ấm cúng)",
+        "bpm": 104.0, "seed": 522, "has_kick": True, "has_hat": True, "warm": True, "arp_step_mult": 0.5, "target_rms": 0.15,
+        "chords": [([196.00, 246.94, 293.66], 98.00), ([261.63, 329.63, 392.00], 130.81), ([146.83, 185.00, 220.00], 73.42)],
+        "melody_notes": [392.00, 493.88, 587.33, 659.25, 587.33, 493.88],
+    },
+    {
+        "id": "bgm_lifestyle_fashion_walk.wav",
+        "label": "👗 [Lifestyle] Sải Bước Phố Chiều (112 BPM · Thời trang)",
+        "bpm": 112.0, "seed": 523, "has_kick": True, "has_hat": True, "warm": False, "arp_step_mult": 0.5, "target_rms": 0.17,
+        "chords": [([220.00, 261.63, 329.63], 110.00), ([164.81, 196.00, 246.94], 82.41), ([196.00, 246.94, 293.66], 98.00)],
+        "melody_notes": [440.00, 523.25, 659.25, 783.99, 659.25, 587.33],
+    },
+    {
+        "id": "bgm_lifestyle_unbox_clean.wav",
+        "label": "📦 [Review] Mở Hộp Tinh Tế (108 BPM · Sạch sẽ)",
+        "bpm": 108.0, "seed": 524, "has_kick": True, "has_hat": True, "warm": False, "arp_step_mult": 0.5, "target_rms": 0.16,
+        "chords": [([293.66, 349.23, 440.00], 146.83), ([261.63, 329.63, 392.00], 130.81), ([233.08, 293.66, 349.23], 116.54)],
+        "melody_notes": [587.33, 698.46, 880.00, 698.46, 587.33, 523.25],
+    },
+    {
+        "id": "bgm_lifestyle_skincare_silk.wav",
+        "label": "🧴 [Review] Chăm Da Dịu Êm (90 BPM · Mềm mại)",
+        "bpm": 90.0, "seed": 525, "has_kick": False, "has_hat": False, "warm": True, "arp_step_mult": 0.75, "target_rms": 0.13,
+        "chords": [([246.94, 311.13, 369.99, 440.00], 123.47), ([220.00, 277.18, 329.63, 392.00], 110.00)],
+        "melody_notes": [659.25, 587.33, 493.88, 440.00, 493.88, 554.37],
+    },
+    # --- TikTok Sôi Động & Chốt Đơn ---
+    {
+        "id": "bgm_tiktok_mega_deal.wav",
+        "label": "🛍️ [TikTok] Mega Deal Bùng Nổ (128 BPM · Cực cháy)",
+        "bpm": 128.0, "seed": 526, "has_kick": True, "has_hat": True, "warm": False, "arp_step_mult": 0.5, "target_rms": 0.19,
+        "chords": [([130.81, 155.56, 196.00], 65.41), ([146.83, 174.61, 220.00], 73.42), ([164.81, 196.00, 246.94], 82.41)],
+        "melody_notes": [523.25, 622.25, 783.99, 932.33, 783.99, 622.25],
+    },
+    {
+        "id": "bgm_tiktok_dance_bounce.wav",
+        "label": "💃 [TikTok] Bounce Bắt Tai (124 BPM · Nhún nhảy)",
+        "bpm": 124.0, "seed": 527, "has_kick": True, "has_hat": True, "warm": False, "arp_step_mult": 0.5, "target_rms": 0.18,
+        "chords": [([196.00, 246.94, 293.66], 98.00), ([164.81, 196.00, 246.94], 82.41), ([174.61, 220.00, 261.63], 87.31)],
+        "melody_notes": [587.33, 783.99, 659.25, 587.33, 493.88, 587.33],
+    },
+    {
+        "id": "bgm_tiktok_future_bass.wav",
+        "label": "🚀 [TikTok] Future Bass Viral (130 BPM · Hiện đại)",
+        "bpm": 130.0, "seed": 528, "has_kick": True, "has_hat": True, "warm": False, "arp_step_mult": 0.5, "target_rms": 0.18,
+        "chords": [([174.61, 220.00, 261.63, 329.63], 87.31), ([196.00, 246.94, 293.66, 369.99], 98.00)],
+        "melody_notes": [698.46, 783.99, 880.00, 783.99, 659.25, 523.25],
+    },
+    {
+        "id": "bgm_tiktok_electro_pop.wav",
+        "label": "⚡ [TikTok] Electro Pop Sáng (120 BPM · Tươi trẻ)",
+        "bpm": 120.0, "seed": 529, "has_kick": True, "has_hat": True, "warm": False, "arp_step_mult": 0.5, "target_rms": 0.18,
+        "chords": [([261.63, 329.63, 392.00], 130.81), ([293.66, 369.99, 440.00], 146.83), ([220.00, 277.18, 329.63], 110.00)],
+        "melody_notes": [523.25, 659.25, 783.99, 880.00, 783.99, 659.25],
+    },
+    {
+        "id": "bgm_tiktok_retro_synth.wav",
+        "label": "🕹️ [TikTok] Retro Synthwave 80s (116 BPM · Nổi bật)",
+        "bpm": 116.0, "seed": 530, "has_kick": True, "has_hat": True, "warm": True, "arp_step_mult": 0.5, "target_rms": 0.17,
+        "chords": [([220.00, 261.63, 329.63], 110.00), ([174.61, 220.00, 261.63], 87.31), ([196.00, 246.94, 293.66], 98.00), ([164.81, 196.00, 246.94], 82.41)],
+        "melody_notes": [440.00, 659.25, 587.33, 523.25, 493.88, 440.00],
+    },
+]
+
+BGM_TRACK_CATALOG.extend({"id": p["id"], "label": p["label"]} for p in _EXTRA_BGM_PRESETS)
+
 
 def ensure_royalty_free_bgm_library(force: bool = False) -> list[dict[str, Any]]:
     DIR_BGM.mkdir(parents=True, exist_ok=True)
@@ -336,6 +557,19 @@ def ensure_royalty_free_bgm_library(force: bool = False) -> list[dict[str, Any]]
             melody_notes=[392.00, 466.16, 587.33, 466.16, 392.00, 349.23],
         ),
     }
+    for preset in _EXTRA_BGM_PRESETS:
+        builders[preset["id"]] = lambda p, pr=preset: _synth_styled_bgm(
+            p,
+            bpm=pr["bpm"],
+            seed=pr["seed"],
+            has_kick=pr["has_kick"],
+            has_hat=pr["has_hat"],
+            warm=pr["warm"],
+            arp_step_mult=pr["arp_step_mult"],
+            target_rms=pr["target_rms"],
+            chords=pr["chords"],
+            melody_notes=pr["melody_notes"],
+        )
     for fname, fn in builders.items():
         p = DIR_BGM / fname
         if force or not p.exists() or p.stat().st_size < 100_000:
