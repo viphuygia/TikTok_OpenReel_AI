@@ -114,8 +114,14 @@ def _detect_hw_h264_encoder(ffmpeg: str) -> tuple[str, list[str]]:
     return "libx264", ["-preset", "veryfast", "-crf", "20"]
 
 
-def _concat_clips_to_bg_mp4(clips: list[dict[str, Any]], out_mp4: Path, total_duration: float) -> None:
-    """Normalize clips to 1080x1920@30fps with alternating live zoom-in/zoom-out motion."""
+def _concat_clips_to_bg_mp4(
+    clips: list[dict[str, Any]],
+    out_mp4: Path,
+    total_duration: float,
+    frame_w: int = 1080,
+    frame_h: int = 1920,
+) -> None:
+    """Normalize clips to target resolution@30fps."""
     ffmpeg = find_ffmpeg()
     vcodec, vcodec_args = _detect_hw_h264_encoder(ffmpeg)
     seg_dir = out_mp4.parent / "segments"
@@ -130,7 +136,7 @@ def _concat_clips_to_bg_mp4(clips: list[dict[str, Any]], out_mp4: Path, total_du
         dur = max(0.4, float(clip.get("duration") or 2.0))
         seg_path = seg_dir / f"seg_{idx:03d}.mp4"
         # Preserve real 30fps video motion (never use zoompan on video streams, which freezes frame 0)
-        vf = "scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,fps=30,format=yuv420p"
+        vf = f"scale={frame_w}:{frame_h}:force_original_aspect_ratio=increase,crop={frame_w}:{frame_h},fps=30,format=yuv420p"
         cmd = [
             ffmpeg,
             "-y",
@@ -373,12 +379,18 @@ def _build_hyperframes_html(
     is_wildcard = bool(isinstance(wc, dict) and wc)
     if isinstance(wc, dict) and wc.get("accentColor"):
         active_color = str(wc.get("accentColor") or active_color)
-    sub_top_px = int(round(1920 * float((wc.get("subtitleY") if isinstance(wc, dict) and wc.get("subtitleY") else None) or props.get("subtitleY") or 0.73)))
+    frame_w = int(props.get("width") or (1920 if props.get("aspectRatio") == "16:9" else 1080))
+    frame_h = int(props.get("height") or (1080 if props.get("aspectRatio") == "16:9" else 1920))
+    content_vibe = str(props.get("contentVibe") or "learned_dna").strip()
+    is_vlog = content_vibe not in ("", "learned_dna")
+    sub_top_px = int(round(frame_h * float((wc.get("subtitleY") if isinstance(wc, dict) and wc.get("subtitleY") else None) or props.get("subtitleY") or (0.83 if frame_w > frame_h else 0.73))))
     sub_variant = str(wc.get("subtitleVariant") or "clean_stroke") if isinstance(wc, dict) else "clean_stroke"
-    letterbox_px = int(wc.get("letterboxPx") or 0) if isinstance(wc, dict) else 0
+    letterbox_px = 0 if frame_w > frame_h else (int(wc.get("letterboxPx") or 0) if isinstance(wc, dict) else 0)
     icon_density = str(props.get("iconDensity") or "balanced")
     sticker_density = str(props.get("stickerDensity") or "normal")
-    cta_raw = str(wc.get("ctaLabel") or "🛒 Giỏ Hàng Góc Trái") if isinstance(wc, dict) else "🛒 Giỏ Hàng Góc Trái"
+    default_cta = "✨ Lưu Lại Xem Sau" if is_vlog else "🛒 Giỏ Hàng Góc Trái"
+    cta_raw = str(wc.get("ctaLabel") or default_cta) if isinstance(wc, dict) else default_cta
+    stamp_html_text = "CHILL<br/>VLOG" if is_vlog else "TIKTOK<br/>SHOP"
     cta_label = _twemoji_inline_svg_html(cta_raw, size_px=34)
     archetype = str(wc.get("layoutArchetype") or "editorial_zine") if is_wildcard else "clean_editorial"
     motif_kind = str(wc.get("motifKind") or "sparkle_burst") if is_wildcard else "sparkle_burst"
@@ -536,16 +548,16 @@ def _build_hyperframes_html(
     {font_faces_css}
     * {{ box-sizing: border-box; margin: 0; padding: 0; }}
     html, body {{
-      width: 1080px;
-      height: 1920px;
+      width: {frame_w}px;
+      height: {frame_h}px;
       overflow: hidden;
       background: transparent !important;
       font-family: '{font_heading}', 'Be Vietnam Pro', 'Segoe UI', system-ui, sans-serif;
     }}
     .root {{
       position: relative;
-      width: 1080px;
-      height: 1920px;
+      width: {frame_w}px;
+      height: {frame_h}px;
       overflow: hidden;
       background: transparent !important;
     }}
@@ -917,17 +929,17 @@ def _build_hyperframes_html(
   </style>
 </head>
 <body>
-  <div class="root" data-composition-id="root" data-start="0" data-duration="{duration:.3f}" data-width="1080" data-height="1920">
+  <div class="root" data-composition-id="root" data-start="0" data-duration="{duration:.3f}" data-width="{frame_w}" data-height="{frame_h}">
     <div class="scrim"></div>
     {('<div class="lbox-top"></div><div class="lbox-bot"></div>' if letterbox_px > 0 else '')}
     <div id="hf-clock" style="position:absolute;top:0;left:0;height:1px;width:0%;opacity:0;pointer-events:none;"></div>
-    <canvas id="fx-canvas" width="1080" height="1920"></canvas>
+    <canvas id="fx-canvas" width="{frame_w}" height="{frame_h}"></canvas>
     {(f'<div class="ai-svg-art" id="hf-ai-svg">{raw_custom_svg}</div>' if raw_custom_svg else '')}
     <div class="stamp-seal" id="hf-stamp">
       <svg id="hf-stamp-svg" viewBox="0 0 140 140" width="136" height="136" style="position:absolute;inset:0;">
         <polygon points="70,4 84,20 105,12 108,33 129,38 121,58 136,74 120,88 127,108 106,112 101,132 81,123 65,137 52,121 31,128 28,107 7,102 15,82 0,66 16,52 9,32 30,28 35,8 55,17" fill="{active_color}"/>
       </svg>
-      <div class="stamp-seal-text">TIKTOK<br/>SHOP</div>
+      <div class="stamp-seal-text">{stamp_html_text}</div>
     </div>
     {(f'<div class="kinetic-ribbon" id="hf-ribbon">⚡ {brand} · {html.escape(unique_usps[0]) if unique_usps else product}</div>' if archetype in ('bento_split', 'kinetic_poster') else '')}
     <svg class="callout-arrow" viewBox="0 0 220 140">
@@ -1233,8 +1245,10 @@ def render_hyperframes_video(
         shutil.rmtree(DIR_HYPERFRAMES_BUILD, ignore_errors=True)
     DIR_HYPERFRAMES_BUILD.mkdir(parents=True, exist_ok=True)
 
+    frame_w = int(props.get("width") or (1920 if props.get("aspectRatio") == "16:9" else 1080))
+    frame_h = int(props.get("height") or (1080 if props.get("aspectRatio") == "16:9" else 1920))
     bg_mp4 = DIR_HYPERFRAMES_BUILD / "bg_track.mp4"
-    _concat_clips_to_bg_mp4(clips, bg_mp4, total_duration)
+    _concat_clips_to_bg_mp4(clips, bg_mp4, total_duration, frame_w=frame_w, frame_h=frame_h)
 
     has_voice = False
     voice_rel = str(props.get("voiceSrc") or "").lstrip("/")
@@ -1356,7 +1370,7 @@ def render_hyperframes_video(
         b_op = 0.16 if is_paper_ov else (0.24 if "grain" in ov_file else 0.30)
         filter_parts = [
             f"[0:v]{eq_filter},format=gbrp[bgv];"
-            f"[{ov_idx}:v]scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920,setsar=1,format=gbrp[ovv];"
+            f"[{ov_idx}:v]scale={frame_w}:{frame_h}:force_original_aspect_ratio=increase,crop={frame_w}:{frame_h},setsar=1,format=gbrp[ovv];"
             f"[bgv][ovv]blend=all_mode={b_mode}:all_opacity={b_op}:shortest=1,format=yuv420p[bgv_ov];"
             f"[bgv_ov][1:v]overlay=0:0:shortest=1[vout]"
         ]

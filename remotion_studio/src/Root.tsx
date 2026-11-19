@@ -48,11 +48,14 @@ export const RemotionRoot: React.FC = () => {
     const fps = 30;
     const typed = props as unknown as TikTokVideoProps;
     const durationSec = Math.max(1.5, Number(typed.durationSec) || 25);
+    const isLandscape = typed.aspectRatio === '16:9' || (Number(typed.width) > 0 && Number(typed.width) > Number(typed.height || 0));
+    const width = Number(typed.width) || (isLandscape ? 1920 : 1080);
+    const height = Number(typed.height) || (isLandscape ? 1080 : 1920);
     return {
       durationInFrames: Math.round(durationSec * fps),
       fps,
-      width: 1080,
-      height: 1920,
+      width,
+      height,
     };
   };
 

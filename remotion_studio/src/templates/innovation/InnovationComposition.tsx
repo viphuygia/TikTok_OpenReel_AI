@@ -161,7 +161,7 @@ const FrameLockedLottieSticker: React.FC<{
 
 export const InnovationComposition: React.FC<TikTokVideoProps> = (props) => {
   const frame = useCurrentFrame();
-  const { fps, durationInFrames, height } = useVideoConfig();
+  const { fps, durationInFrames, width, height } = useVideoConfig();
 
   const theme = resolveVisualTheme(props.visualTheme);
   const preset = props.innovationPreset || 'kinetic_pop';
@@ -302,26 +302,26 @@ export const InnovationComposition: React.FC<TikTokVideoProps> = (props) => {
           )}
 
           {motifKind === 'cyber_grid' && (
-            <svg width={1080} height={1920} style={{ position: 'absolute', inset: 0, opacity: 0.25 }}>
+            <svg width={width} height={height} style={{ position: 'absolute', inset: 0, opacity: 0.25 }}>
               {Array.from({ length: 12 }).map((_, i) => (
                 <line
                   key={`v-${i}`}
-                  x1={i * 98}
+                  x1={i * Math.round(width / 11)}
                   y1={0}
-                  x2={i * 98}
-                  y2={1920}
+                  x2={i * Math.round(width / 11)}
+                  y2={height}
                   stroke={accentCol}
                   strokeWidth={1.5}
                 />
               ))}
               {Array.from({ length: 16 }).map((_, i) => {
-                const yPos = ((i * 130 + frame * 2.5) % 1920);
+                const yPos = ((i * 130 + frame * 2.5) % height);
                 return (
                   <line
                     key={`h-${i}`}
                     x1={0}
                     y1={yPos}
-                    x2={1080}
+                    x2={width}
                     y2={yPos}
                     stroke={accentCol}
                     strokeWidth={1.5}
@@ -650,7 +650,7 @@ export const InnovationComposition: React.FC<TikTokVideoProps> = (props) => {
                     position: 'absolute',
                     left: 0,
                     right: 0,
-                    top: `${((frame * 5) % 1920)}px`,
+                    top: `${((frame * 5) % height)}px`,
                     height: 3,
                     background: `linear-gradient(90deg, transparent, ${accentCol}, transparent)`,
                     opacity: 0.45,
@@ -794,11 +794,11 @@ export const InnovationComposition: React.FC<TikTokVideoProps> = (props) => {
 
           {/* Floating Product-Themed Vector Motifs (Bubbles, Leaves, Sparkles, Wave) */}
           {isWildcard && (motifKind === 'bubbles_ice' || motifKind === 'botanical_leaf' || motifKind === 'geometric_orbit') && (
-            <svg width={1080} height={1920} style={{ position: 'absolute', inset: 0 }}>
+            <svg width={width} height={height} style={{ position: 'absolute', inset: 0 }}>
               {motifKind === 'bubbles_ice' &&
                 [0, 1, 2, 3, 4, 5].map((i) => {
-                  const cx = i % 2 === 0 ? 75 + i * 24 : 980 - i * 22;
-                  const cy = 1850 - ((frame * (2.6 + i * 0.4) + i * 290) % 1800);
+                  const cx = i % 2 === 0 ? 75 + i * 24 : (width - 100) - i * 22;
+                  const cy = (height - 70) - ((frame * (2.6 + i * 0.4) + i * 290) % Math.max(600, height - 120));
                   const r = 16 + (i % 3) * 10;
                   return (
                     <circle

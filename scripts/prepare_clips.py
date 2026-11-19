@@ -135,8 +135,8 @@ def build_video_filter(
             f"[bg_blur][fg_scaled]overlay=(W-w)/2:(H-h)/2,fps={fps},setsar=1"
         )
 
-    # Mặc định ("center"): crop tỉ lệ 9:16 lấy trung tâm, scale lên 1080x1920 + làm nét nhẹ bao bì
-    filters.append("crop='min(iw,ih*9/16)':'min(ih,iw*16/9)'")
+    # Mặc định ("center"): crop đúng tỷ lệ width:height lấy trung tâm, scale lên target + làm nét nhẹ
+    filters.append(f"crop='min(iw,ih*{width}/{height})':'min(ih,iw*{height}/{width})'")
     filters.append(f"scale={width}:{height}:flags=lanczos")
     filters.append("unsharp=3:3:0.55:3:3:0.0")
     filters.append("eq=contrast=1.03:saturation=1.05")
@@ -307,6 +307,12 @@ def main() -> int:
         action="store_false",
         help="Không tạo file video nháp đã ghép.",
     )
+    parser.add_argument(
+        "--aspect-ratio",
+        choices=["9:16", "16:9"],
+        default="",
+        help="Ghi đè tỷ lệ khung hình đầu ra (9:16 hoặc 16:9).",
+    )
     args = parser.parse_args()
 
     config_path = Path(args.config)
@@ -337,6 +343,10 @@ def main() -> int:
 
     res = plan.get("target_resolution", [1080, 1920])
     target_w, target_h = int(res[0]), int(res[1])
+    if args.aspect_ratio == "16:9":
+        target_w, target_h = 1920, 1080
+    elif args.aspect_ratio == "9:16":
+        target_w, target_h = 1080, 1920
     target_fps = int(plan.get("target_fps", 30))
     default_keep_audio = bool(plan.get("keep_clip_audio", False))
     should_concat = args.concat if args.concat is not None else bool(plan.get("concat_draft", True))

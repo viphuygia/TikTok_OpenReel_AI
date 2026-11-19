@@ -368,6 +368,60 @@ DEFAULT_STYLE_DNA: dict[str, Any] = {
     "reference_frames": [],
 }
 
+CONTENT_VIBE_PRESETS: dict[str, dict[str, Any]] = {
+    "learned_dna": {
+        "id": "learned_dna",
+        "label": "✨ Theo Style DNA đã học (Mặc định · Không ghi đè)",
+        "is_vlog": False,
+        "cta_default": "Bấm giỏ hàng góc trái chốt liền nha.",
+        "prompt_hint": "",
+    },
+    "outdoor_picnic": {
+        "id": "outdoor_picnic",
+        "label": "🏕️ Dã ngoại / Camping / Picnic (Thiên nhiên & Nhật ký)",
+        "is_vlog": True,
+        "cta_default": "Lưu lại cuối tuần rủ hội bạn đi chill ngay nha.",
+        "prompt_hint": "Phong cách vlog dã ngoại, camping, picnic ngoài trời: giọng kể tự nhiên, thư giãn, tả cảm giác nắng gió, cây cỏ, khoảnh khắc chill cùng bạn bè. TUYỆT ĐỐI KHÔNG nhắc giỏ hàng, chốt đơn hay freeship.",
+    },
+    "travel_vlog": {
+        "id": "travel_vlog",
+        "label": "✈️ Du lịch / Travel Vlog (Cinematic & Khám phá)",
+        "is_vlog": True,
+        "cta_default": "Theo dõi để cùng khám phá thêm nhiều điểm đẹp nữa nha.",
+        "prompt_hint": "Phong cách travel vlog trên mạng: mở đầu bằng cảm xúc đặt chân tới địa điểm, review góc chụp đẹp, kinh nghiệm đi lại và khoảnh khắc đáng nhớ. TUYỆT ĐỐI KHÔNG nhắc giỏ hàng, chốt đơn hay bán hàng.",
+    },
+    "food_cafe": {
+        "id": "food_cafe",
+        "label": "🍜 Ẩm thực / Cafe / Chill (Review không gian & hương vị)",
+        "is_vlog": True,
+        "cta_default": "Lưu lại địa điểm này cho cuối tuần hẹn hò nhé.",
+        "prompt_hint": "Phong cách food/cafe vlog: tả không gian quán, ánh sáng, âm thanh, hương vị đồ ăn thức uống chân thật như chia sẻ với bạn thân. TUYỆT ĐỐI KHÔNG nhắc giỏ hàng hay chốt đơn.",
+    },
+    "daily_story": {
+        "id": "daily_story",
+        "label": "📖 Daily Vlog / Storytelling (Tâm sự & Đời sống)",
+        "is_vlog": True,
+        "cta_default": "Còn bạn, cuối tuần này bạn dự định làm gì nè.",
+        "prompt_hint": "Phong cách daily vlog storytelling nhẹ nhàng kiểu phim ngắn đời sống, kể chuyện gần gũi, nhịp câu có khoảng thở tự nhiên. TUYỆT ĐỐI KHÔNG nhắc giỏ hàng hay bán hàng.",
+    },
+    "creative_internet": {
+        "id": "creative_internet",
+        "label": "🌐 Tự do Sáng tạo (Style Vlog/Trend trên mạng)",
+        "is_vlog": True,
+        "cta_default": "Thấy hay thì thả tim và lưu video lại nha.",
+        "prompt_hint": "Phong cách sáng tạo tự do theo trend mạng xã hội: câu hook tò mò, góc nhìn mới mẻ, năng lượng tích cực, không rập khuôn bán hàng hay giỏ hàng.",
+    },
+}
+
+
+def get_content_vibe_meta(vibe_id: str | None) -> dict[str, Any]:
+    key = (vibe_id or "learned_dna").strip()
+    return dict(CONTENT_VIBE_PRESETS.get(key) or CONTENT_VIBE_PRESETS["learned_dna"])
+
+
+def is_vlog_vibe(vibe_id: str | None) -> bool:
+    return bool(get_content_vibe_meta(vibe_id).get("is_vlog"))
+
 
 def _srt_ts_to_sec(ts: str) -> float:
     m = re.match(r"(\d+):(\d+):(\d+)[,.](\d+)", ts.strip())
@@ -1445,14 +1499,16 @@ def generate_three_script_options_fallback(
     brand_brief: dict[str, Any] | None = None,
     target_duration_sec: float | None = None,
     product_note: str = "",
+    content_vibe: str = "learned_dna",
 ) -> dict[str, Any]:
-    """Generate 3 complete, Critic-hardened Vietnamese TikTok script options matching target_duration_sec."""
+    """Generate 3 complete, Critic-hardened Vietnamese script options matching target_duration_sec and content_vibe."""
     brief = brand_brief or load_brand_brief()
     target_dur = float(target_duration_sec or brief.get("target_duration_sec") or 30.0)
     info = _extract_brief_product_angles(brief)
     ch_ctx = load_channel_script_dna_context()
-    pronoun = ch_ctx["pronoun"] or "mấy bà"
+    pronoun = ch_ctx["pronoun"] or "mọi người"
     target_words, min_words, _ = compute_target_word_budget(target_dur)
+    vibe_meta = get_content_vibe_meta(content_vibe)
 
     brand = info["brand"]
     prod = info["product_line"]
@@ -1460,10 +1516,54 @@ def generate_three_script_options_fallback(
     clean_note = re.sub(r"\[Nhịp dựng[^\]]*\]", "", product_note or "").strip()
     usps = _trim_phrase_words(clean_note, 18) if clean_note else info["usps_short"]
     second_p = info["second_product_short"] or f"phiên bản {brand} {prod}".strip()
-    cta = info["cta"]
+    cta = vibe_meta["cta_default"] if vibe_meta["is_vlog"] else info["cta"]
     prod_full = f"{brand} {prod}".strip()
+    topic_label = clean_note[:40] if clean_note else (prod_full if prod_full and "chưa" not in prod_full.lower() else "CHUYẾN ĐI HÔM NAY")
 
-    draft_specs = [
+    if vibe_meta["is_vlog"]:
+        draft_specs = [
+            {
+                "id": "opt1",
+                "title": f"Góc 1: Nhật ký Trải nghiệm ({vibe_meta['id'].replace('_', ' ').title()})",
+                "angle": "Nhật ký Chill",
+                "hook_badge": f"CUỐI TUẦN CHILL CÙNG {topic_label.upper()}"[:44],
+                "sentences": [
+                    f"Cuối tuần này tụi mình quyết định tạm gác lại bộn bề để ra ngoài hít thở không khí trong lành.",
+                    f"Điểm thú vị nhất của chuyến đi là {usps}, cảm giác vừa bước tới đã thấy nhẹ cả người.",
+                    "Không gian thoáng đãng, ánh nắng nhẹ và tiếng gió làm mọi khung hình trở nên cực kỳ thư giãn.",
+                    "Chỉ cần chuẩn bị vài món đơn giản là đã có nguyên một buổi chiều thật đáng nhớ bên nhau.",
+                    cta,
+                ],
+            },
+            {
+                "id": "opt2",
+                "title": "Góc 2: Kể chuyện Góc nhìn Đời sống (Storytelling)",
+                "angle": "Storytelling",
+                "hook_badge": f"MỘT NGÀY ĐÁNG NHỚ · {topic_label.upper()}"[:44],
+                "sentences": [
+                    f"Có những ngày mình chỉ muốn xách balo lên và đi đâu đó thật yên bình để nạp lại năng lượng.",
+                    f"Khoảnh khắc ấn tượng nhất chính là {usps}, nhìn ngoài đời còn đẹp hơn trong video nhiều.",
+                    "Nhịp sống chậm lại một chút giúp mình để ý được nhiều chi tiết nhỏ mà bình thường hay bỏ lỡ.",
+                    "Đây chắc chắn là một trong những kỷ niệm nhẹ nhàng và dễ chịu nhất trong tháng này.",
+                    cta,
+                ],
+            },
+            {
+                "id": "opt3",
+                "title": "Góc 3: Chia sẻ Tips & Góc Quay Đẹp (Style Mạng)",
+                "angle": "Chia sẻ Tips",
+                "hook_badge": f"GÓC CHILL XỊN · {topic_label.upper()}"[:44],
+                "sentences": [
+                    f"Ai đang tìm một chỗ vừa đẹp vừa thoải mái để đổi gió thì xem hết video này nha.",
+                    f"Điểm cộng lớn nhất ở đây là {usps}, lên hình góc nào cũng rất tự nhiên và có chiều sâu.",
+                    "Đi tầm buổi sáng hoặc xế chiều ánh sáng dịu sẽ quay được nhiều thước phim cực kỳ mượt.",
+                    "Vừa thư giãn vừa có thêm nhiều khoảnh khắc xịn để lưu giữ làm kỷ niệm.",
+                    cta,
+                ],
+            },
+        ]
+    else:
+        draft_specs = [
         {
             "id": "opt1",
             "title": "Góc 1: Đánh vào Nỗi đau & Giải pháp tức thì",
@@ -1856,6 +1956,8 @@ def generate_ai_wildcard_style_spec(
     exclude_palettes: list[str] | None = None,
     exclude_hook_layouts: list[str] | None = None,
     exclude_sub_variants: list[str] | None = None,
+    content_vibe: str = "learned_dna",
+    aspect_ratio: str = "9:16",
 ) -> dict[str, Any]:
     """Generate a bold, out-of-the-box WildcardStyleSpec with structural layout archetypes & AI-drawn SVG motifs."""
     import random
@@ -1902,16 +2004,29 @@ def generate_ai_wildcard_style_spec(
 
     hook_layouts = ["top_left_editorial", "center_bold", "quote_5star", "breaking_ticker", "glass_floating"]
     sub_variants = ["clean_stroke", "glass_pill", "accent_band"]
-    cta_labels = [
-        "🛒 Chốt Deal Ngay Góc Trái",
-        "⚡ Săn Giá Hời Hôm Nay",
-        "🔥 Giỏ Hàng Đang Trợ Giá",
-        "🎁 Bấm Giỏ Hàng Xem Chi Tiết",
-    ]
-    brand_up = str(brief.get("brand") or "TIKTOK SHOP").strip().upper()
-    prod_str = str(brief.get("product_line") or brief.get("category") or "SIÊU DEAL HOT").strip()
+    vlog_mode = is_vlog_vibe(content_vibe)
+    if vlog_mode:
+        cta_labels = [
+            "✨ Lưu Lại Cuối Tuần Đi Chill",
+            "📌 Follow Xem Thêm Hành Trình",
+            "🌿 Kỷ Niệm Đáng Nhớ Hôm Nay",
+            "💬 Comment Góc Bạn Thích Nhất",
+        ]
+    else:
+        cta_labels = [
+            "🛒 Chốt Deal Ngay Góc Trái",
+            "⚡ Săn Giá Hời Hôm Nay",
+            "🔥 Giỏ Hàng Đang Trợ Giá",
+            "🎁 Bấm Giỏ Hàng Xem Chi Tiết",
+        ]
+    brand_up = str(brief.get("brand") or ("VLOG DIARY" if vlog_mode else "TIKTOK SHOP")).strip().upper()
+    prod_str = str(brief.get("product_line") or brief.get("category") or ("HÀNH TRÌNH MỚI" if vlog_mode else "SIÊU DEAL HOT")).strip()
     effective_banned = get_effective_banned_words(brief)
-    raw_ticker = f"🔥 {brand_up} · {prod_str.upper()} · ƯU ĐÃI GIỎ HÀNG GÓC TRÁI"
+    raw_ticker = (
+        f"✨ {brand_up} · {prod_str.upper()} · NHẬT KÝ TRẢI NGHIỆM"
+        if vlog_mode
+        else f"🔥 {brand_up} · {prod_str.upper()} · ƯU ĐÃI GIỎ HÀNG GÓC TRÁI"
+    )
     ticker_default = sanitize_banned_text(
         strip_slop_emojis(raw_ticker) if icon_density == "minimal" else raw_ticker,
         banned_words=effective_banned,
@@ -1926,7 +2041,9 @@ def generate_ai_wildcard_style_spec(
     pop_palette = rng.choice(pop_palettes)
     sticker_events = _build_default_sticker_events(brief, pop_palette, rng, sticker_density=sticker_density)
     for st in sticker_events:
-        st["label"] = sanitize_banned_text(st["label"], banned_words=effective_banned) or "DEAL HOT"
+        if vlog_mode and any(k in str(st.get("label") or "").lower() for k in ("giỏ", "deal", "sale", "freeship")):
+            st["label"] = "CHILL VIBE"
+        st["label"] = sanitize_banned_text(st["label"], banned_words=effective_banned) or ("CHILL" if vlog_mode else "DEAL HOT")
         ensure_twemoji_svg(st.get("emoji") or "")
 
     spec: dict[str, Any] = {
@@ -1941,15 +2058,15 @@ def generate_ai_wildcard_style_spec(
         "frameRadius": f_rad,
         "frameTiltDeg": f_tilt,
         "frameBorderColor": border_col,
-        "letterboxPx": lbox,
+        "letterboxPx": (0 if aspect_ratio == "16:9" else lbox),
         "bgGradient": bg_grad,
         "accentColor": accent,
         "textColor": text_col,
         "hookLayout": rng.choice([h for h in hook_layouts if h not in set(exclude_hook_layouts or [])] or hook_layouts),
         "subtitleVariant": rng.choice([s for s in sub_variants if s not in set(exclude_sub_variants or [])] or sub_variants),
-        "subtitleY": round(rng.uniform(0.69, 0.77), 2),
+        "subtitleY": (round(rng.uniform(0.80, 0.86), 2) if aspect_ratio == "16:9" else round(rng.uniform(0.69, 0.77), 2)),
         "showRatingBadge": False,
-        "ctaLabel": sanitize_banned_text(rng.choice(cta_labels), banned_words=effective_banned) or "🛒 Giỏ Hàng Góc Trái",
+        "ctaLabel": sanitize_banned_text(rng.choice(cta_labels), banned_words=effective_banned) or ("✨ Lưu Lại Xem Sau" if vlog_mode else "🛒 Giỏ Hàng Góc Trái"),
     }
 
     api_key = str(gemini_api_key or "").strip()

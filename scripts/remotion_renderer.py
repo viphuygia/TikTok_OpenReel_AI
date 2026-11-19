@@ -682,6 +682,11 @@ def build_remotion_props(overrides: dict[str, Any] | None = None) -> dict[str, A
             }
         )
 
+    content_vibe = str(ov.get("content_vibe") or "learned_dna").strip()
+    vibe_meta = _style_dna_mod.get_content_vibe_meta(content_vibe)
+    if vibe_meta["is_vlog"]:
+        cta_text = str(ov.get("cta_text") or vibe_meta["cta_default"])
+
     cta_start = round(max(4.0, total_duration - 3.6), 2)
     if total_duration > 5.0:
         callouts.append(
@@ -771,17 +776,33 @@ def build_remotion_props(overrides: dict[str, Any] | None = None) -> dict[str, A
     disable_flash_shake = ov.get("disable_flash_shake") if ov.get("disable_flash_shake") is not None else dna.get("disable_flash_shake", True)
     named_out_path, selected_meta = resolve_script_named_output_path(total_duration)
     bgm_vol_val = ov.get("bgm_volume") if ov.get("bgm_volume") is not None else dna.get("bgm_volume")
+    aspect_ratio = str(ov.get("aspect_ratio") or dna.get("aspect_ratio") or "9:16").strip()
+    if aspect_ratio not in ("9:16", "16:9"):
+        aspect_ratio = "9:16"
+    target_w, target_h = (1920, 1080) if aspect_ratio == "16:9" else (1080, 1920)
     resolved_wildcard = ov.get("wildcard_spec")
     if not resolved_wildcard and render_engine in ("remotion_innovation", "hyperframes"):
         resolved_wildcard = _style_dna_mod.generate_ai_wildcard_style_spec(
             brand_brief,
             sticker_density=sticker_density,
             icon_density=icon_density,
+            content_vibe=content_vibe,
+            aspect_ratio=aspect_ratio,
         )
 
+    eff_hook_y = float(ov.get("hook_y") if ov.get("hook_y") is not None else hook_y)
+    eff_sub_y = float(ov.get("subtitle_y") if ov.get("subtitle_y") is not None else subtitle_y)
+    if aspect_ratio == "16:9":
+        eff_hook_y = min(eff_hook_y, 0.11)
+        eff_sub_y = max(eff_sub_y, 0.82)
+
     props = {
-        "title": str(edit_plan.get("title") or "TikTok Shop Review"),
+        "title": str(edit_plan.get("title") or ("Vlog Story" if vibe_meta["is_vlog"] else "TikTok Shop Review")),
         "durationSec": total_duration,
+        "aspectRatio": aspect_ratio,
+        "width": target_w,
+        "height": target_h,
+        "contentVibe": content_vibe,
         "badgeStyle": badge_style,
         "visualTheme": resolved_theme,
         "rawVisualTheme": raw_theme,
@@ -803,8 +824,8 @@ def build_remotion_props(overrides: dict[str, Any] | None = None) -> dict[str, A
         "bgmTrack": bgm_track,
         "transparentBg": False,
         "badgeOnly": False,
-        "hookY": float(ov.get("hook_y") if ov.get("hook_y") is not None else hook_y),
-        "subtitleY": float(ov.get("subtitle_y") if ov.get("subtitle_y") is not None else subtitle_y),
+        "hookY": eff_hook_y,
+        "subtitleY": eff_sub_y,
         "fontHeading": str(ov.get("font_heading") or dna.get("font_heading") or "Baloo 2"),
         "fontBrand": str(dna.get("font_brand") or "Montserrat Black"),
         "fontScript": str(dna.get("font_script") or "Dancing Script"),

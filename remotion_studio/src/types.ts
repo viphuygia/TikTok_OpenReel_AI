@@ -119,6 +119,10 @@ export type WildcardStyleSpec = {
 export type TikTokVideoProps = {
   title?: string;
   durationSec: number;
+  aspectRatio?: '9:16' | '16:9';
+  width?: number;
+  height?: number;
+  contentVibe?: string;
   badgeStyle: 'floral_plus_callouts' | 'multicolor_pill' | 'floral_badge';
   visualTheme?: 'auto' | 'floral_rose' | 'fresh_mint' | 'flash_gold' | 'luxury_dark' | 'ribbon_sticker';
   layoutStyle?: 'full' | 'card_blur' | 'top_banner';

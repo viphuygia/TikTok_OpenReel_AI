@@ -1138,6 +1138,8 @@ class RemotionRenderReq(BaseModel):
     icon_density: str = "balanced"
     sticker_density: str = "normal"
     sfx_level: str = "subtle"
+    aspect_ratio: str = "9:16"
+    content_vibe: str = "learned_dna"
 
 
 class RemotionAiEditReq(BaseModel):
@@ -1185,12 +1187,16 @@ class OneClickPipelineReq(BaseModel):
     icon_density: str = "balanced"
     sticker_density: str = "normal"
     sfx_level: str = "subtle"
+    aspect_ratio: str = "9:16"
+    content_vibe: str = "learned_dna"
     mix_engines: bool = False
     creative_wildcard: bool = False
     tts_engine: str = "edge_tts"
     edge_voice: str = "vi-VN-HoaiMyNeural"
     voice_preset: str = "random_neural"
     sfx_level: str = "subtle"
+    aspect_ratio: str = "9:16"
+    content_vibe: str = "learned_dna"
     project_ids: list[str] = Field(default_factory=list)
     sync: bool = False
 
@@ -4447,6 +4453,9 @@ def _apply_remotion_req_to_overrides(req: RemotionRenderReq) -> dict[str, Any]:
         "disable_flash_shake": req.disable_flash_shake,
         "icon_density": req.icon_density,
         "sticker_density": req.sticker_density,
+        "sfx_level": req.sfx_level,
+        "aspect_ratio": req.aspect_ratio,
+        "content_vibe": req.content_vibe,
     }
     if req.brand.strip():
         ov["brand"] = req.brand.strip()
@@ -4610,6 +4619,13 @@ def api_remotion_ai_director(req: OpenReelDirectorReq):
         "hook_badge_preview_url": f"/files/04_workspace/hook_badge_preview.png?t={int(badge_png.stat().st_mtime)}" if badge_png.exists() else "",
         "badge_preview": badge_res,
     }
+
+
+@app.get("/api/style/vibes")
+def api_style_vibes():
+    import style_dna as _sd
+
+    return {"ok": True, "vibes": list(_sd.CONTENT_VIBE_PRESETS.values())}
 
 
 @app.get("/api/voice/catalog")
@@ -5148,16 +5164,35 @@ def _run_single_project_pipeline(req: OneClickPipelineReq) -> None:
         bundle_dur = float(bundle.get("target_duration_sec") or 0.0)
         bundle_mismatch = bundle_dur > 0 and abs(bundle_dur - req.target_duration_sec) > 2.0
 
+        req_vibe = str(getattr(req, "content_vibe", "learned_dna") or "learned_dna").strip()
+        req_aspect = str(getattr(req, "aspect_ratio", "9:16") or "9:16").strip()
+        if req_aspect not in ("9:16", "16:9"):
+            req_aspect = "9:16"
+        import style_dna as _sd
+        vibe_meta = _sd.get_content_vibe_meta(req_vibe)
         note = req.product_note.strip() or str(brief.get("usps") or "")
-        if req.regenerate_script or not cur_script_txt or cur_word_count < min_words or bundle_mismatch:
-            plan_res = api_workshop_plan_auto(
-                GeminiWorkshopPlanReq(
-                    product_note=note,
-                    target_duration=req.target_duration_sec,
-                    preserve_clips=req.preserve_clips,
+        if vibe_meta.get("is_vlog") and vibe_meta.get("prompt_hint"):
+            note = f"{note}\n[Phong cách nội dung: {vibe_meta['prompt_hint']}]".strip()
+        vibe_changed = bool(vibe_meta.get("is_vlog")) and str(bundle.get("content_vibe") or "learned_dna") != req_vibe
+        if req.regenerate_script or not cur_script_txt or cur_word_count < min_words or bundle_mismatch or vibe_changed:
+            if vibe_meta.get("is_vlog") and not (find_agy_executable() or str(load_config().get("gemini_api_key") or "").strip()):
+                bundle = _sd.generate_three_script_options_fallback(
+                    brief, target_duration_sec=req.target_duration_sec, product_note=req.product_note.strip(), content_vibe=req_vibe
                 )
-            )
-            bundle = plan_res.get("script_options") or load_script_options()
+                bundle["content_vibe"] = req_vibe
+                _sd.save_script_options(bundle)
+            else:
+                plan_res = api_workshop_plan_auto(
+                    GeminiWorkshopPlanReq(
+                        product_note=note,
+                        target_duration=req.target_duration_sec,
+                        preserve_clips=req.preserve_clips,
+                    )
+                )
+                bundle = plan_res.get("script_options") or load_script_options()
+                if vibe_meta.get("is_vlog") and bundle:
+                    bundle["content_vibe"] = req_vibe
+                    _sd.save_script_options(bundle)
             if req.selected_option_id and req.selected_option_id != bundle.get("selected_id"):
                 api_workshop_select_script(
                     SelectScriptReq(
@@ -5407,7 +5442,7 @@ def _run_single_project_pipeline(req: OneClickPipelineReq) -> None:
                     if not orig_edit_plan_raw and FILE_EDIT_PLAN.exists():
                         orig_edit_plan_raw = FILE_EDIT_PLAN.read_text(encoding="utf-8-sig")
                     clip_res = run_python_script(
-                        "scripts/prepare_clips.py", ["--config", "04_workspace/edit_plan.json", "--concat"]
+                        "scripts/prepare_clips.py", ["--config", "04_workspace/edit_plan.json", "--concat", "--aspect-ratio", req_aspect]
                     )
                     if not clip_res.get("ok"):
                         raise RuntimeError(f"prepare_clips.py lỗi ở {opt_id}: {clip_res.get('log', '')[-300:]}")
@@ -5472,6 +5507,8 @@ def _run_single_project_pipeline(req: OneClickPipelineReq) -> None:
                             "icon_density": req.icon_density or "balanced",
                             "sticker_density": req.sticker_density or "normal",
                             "sfx_level": getattr(req, "sfx_level", "subtle") or "subtle",
+                            "aspect_ratio": req_aspect,
+                            "content_vibe": req_vibe,
                             **({"wildcard_spec": slot_wildcard} if slot_wildcard else {}),
                         }
                     )
@@ -5599,7 +5636,7 @@ def _run_single_project_pipeline(req: OneClickPipelineReq) -> None:
             target_duration_override=vb_total or req.target_duration_sec,
         )
         clip_res = run_python_script(
-            "scripts/prepare_clips.py", ["--config", "04_workspace/edit_plan.json", "--concat"]
+            "scripts/prepare_clips.py", ["--config", "04_workspace/edit_plan.json", "--concat", "--aspect-ratio", req_aspect]
         )
         if not clip_res.get("ok"):
             raise RuntimeError(f"prepare_clips.py lỗi: {clip_res.get('log', '')[-400:]}")
@@ -5644,6 +5681,8 @@ def _run_single_project_pipeline(req: OneClickPipelineReq) -> None:
                 "icon_density": req.icon_density or "balanced",
                 "sticker_density": req.sticker_density or "normal",
                 "sfx_level": getattr(req, "sfx_level", "subtle") or "subtle",
+                "aspect_ratio": req_aspect,
+                "content_vibe": req_vibe,
                 **({"wildcard_spec": single_wildcard} if single_wildcard else {}),
             }
         )
