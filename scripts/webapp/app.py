@@ -5116,6 +5116,15 @@ def _execute_longform_vlog_pipeline(req: OneClickPipelineReq) -> None:
     if req_vibe == "learned_dna":
         req_vibe = "outdoor_picnic"
 
+    with PIPELINE_LOCK:
+        PIPELINE_STATE["steps"] = [
+            {"id": 1, "tab": "tab4", "label": "Bước 1: Quét Video Thô & Khóa Thứ Tự Timeline", "status": "idle", "detail": ""},
+            {"id": 2, "tab": "tab4", "label": "Bước 2: Viết Lời Bình Vlog Theo Chương", "status": "idle", "detail": ""},
+            {"id": 3, "tab": "tab4", "label": "Bước 3: Tạo 1 Giọng Đọc AI & Phụ Đề", "status": "idle", "detail": ""},
+            {"id": 4, "tab": "tab4", "label": f"Bước 4: Căn & Nối Clip {req_aspect} (FFmpeg Timeline)", "status": "idle", "detail": ""},
+            {"id": 5, "tab": "tab5", "label": f"Bước 5: Xuất MP4 Vlog Dài {req_aspect} vào Kho Video", "status": "idle", "detail": ""},
+        ]
+
     _update_pipeline(
         current_step=1,
         current_tab="tab4",
@@ -5222,30 +5231,32 @@ def _execute_longform_vlog_pipeline(req: OneClickPipelineReq) -> None:
         bgm_cand = sorted((PROJECT_ROOT / "06_assets_audio" / "bgm").glob("*.wav"))
         bgm_file = bgm_cand[0] if bgm_cand else bgm_file
 
-    out_dir = ACTIVE_PROJECT_ROOT / "outputs"
-    out_dir.mkdir(parents=True, exist_ok=True)
-    out_mp4 = out_dir / f"VLOG_{int(round(actual_target))}s_{req_aspect.replace(':', 'x')}_{int(time.time())}.mp4"
+    DIR_OUTPUT.mkdir(parents=True, exist_ok=True)
+    out_mp4 = DIR_OUTPUT / f"VLOG_{int(round(actual_target))}s_{req_aspect.replace(':', 'x')}_{int(time.time())}.mp4"
 
     render_res = _lf.render_longform_ffmpeg_vlog(
         plan=plan,
         voice_wav=FILE_TTS_WAV if FILE_TTS_WAV.exists() else None,
-        srt_path=FILE_SRT if FILE_SRT.exists() else None,
+        srt_path=FILE_TTS_SRT if FILE_TTS_SRT.exists() else None,
         bgm_path=bgm_file if bgm_file.exists() else None,
         output_mp4=out_mp4,
         bgm_volume=0.14,
         keep_clip_audio=bool(getattr(req, "keep_clip_audio", False)),
     )
-    _update_pipeline(step_status=(4, "done", "Nối & Master OK"), percent=92)
+    _update_pipeline(step_status=(4, "done", f"{req_aspect} · Nối & Master OK"), percent=92)
     _update_pipeline(
         running=False,
-        done=True,
-        ok=True,
         current_step=5,
         percent=100,
         message=f"Hoàn tất Clip Dài ({render_res['duration_sec']:.0f}s · {out_mp4.name})!",
         step_status=(5, "done", f"{render_res['duration_sec']:.0f}s OK"),
-        output_file=str(out_mp4),
-        output_url=f"/files/outputs/{out_mp4.name}",
+        result={
+            "ok": True,
+            "output_file": str(out_mp4),
+            "output_url": f"/files/05_output/{out_mp4.name}",
+            "duration_sec": render_res["duration_sec"],
+            "aspect_ratio": req_aspect,
+        },
         log_line=f"[HOÀN TẤT] Đã xuất Vlog dài: {out_mp4.name} ({render_res['duration_sec']:.1f}s)",
     )
 
@@ -5255,6 +5266,14 @@ def _run_single_project_pipeline(req: OneClickPipelineReq) -> None:
         if getattr(req, "pipeline_category", "short_tiktok") == "long_vlog" or float(req.target_duration_sec or 0) > 90.0:
             _execute_longform_vlog_pipeline(req)
             return
+
+        short_ar = str(getattr(req, "aspect_ratio", "9:16") or "9:16").strip()
+        if short_ar not in ("9:16", "16:9"):
+            short_ar = "9:16"
+        with PIPELINE_LOCK:
+            for st_item in PIPELINE_STATE.get("steps") or []:
+                if st_item.get("id") == 4:
+                    st_item["label"] = f"Bước 4: Căn Clip {short_ar} Bám Beat (Tôn Trọng Khóa Clips)"
         # Step 1: Pre-Production - Nạp Style DNA, Brief nhãn hàng & kiểm tra nguyên liệu
         _update_pipeline(
             current_step=1,
