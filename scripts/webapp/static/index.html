@@ -4395,7 +4395,7 @@
       renderLongformMultiProjectConfigs();
     }
 
-    function selectPipelineCategory(cat) {
+    async function selectPipelineCategory(cat) {
       state.pipelineCategory = cat === 'long_vlog' ? 'long_vlog' : 'short_tiktok';
       const isLong = state.pipelineCategory === 'long_vlog';
       const btnShort = document.getElementById('cat-btn-short');
