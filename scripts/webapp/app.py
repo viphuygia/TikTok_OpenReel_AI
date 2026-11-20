@@ -1217,6 +1217,7 @@ class OneClickPipelineReq(BaseModel):
     mute_voice: bool = False
     hide_subtitles: bool = False
     project_ids: list[str] = Field(default_factory=list)
+    project_configs: dict[str, dict[str, Any]] = Field(default_factory=dict)
     sync: bool = False
 
 
@@ -4641,12 +4642,20 @@ def api_remotion_ai_director(req: OpenReelDirectorReq):
 
 
 @app.get("/api/longform/clips")
-def api_longform_clips():
+def api_longform_clips(project_id: str | None = None):
     import longform_vlog as _lf
 
-    clips = _lf.collect_ordered_raw_clips(DIR_VIDEO_THO)
+    pid = str(project_id or "").strip()
+    raw_dir = (get_project_root(pid) / "02_video_tho") if pid else DIR_VIDEO_THO
+    clips = _lf.collect_ordered_raw_clips(raw_dir)
     total_dur = round(sum(float(c.get("duration_sec") or 0.0) for c in clips), 2)
-    return {"ok": True, "clips": clips, "count": len(clips), "total_duration_sec": total_dur}
+    return {
+        "ok": True,
+        "project_id": pid or ACTIVE_PROJECT_ID,
+        "clips": clips,
+        "count": len(clips),
+        "total_duration_sec": total_dur,
+    }
 
 
 @app.get("/api/style/vibes")
@@ -5974,13 +5983,32 @@ def _run_single_project_pipeline(req: OneClickPipelineReq) -> None:
         )
 
 
+def _req_for_project(req: OneClickPipelineReq, pid: str, multi_projects: bool) -> OneClickPipelineReq:
+    cfgs = getattr(req, "project_configs", None) or {}
+    is_long = getattr(req, "pipeline_category", "short_tiktok") == "long_vlog" or float(req.target_duration_sec or 0) > 90.0
+    if isinstance(cfgs.get(pid), dict):
+        pc = cfgs[pid]
+        upd: dict[str, Any] = {}
+        if isinstance(pc.get("ordered_clips"), list):
+            upd["ordered_clips"] = [str(x) for x in pc["ordered_clips"] if str(x).strip()]
+        if "vlog_title" in pc:
+            upd["vlog_title"] = str(pc.get("vlog_title") or "").strip()
+        if "product_note" in pc:
+            upd["product_note"] = str(pc.get("product_note") or "").strip()
+        if upd:
+            return req.model_copy(update=upd)
+    if multi_projects and is_long:
+        return req.model_copy(update={"ordered_clips": []})
+    return req
+
+
 def _run_pipeline_worker(req: OneClickPipelineReq) -> None:
     target_pids = [str(p).strip() for p in (req.project_ids or []) if str(p).strip()] or [ACTIVE_PROJECT_ID]
     if len(target_pids) <= 1:
         if target_pids[0] != ACTIVE_PROJECT_ID:
             pm_set_active_project(target_pids[0])
             refresh_app_project_paths()
-        _run_single_project_pipeline(req)
+        _run_single_project_pipeline(_req_for_project(req, target_pids[0], False))
         return
 
     batch_summary: list[dict[str, Any]] = []
@@ -5997,7 +6025,7 @@ def _run_pipeline_worker(req: OneClickPipelineReq) -> None:
                 message=f"[Project {p_idx}/{n_proj}: {pid}] Đang xử lý tuần tự...",
                 log_line=f"=== [Project {p_idx}/{n_proj}] Bắt đầu xử lý `{pid}` ===",
             )
-            _run_single_project_pipeline(req)
+            _run_single_project_pipeline(_req_for_project(req, pid, True))
             err = PIPELINE_STATE.get("error")
             batch_summary.append({"project_id": pid, "ok": not bool(err), "error": err or ""})
         except Exception as exc:
@@ -6039,15 +6067,24 @@ def api_save_global_banned_words(req: GlobalBannedWordsReq):
 @app.post("/api/pipeline/run-all")
 def api_pipeline_run_all(req: OneClickPipelineReq):
     target_pids = [str(p).strip() for p in (req.project_ids or []) if str(p).strip()]
+    is_long_mode = getattr(req, "pipeline_category", "short_tiktok") == "long_vlog" or float(req.target_duration_sec or 0) > 90.0
     if target_pids:
         all_projs = {p["id"]: p for p in pm_list_projects().get("projects", [])}
-        not_ready = [pid for pid in target_pids if pid not in all_projs or not all_projs[pid].get("ready")]
-        if not_ready:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Các Project chưa đủ Brief hoặc Video thô: {', '.join(not_ready)}",
-            )
-    else:
+        if is_long_mode:
+            not_ready = [pid for pid in target_pids if pid not in all_projs or int(all_projs[pid].get("raw_video_count") or 0) <= 0]
+            if not_ready:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Các Project chưa có video thô trong 02_video_tho/: {', '.join(not_ready)}",
+                )
+        else:
+            not_ready = [pid for pid in target_pids if pid not in all_projs or not all_projs[pid].get("ready")]
+            if not_ready:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Các Project chưa đủ Brief hoặc Video thô: {', '.join(not_ready)}",
+                )
+    elif not is_long_mode:
         brief_ready, brief_reason = is_brand_brief_ready()
         if not brief_ready:
             raise HTTPException(status_code=400, detail=brief_reason)

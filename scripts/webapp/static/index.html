@@ -234,6 +234,18 @@
           </button>
         </div>
 
+        <!-- 0. Multi-Project Sequential Selector -->
+        <div id="shortform-projects-box" class="rounded-xl bg-zinc-900/70 border border-zinc-800 p-3 space-y-2">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <div class="text-[11px] font-semibold uppercase tracking-wide text-zinc-400">0. Chọn 1 hoặc Nhiều Project (Chạy Tuần Tự)</div>
+            <div class="flex items-center gap-1.5">
+              <button type="button" onclick="selectAutoProjectsMode('active')" class="px-2 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 text-[10px] text-zinc-200">Chỉ Project hiện tại</button>
+              <button type="button" onclick="selectAutoProjectsMode('all_ready')" class="px-2 py-0.5 rounded bg-indigo-600/80 hover:bg-indigo-500 text-[10px] text-white font-semibold">Chọn tất cả sẵn sàng</button>
+            </div>
+          </div>
+          <div id="auto-project-checklist" class="grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-36 overflow-y-auto pr-1"></div>
+        </div>
+
         <!-- Long-Form Vlog Timeline Config (visible only when long_vlog is active) -->
         <div id="longform-config-box" class="hidden rounded-xl bg-amber-950/20 border border-amber-500/40 p-3.5 space-y-3">
           <div class="flex flex-wrap items-center justify-between gap-2">
@@ -272,35 +284,26 @@
               <span>🎙️ Giữ thêm âm thanh gốc (tự nhỏ lại khi AI nói)</span>
             </label>
           </div>
-          <div class="space-y-1.5">
-            <div class="flex items-center justify-between">
-              <span class="text-[11px] font-medium text-zinc-300">📋 Thứ tự Timeline (Giữ đúng trình tự 1 → N, bấm ⬆️/⬇️ để đổi):</span>
-              <button type="button" onclick="loadLongformClips()" class="text-[11px] text-amber-300 hover:text-amber-200">Làm mới</button>
+          <div id="longform-single-proj-box" class="space-y-2.5">
+            <div class="space-y-1.5">
+              <div class="flex items-center justify-between">
+                <span class="text-[11px] font-medium text-zinc-300">📋 Thứ tự Timeline (Giữ đúng trình tự 1 → N, bấm ⬆️/⬇️ để đổi):</span>
+                <button type="button" onclick="loadLongformClips()" class="text-[11px] text-amber-300 hover:text-amber-200">Làm mới</button>
+              </div>
+              <div id="longform-clip-list" class="max-h-40 overflow-y-auto space-y-1 pr-1"></div>
             </div>
-            <div id="longform-clip-list" class="max-h-40 overflow-y-auto space-y-1 pr-1"></div>
-          </div>
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-            <div>
-              <label class="block text-[11px] text-amber-200 font-medium mb-1">🎬 Tiêu đề Intro Vlog (Tùy chọn)</label>
-              <input id="longform-title" type="text" placeholder="Để trống để AI tự đặt tiêu đề hay..." class="w-full rounded-lg bg-zinc-950 border border-zinc-700 px-2.5 py-2 text-xs text-zinc-100 placeholder-zinc-500" />
-            </div>
-            <div>
-              <label class="block text-[11px] text-amber-200 font-medium mb-1">📝 Chủ đề / Bối cảnh Vlog (Để AI viết sát cảnh)</label>
-              <input id="longform-topic-note" type="text" placeholder="vd: Cắm trại cuối tuần bên hồ, nấu ăn & chill..." class="w-full rounded-lg bg-zinc-950 border border-zinc-700 px-2.5 py-2 text-xs text-zinc-100 placeholder-zinc-500" />
-            </div>
-          </div>
-        </div>
-
-        <!-- 0. Multi-Project Sequential Selector -->
-        <div id="shortform-projects-box" class="rounded-xl bg-zinc-900/70 border border-zinc-800 p-3 space-y-2">
-          <div class="flex flex-wrap items-center justify-between gap-2">
-            <div class="text-[11px] font-semibold uppercase tracking-wide text-zinc-400">0. Chọn 1 hoặc Nhiều Project (Chạy Tuần Tự)</div>
-            <div class="flex items-center gap-1.5">
-              <button type="button" onclick="selectAutoProjectsMode('active')" class="px-2 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 text-[10px] text-zinc-200">Chỉ Project hiện tại</button>
-              <button type="button" onclick="selectAutoProjectsMode('all_ready')" class="px-2 py-0.5 rounded bg-indigo-600/80 hover:bg-indigo-500 text-[10px] text-white font-semibold">Chọn tất cả sẵn sàng</button>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              <div>
+                <label class="block text-[11px] text-amber-200 font-medium mb-1">🎬 Tiêu đề Intro Vlog (Tùy chọn)</label>
+                <input id="longform-title" type="text" placeholder="Để trống để AI tự đặt tiêu đề hay..." class="w-full rounded-lg bg-zinc-950 border border-zinc-700 px-2.5 py-2 text-xs text-zinc-100 placeholder-zinc-500" />
+              </div>
+              <div>
+                <label class="block text-[11px] text-amber-200 font-medium mb-1">📝 Chủ đề / Bối cảnh Vlog (Để AI viết sát cảnh)</label>
+                <input id="longform-topic-note" type="text" placeholder="vd: Cắm trại cuối tuần bên hồ, nấu ăn & chill..." class="w-full rounded-lg bg-zinc-950 border border-zinc-700 px-2.5 py-2 text-xs text-zinc-100 placeholder-zinc-500" />
+              </div>
             </div>
           </div>
-          <div id="auto-project-checklist" class="grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-36 overflow-y-auto pr-1"></div>
+          <div id="longform-multi-proj-box" class="hidden space-y-2.5"></div>
         </div>
 
         <!-- 3 Engine Cards -->
@@ -4103,24 +4106,27 @@
           cb.checked = cb.dataset.isActive === '1';
         }
       });
+      onAutoProjectSelectionChange();
     }
 
     async function renderAutoProjectChecklist() {
       const box = document.getElementById('auto-project-checklist');
       if (!box) return;
+      const isLong = state.pipelineCategory === 'long_vlog';
       try {
         const data = await api('/api/projects');
         const list = data.projects || [];
         box.innerHTML = list.map((p) => {
-          const isReady = !!p.ready;
+          const rawCnt = Number(p.raw_video_count || 0);
+          const isReady = isLong ? rawCnt > 0 : !!p.ready;
           const isAct = p.id === data.active_id;
           const checked = isReady && isAct ? 'checked' : '';
           const disabled = isReady ? '' : 'disabled';
           const statusTxt = isReady
-            ? `✅ ${p.raw_video_count} thô · ${p.brand || p.name}`
-            : `⚠️ ${(p.missing_reasons || ['Chưa đủ điều kiện']).join(' + ')}`;
+            ? `✅ ${rawCnt} thô · ${p.brand || p.name}`
+            : `⚠️ ${(p.missing_reasons || ['Chưa có video thô']).join(' + ')}`;
           return `<label class="flex items-center gap-2 rounded-lg border px-2.5 py-1.5 ${isReady ? 'border-zinc-700 bg-zinc-950/60 cursor-pointer' : 'border-zinc-800/70 bg-zinc-950/30 opacity-50 cursor-not-allowed'}">
-            <input type="checkbox" name="auto-proj-id" value="${escapeHtml(p.id)}" data-is-active="${isAct ? '1' : '0'}" ${checked} ${disabled} class="rounded bg-zinc-800 border-emerald-500 text-emerald-500" />
+            <input type="checkbox" name="auto-proj-id" value="${escapeHtml(p.id)}" data-is-active="${isAct ? '1' : '0'}" data-raw-count="${rawCnt}" data-proj-name="${escapeHtml(p.name)}" onchange="onAutoProjectSelectionChange()" ${checked} ${disabled} class="rounded bg-zinc-800 border-emerald-500 text-emerald-500" />
             <div class="min-w-0 flex-1">
               <div class="font-semibold text-zinc-100 truncate">${escapeHtml(p.name)}${isAct ? ' <span class="text-[10px] text-emerald-400">(Đang mở)</span>' : ''}</div>
               <div class="text-[10px] ${isReady ? 'text-emerald-300/90' : 'text-amber-300'} truncate">${escapeHtml(statusTxt)}</div>
@@ -4277,6 +4283,117 @@
 
     state.pipelineCategory = 'short_tiktok';
     state.longformClips = [];
+    state.longformPerProject = {};
+
+    function getCheckedAutoProjectIds() {
+      return Array.from(document.querySelectorAll('input[name="auto-proj-id"]:checked')).map((el) => ({
+        id: el.value,
+        name: el.dataset.projName || el.value,
+      }));
+    }
+
+    async function onAutoProjectSelectionChange() {
+      if (state.pipelineCategory !== 'long_vlog') return;
+      await syncLongformProjectsUi();
+    }
+
+    async function syncLongformProjectsUi() {
+      const selected = getCheckedAutoProjectIds();
+      const singleBox = document.getElementById('longform-single-proj-box');
+      const multiBox = document.getElementById('longform-multi-proj-box');
+      const totEl = document.getElementById('longform-raw-total');
+
+      if (selected.length <= 1) {
+        if (singleBox) singleBox.classList.remove('hidden');
+        if (multiBox) multiBox.classList.add('hidden');
+        const pid = selected.length === 1 ? selected[0].id : '';
+        await loadLongformClips(pid);
+        return;
+      }
+
+      if (singleBox) singleBox.classList.add('hidden');
+      if (multiBox) multiBox.classList.remove('hidden');
+      if (totEl) totEl.textContent = `${selected.length} Project (Chạy tuần tự)`;
+
+      for (const item of selected) {
+        if (!state.longformPerProject[item.id]) {
+          try {
+            const res = await api(`/api/longform/clips?project_id=${encodeURIComponent(item.id)}`);
+            state.longformPerProject[item.id] = {
+              name: item.name,
+              clips: res.clips || [],
+              total_duration_sec: res.total_duration_sec || 0,
+              vlog_title: '',
+              product_note: '',
+            };
+          } catch (e) {
+            state.longformPerProject[item.id] = {
+              name: item.name,
+              clips: [],
+              total_duration_sec: 0,
+              vlog_title: '',
+              product_note: '',
+            };
+          }
+        }
+      }
+      renderLongformMultiProjectConfigs(selected);
+    }
+
+    function renderLongformMultiProjectConfigs(selectedList) {
+      const multiBox = document.getElementById('longform-multi-proj-box');
+      if (!multiBox) return;
+      const selected = selectedList || getCheckedAutoProjectIds();
+      multiBox.innerHTML = selected.map((item, pIdx) => {
+        const cfg = state.longformPerProject[item.id] || { name: item.name, clips: [], total_duration_sec: 0, vlog_title: '', product_note: '' };
+        const clips = cfg.clips || [];
+        const clipRows = clips.length
+          ? clips.map((c, cIdx) => `
+              <div class="flex items-center justify-between gap-2 rounded-lg bg-zinc-950/80 border border-zinc-800 px-2 py-1 text-[11px]">
+                <div class="min-w-0 flex items-center gap-2">
+                  <span class="shrink-0 w-4 h-4 rounded-full bg-amber-500/20 text-amber-300 font-bold text-[10px] flex items-center justify-center">${cIdx + 1}</span>
+                  <span class="truncate text-zinc-200">${escapeHtml(c.rel_path)}</span>
+                  <span class="shrink-0 text-zinc-400 mono">${Number(c.duration_sec || 0).toFixed(1)}s</span>
+                </div>
+                <div class="shrink-0 flex items-center gap-1">
+                  <button type="button" onclick="moveLongformProjectClip('${escapeHtml(item.id)}', ${cIdx}, -1)" ${cIdx === 0 ? 'disabled' : ''} class="px-1.5 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 disabled:opacity-30">⬆️</button>
+                  <button type="button" onclick="moveLongformProjectClip('${escapeHtml(item.id)}', ${cIdx}, 1)" ${cIdx === clips.length - 1 ? 'disabled' : ''} class="px-1.5 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 disabled:opacity-30">⬇️</button>
+                </div>
+              </div>
+            `).join('')
+          : '<div class="text-[11px] text-rose-300">⚠️ Chưa có clip thô trong 02_video_tho/.</div>';
+
+        return `
+          <div class="rounded-xl border border-amber-500/35 bg-zinc-950/60 p-2.5 space-y-2">
+            <div class="flex items-center justify-between gap-2">
+              <div class="text-xs font-semibold text-amber-200 truncate">${pIdx + 1}. ${escapeHtml(cfg.name || item.id)}</div>
+              <span class="text-[11px] text-amber-300/80 mono shrink-0">${clips.length} clip · ${Math.round(cfg.total_duration_sec || 0)}s</span>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <input type="text" value="${escapeHtml(cfg.vlog_title || '')}" oninput="updateLongformProjectField('${escapeHtml(item.id)}', 'vlog_title', this.value)" placeholder="Tiêu đề riêng cho project này (tùy chọn)..." class="w-full rounded-lg bg-zinc-900 border border-zinc-700 px-2 py-1.5 text-[11px] text-zinc-100 placeholder-zinc-500" />
+              <input type="text" value="${escapeHtml(cfg.product_note || '')}" oninput="updateLongformProjectField('${escapeHtml(item.id)}', 'product_note', this.value)" placeholder="Chủ đề / Bối cảnh riêng cho project này..." class="w-full rounded-lg bg-zinc-900 border border-zinc-700 px-2 py-1.5 text-[11px] text-zinc-100 placeholder-zinc-500" />
+            </div>
+            <div class="max-h-28 overflow-y-auto space-y-1 pr-1">${clipRows}</div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function updateLongformProjectField(pid, field, val) {
+      if (!state.longformPerProject[pid]) return;
+      state.longformPerProject[pid][field] = val;
+    }
+
+    function moveLongformProjectClip(pid, idx, delta) {
+      const cfg = state.longformPerProject[pid];
+      if (!cfg || !Array.isArray(cfg.clips)) return;
+      const target = idx + delta;
+      if (target < 0 || target >= cfg.clips.length) return;
+      const tmp = cfg.clips[idx];
+      cfg.clips[idx] = cfg.clips[target];
+      cfg.clips[target] = tmp;
+      renderLongformMultiProjectConfigs();
+    }
 
     function selectPipelineCategory(cat) {
       state.pipelineCategory = cat === 'long_vlog' ? 'long_vlog' : 'short_tiktok';
@@ -4335,16 +4452,20 @@
         if (tts && (tts.value || '').startsWith('random_')) tts.value = 'edge_hoaimy_koc';
         if (sfx) sfx.value = 'off';
         if (tr) tr.value = 'gentle';
-        loadLongformClips();
+        await renderAutoProjectChecklist();
+        await syncLongformProjectsUi();
+      } else {
+        await renderAutoProjectChecklist();
       }
     }
 
-    async function loadLongformClips() {
+    async function loadLongformClips(projectId = '') {
       const listEl = document.getElementById('longform-clip-list');
       const totEl = document.getElementById('longform-raw-total');
       if (!listEl) return;
       try {
-        const res = await api('/api/longform/clips');
+        const url = projectId ? `/api/longform/clips?project_id=${encodeURIComponent(projectId)}` : '/api/longform/clips';
+        const res = await api(url);
         state.longformClips = res.clips || [];
         if (totEl) totEl.textContent = `${state.longformClips.length} clip · Tổng ${Math.round(res.total_duration_sec || 0)}s`;
         renderLongformClipList();
@@ -4431,6 +4552,28 @@
       const vlog_title = isLongVlog ? (document.getElementById('longform-title')?.value?.trim() || '') : '';
       const mute_voice = !!document.getElementById('chk-mute-voice')?.checked;
       const hide_subtitles = !!document.getElementById('chk-hide-subtitles')?.checked;
+      const project_configs = {};
+      if (isLongVlog) {
+        const pidList = (projectIds && projectIds.length) ? projectIds : getCheckedAutoProjectIds().map((x) => x.id);
+        if (pidList.length >= 2) {
+          for (const pid of pidList) {
+            const pc = state.longformPerProject[pid];
+            if (pc) {
+              project_configs[pid] = {
+                ordered_clips: (pc.clips || []).map((c) => c.rel_path),
+                vlog_title: (pc.vlog_title || '').trim(),
+                product_note: (pc.product_note || '').trim(),
+              };
+            }
+          }
+        } else if (pidList.length === 1) {
+          project_configs[pidList[0]] = {
+            ordered_clips,
+            vlog_title,
+            product_note,
+          };
+        }
+      }
       _lastAutoTab = null;
       try {
         const p = await api('/api/pipeline/run-all', {
@@ -4474,6 +4617,7 @@
             quality_preset,
             vlog_title,
             project_ids: projectIds,
+            project_configs,
             sync: false
           })
         });
