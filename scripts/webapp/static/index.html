@@ -3656,12 +3656,7 @@
           if (colEl && hc.caption_highlight_color) colEl.value = hc.caption_highlight_color;
         }
         if (Array.isArray(data.bgm_tracks) && data.bgm_tracks.length) {
-          const btEl = document.getElementById('rm-bgm-track');
-          if (btEl) {
-            const cur = btEl.value;
-            btEl.innerHTML = data.bgm_tracks.map(t => `<option value="${escapeHtml(t.id)}">${escapeHtml(t.label)}</option>`).join('');
-            if (cur && data.bgm_tracks.some(t => t.id === cur)) btEl.value = cur;
-          }
+          populateBgmSelects(data.bgm_tracks);
         }
         if (data.remotion_props) {
           const rp = data.remotion_props;
@@ -4165,6 +4160,27 @@
       if (tab3Eng) tab3Eng.value = engine;
     }
 
+    function populateBgmSelects(tracks) {
+      if (!Array.isArray(tracks) || !tracks.length) return;
+      const html = tracks.map(t => `<option value="${escapeHtml(t.id)}">${escapeHtml(t.label)}</option>`).join('');
+      for (const id of ['rm-bgm-track', 'auto-bgm-track']) {
+        const el = document.getElementById(id);
+        if (!el) continue;
+        const cur = el.value;
+        el.innerHTML = html;
+        if (cur && tracks.some(t => t.id === cur)) el.value = cur;
+      }
+    }
+
+    async function loadBgmTracks() {
+      try {
+        const res = await api('/api/bgm/tracks');
+        if (Array.isArray(res?.bgm_tracks) && res.bgm_tracks.length) {
+          populateBgmSelects(res.bgm_tracks);
+        }
+      } catch (e) {}
+    }
+
     async function openAutoPipelineModal() {
       if (!isBrandBriefReadyClient()) {
         toast('Bước 1 bắt buộc: Vui lòng điền & Lưu Brief Nhãn Hàng trước khi chạy Auto!', 'warn');
@@ -4191,6 +4207,7 @@
         autoBgm.innerHTML = tab3Bgm.innerHTML;
         autoBgm.value = tab3Bgm.value;
       }
+      await loadBgmTracks();
 
       await renderAutoProjectChecklist();
 

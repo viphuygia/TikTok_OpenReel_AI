@@ -4656,6 +4656,11 @@ def api_style_vibes():
     return {"ok": True, "vibes": list(_sd.CONTENT_VIBE_PRESETS.values())}
 
 
+@app.get("/api/bgm/tracks")
+def api_bgm_tracks():
+    return {"ok": True, "bgm_tracks": ensure_royalty_free_bgm_library()}
+
+
 @app.get("/api/voice/catalog")
 def api_voice_catalog():
     import voice_engine as _ve
