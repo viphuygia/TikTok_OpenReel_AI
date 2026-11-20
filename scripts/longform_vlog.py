@@ -473,6 +473,7 @@ def generate_longform_chapter_script(
     gemini_api_key: str = "",
     agy_caller: Any = None,
     preview_dir: Path | None = None,
+    avoid_title_style: str = "",
 ) -> dict[str, Any]:
     """Generate structured non-repeating Vlog chapters with Intro/Chapter cards/Outro & breathing narration."""
     vibe_meta = _sd.get_content_vibe_meta(content_vibe if content_vibe != "learned_dna" else "outdoor_picnic")
@@ -727,24 +728,37 @@ def generate_longform_chapter_script(
                     break
         return " ".join(picked)
 
+    all_style_combos = [
+        ("campfire_warm", "warm_vlog_gold", "#F59E0B"),
+        ("adventure_bold", "mint_nature", "#38BDF8"),
+        ("editorial_minimal", "editorial_clean", "#34D399"),
+        ("pastel_soft", "cinema_box", "#FB7185"),
+        ("cinematic_glass", "highlight_bold", "#A78BFA"),
+    ]
     vibe_visual_defaults = {
-        "outdoor_picnic": ("campfire_warm", "warm_vlog_gold", "#F59E0B"),
-        "travel_vlog": ("adventure_bold", "mint_nature", "#38BDF8"),
-        "food_cafe": ("pastel_soft", "cinema_box", "#FB7185"),
-        "daily_story": ("editorial_minimal", "editorial_clean", "#34D399"),
-        "creative_internet": ("cinematic_glass", "highlight_bold", "#A78BFA"),
+        "outdoor_picnic": all_style_combos[0],
+        "travel_vlog": all_style_combos[1],
+        "daily_story": all_style_combos[2],
+        "food_cafe": all_style_combos[3],
+        "creative_internet": all_style_combos[4],
     }
     def_ts, def_ss, def_ac = vibe_visual_defaults.get(
-        content_vibe, ("cinematic_glass", "editorial_clean", "#F59E0B")
+        content_vibe, all_style_combos[4]
     )
+    if avoid_title_style and def_ts == avoid_title_style:
+        idx_cur = next((i for i, c in enumerate(all_style_combos) if c[0] == avoid_title_style), 0)
+        def_ts, def_ss, def_ac = all_style_combos[(idx_cur + 1) % len(all_style_combos)]
     raw_vd = (parsed_ai or {}).get("visual_direction") if isinstance((parsed_ai or {}).get("visual_direction"), dict) else {}
     valid_title_styles = {"cinematic_glass", "editorial_minimal", "campfire_warm", "adventure_bold", "pastel_soft"}
     valid_sub_styles = {"editorial_clean", "warm_vlog_gold", "mint_nature", "cinema_box", "highlight_bold"}
     raw_ts = str(raw_vd.get("title_style") or "").strip().split("|")[0].strip()
     raw_ss = str(raw_vd.get("subtitle_style") or "").strip().split("|")[0].strip()
     raw_ac = str(raw_vd.get("accent_color") or "").strip()
+    picked_ts = raw_ts if raw_ts in valid_title_styles else def_ts
+    if avoid_title_style and picked_ts == avoid_title_style:
+        picked_ts = def_ts
     final_visual_dir = {
-        "title_style": raw_ts if raw_ts in valid_title_styles else def_ts,
+        "title_style": picked_ts,
         "subtitle_style": raw_ss if raw_ss in valid_sub_styles else def_ss,
         "accent_color": raw_ac if re.fullmatch(r"#[0-9a-fA-F]{6}", raw_ac) else def_ac,
     }
@@ -1047,35 +1061,64 @@ def build_longform_voice_and_srt(
             print(f"[LongForm Piper Init WARN] {exc}")
             piper_voice_obj = None
 
+    def _ensure_piper_fallback() -> bool:
+        nonlocal piper_voice_obj, piper_syn_cfg
+        if piper_voice_obj is not None and piper_syn_cfg is not None:
+            return True
+        try:
+            from piper.voice import PiperVoice
+            from piper.config import SynthesisConfig
+
+            model_key = str(preset.get("piper_model") or "vi_VN-vais1000-medium")
+            meta = _ve.PIPER_VOICE_MODELS.get(model_key) or _ve.PIPER_VOICE_MODELS["vi_VN-vais1000-medium"]
+            _ve.PIPER_VOICES_DIR.mkdir(parents=True, exist_ok=True)
+            onnx_p = _ve.PIPER_VOICES_DIR / meta["filename"]
+            if not onnx_p.exists():
+                import urllib.request
+
+                urllib.request.urlretrieve(f"{_ve.PIPER_HF_BASE}{meta['hf_path']}", str(onnx_p))
+                urllib.request.urlretrieve(f"{_ve.PIPER_HF_BASE}{meta['hf_path']}.json", f"{onnx_p}.json")
+            piper_voice_obj = PiperVoice.load(str(onnx_p))
+            sp_id = preset.get("piper_speaker")
+            piper_syn_cfg = SynthesisConfig(
+                length_scale=vlog_piper_scale,
+                speaker_id=(sp_id if sp_id is not None and sp_id >= 0 else None),
+            )
+            return True
+        except Exception as exc:
+            print(f"[LongForm Piper Fallback WARN] {exc}")
+            return False
+
     def _synth_one_sentence(sent_txt: str, out_w: Path) -> bool:
         if f5_model is not None and f5_ref_wav is not None:
-            try:
-                gen_norm = _ve.normalize_vietnamese_script(sent_txt)
-                part_wav, part_sr, _ = f5_model.infer(
-                    ref_file=str(f5_ref_wav),
-                    ref_text=f5_ref_text,
-                    gen_text=gen_norm,
-                    speed=vlog_f5_speed,
-                    nfe_step=24,
-                    cfg_strength=2.0,
-                    sway_sampling_coef=-1.0,
-                    seed=42,
-                    remove_silence=False,
-                )
-                if part_wav is not None and len(part_wav) > 0:
-                    tmp_raw = out_w.with_name(f"{out_w.stem}_f5raw.wav")
-                    sf.write(str(tmp_raw), np.asarray(part_wav, dtype=np.float32), int(part_sr or sr))
-                    subprocess.run(
-                        [ffmpeg_bin, "-y", "-hide_banner", "-loglevel", "error", "-i", str(tmp_raw), "-ar", "24000", "-ac", "1", "-c:a", "pcm_s16le", str(out_w)],
-                        check=True,
-                        timeout=60,
+            for _attempt in range(2):
+                try:
+                    gen_norm = _ve.normalize_vietnamese_script(sent_txt)
+                    part_wav, part_sr, _ = f5_model.infer(
+                        ref_file=str(f5_ref_wav),
+                        ref_text=f5_ref_text,
+                        gen_text=gen_norm,
+                        speed=vlog_f5_speed,
+                        nfe_step=24,
+                        cfg_strength=2.0,
+                        sway_sampling_coef=-1.0,
+                        seed=42,
+                        remove_silence=False,
                     )
-                    tmp_raw.unlink(missing_ok=True)
-                    if out_w.exists() and out_w.stat().st_size > 800:
-                        return True
-            except Exception as exc:
-                print(f"[LongForm F5-TTS Infer WARN] {exc}")
-        if piper_voice_obj is not None and piper_syn_cfg is not None:
+                    if part_wav is not None and len(part_wav) > 0:
+                        tmp_raw = out_w.with_name(f"{out_w.stem}_f5raw.wav")
+                        sf.write(str(tmp_raw), np.asarray(part_wav, dtype=np.float32), int(part_sr or sr))
+                        subprocess.run(
+                            [ffmpeg_bin, "-y", "-hide_banner", "-loglevel", "error", "-i", str(tmp_raw), "-ar", "24000", "-ac", "1", "-c:a", "pcm_s16le", str(out_w)],
+                            check=True,
+                            timeout=60,
+                        )
+                        tmp_raw.unlink(missing_ok=True)
+                        if out_w.exists() and out_w.stat().st_size > 800:
+                            return True
+                except Exception as exc:
+                    print(f"[LongForm F5-TTS Infer WARN] {exc}")
+        if engine == "piper_tts" and _ensure_piper_fallback():
             try:
                 tmp_raw = out_w.with_name(f"{out_w.stem}_praw.wav")
                 with wave.open(str(tmp_raw), "wb") as wf:
@@ -1090,22 +1133,38 @@ def build_longform_voice_and_srt(
                     return True
             except Exception:
                 pass
-        if _synth_edge_tts_wav(
-            sent_txt,
-            out_w,
-            str(preset.get("edge_voice") or "vi-VN-HoaiMyNeural"),
-            vlog_edge_rate,
-            str(preset.get("edge_pitch") or "+0Hz"),
-        ):
-            return True
+        for _edge_try in range(2):
+            if _synth_edge_tts_wav(
+                sent_txt,
+                out_w,
+                str(preset.get("edge_voice") or "vi-VN-HoaiMyNeural"),
+                vlog_edge_rate,
+                str(preset.get("edge_pitch") or "+0Hz"),
+            ):
+                return True
+        if _ensure_piper_fallback():
+            try:
+                tmp_raw = out_w.with_name(f"{out_w.stem}_pfb.wav")
+                with wave.open(str(tmp_raw), "wb") as wf:
+                    piper_voice_obj.synthesize_wav(sent_txt, wf, syn_config=piper_syn_cfg)
+                subprocess.run(
+                    [ffmpeg_bin, "-y", "-hide_banner", "-loglevel", "error", "-i", str(tmp_raw), "-ar", "24000", "-ac", "1", "-c:a", "pcm_s16le", str(out_w)],
+                    check=True,
+                    timeout=60,
+                )
+                tmp_raw.unlink(missing_ok=True)
+                if out_w.exists() and out_w.stat().st_size > 800:
+                    return True
+            except Exception:
+                pass
         return False
 
     # Pass 1: Synthesize all blocks sentence-by-sentence with 0.85s natural breathing pauses
     synthesized_blocks: list[dict[str, Any]] = []
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp_p = Path(tmpdir)
-        for ch in chapter_script.get("chapters") or []:
-            ch_idx = int(ch.get("index") or 1)
+        for ch_pos, ch in enumerate(chapter_script.get("chapters") or [], start=1):
+            ch_idx = int(ch.get("index") or ch_pos)
             for bi, blk in enumerate(ch.get("narration_blocks") or [], start=1):
                 disp_txt = str(blk.get("text") or "").strip()
                 if not disp_txt:
@@ -1586,18 +1645,18 @@ def srt_to_ass_file(
             "fad": r"\fad(160,160)\blur0.5",
         },
         "warm_vlog_gold": {
-            "primary": "&H00E4F6FF",
-            "outline_col": "&H380A1424",
-            "back_col": "&H82080E18",
+            "primary": "&H007CE0FF",
+            "outline_col": "&H15080D16",
+            "back_col": "&H90060B14",
             "border_style": 1,
             "outline": outline_px + 1,
-            "shadow": shadow_px,
+            "shadow": shadow_px + 1,
             "fad": r"\fad(180,180)\blur0.4",
         },
         "mint_nature": {
-            "primary": "&H00FFFFFF",
-            "outline_col": "&H30082018",
-            "back_col": "&H75041812",
+            "primary": "&H00D4FFE8",
+            "outline_col": "&H20061C14",
+            "back_col": "&H85041812",
             "border_style": 1,
             "outline": outline_px,
             "shadow": shadow_px + 1,
@@ -1605,10 +1664,10 @@ def srt_to_ass_file(
         },
         "cinema_box": {
             "primary": "&H00F8FAFC",
-            "outline_col": "&H990B101B",
-            "back_col": "&H990B101B",
+            "outline_col": "&HB50B101B",
+            "back_col": "&HB50B101B",
             "border_style": 3,
-            "outline": max(8, int(round(font_size * 0.22))),
+            "outline": max(10, int(round(font_size * 0.25))),
             "shadow": 0,
             "fad": r"\fad(140,140)",
         },
@@ -1843,7 +1902,7 @@ def render_longform_ffmpeg_vlog(
         for ov in valid_overlays:
             st_sec = max(0.0, float(ov.get("start_sec") or 0.0))
             dur_ov = float(ov.get("duration_sec") or 0.0)
-            comp_cmd.extend(["-itsoffset", f"{st_sec:.3f}", "-c:v", "libvpx-vp9", "-i", str(ov["path"])])
+            comp_cmd.extend(["-c:v", "libvpx-vp9", "-i", str(ov["path"])])
             ov_inputs.append((next_idx, st_sec, dur_ov))
             next_idx += 1
 
@@ -1870,7 +1929,9 @@ def render_longform_ffmpeg_vlog(
         for oi, (in_idx, st_sec, dur_ov) in enumerate(ov_inputs):
             ov_lbl = f"ov{oi}"
             out_lbl = f"vov{oi}"
-            filter_parts.append(f"[{in_idx}:v]scale={target_w}:{target_h}:flags=lanczos,format=yuva420p[{ov_lbl}]")
+            filter_parts.append(
+                f"[{in_idx}:v]scale={target_w}:{target_h}:flags=lanczos,format=yuva420p,setpts=PTS-STARTPTS+{st_sec:.3f}/TB[{ov_lbl}]"
+            )
             en_expr = f":enable='between(t,{st_sec:.3f},{st_sec + dur_ov + 0.1:.3f})'" if dur_ov > 0.0 else ""
             filter_parts.append(f"[{cur_v}][{ov_lbl}]overlay=0:0:eof_action=pass:shortest=0{en_expr}[{out_lbl}]")
             cur_v = out_lbl

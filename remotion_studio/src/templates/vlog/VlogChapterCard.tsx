@@ -77,16 +77,26 @@ export const VlogChapterCard: React.FC<VlogChapterProps> = ({
   const titleFontSize = isLandscape ? 30 : 28;
   const subFontSize = isLandscape ? 19 : 18;
 
+  const isTopLeft = titleStyle === 'editorial_minimal';
+  const isTopCenter = titleStyle === 'pastel_soft';
+  const posBox: React.CSSProperties = isTopCenter
+    ? { top: isLandscape ? 54 : 110, left: '50%', transform: `translateX(-50%) translateY(${interpolate(enter, [0, 1], [-28, 0])}px)` }
+    : isTopLeft
+      ? { top: isLandscape ? 58 : 120, left: isLandscape ? 64 : 44, transform: `translateX(${interpolate(enter, [0, 1], [-56, 0]) + exitSlideX}px)` }
+      : {
+          left: isLandscape ? 64 : 44,
+          bottom: isLandscape ? 130 : undefined,
+          top: isLandscape ? undefined : 170,
+          transform: `translateX(${interpolate(enter, [0, 1], [-56, 0]) + exitSlideX}px)`,
+        };
+
   return (
     <AbsoluteFill style={{ backgroundColor: 'transparent', pointerEvents: 'none' }}>
       <div
         style={{
           position: 'absolute',
-          left: isLandscape ? 64 : 44,
-          bottom: isLandscape ? 130 : undefined,
-          top: isLandscape ? undefined : 170,
+          ...posBox,
           maxWidth: isLandscape ? '62%' : '86%',
-          transform: `translateX(${interpolate(enter, [0, 1], [-56, 0]) + exitSlideX}px)`,
           opacity: enter * exitAlpha,
           display: 'flex',
           alignItems: 'stretch',

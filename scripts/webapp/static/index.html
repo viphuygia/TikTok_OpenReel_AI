@@ -1158,6 +1158,13 @@
         <div id="ws-raw-list" class="space-y-2 max-h-64 overflow-y-auto pr-1"></div>
       </div>
 
+      <!-- Sub-tabs inside 2. Kịch Bản AI: Video Ngắn vs Video Dài -->
+      <div class="flex flex-wrap items-center gap-2 bg-zinc-900/80 border border-zinc-800 rounded-2xl p-2">
+        <button type="button" id="tab4-btn-short" onclick="switchScriptSubTab('short')" class="px-3.5 py-2 rounded-xl text-xs font-semibold bg-emerald-600 text-white transition">⚡ Kịch Bản Video Ngắn (≤ 90s)</button>
+        <button type="button" id="tab4-btn-long" onclick="switchScriptSubTab('long')" class="px-3.5 py-2 rounded-xl text-xs font-semibold bg-zinc-800 text-zinc-300 hover:bg-zinc-700 transition">🎬 Kịch Bản Video Dài (&gt; 90s)</button>
+      </div>
+
+      <div id="tab4-sub-short" class="space-y-5">
       <!-- STEP 1 GATEKEEPER: Mandatory Brand Brief Check -->
       <div id="ws-step1-brief-gate" class="bg-studio-card border border-amber-500/40 rounded-2xl p-4 flex flex-wrap items-center justify-between gap-3">
         <div class="space-y-1 min-w-[260px] flex-1">
@@ -1351,6 +1358,34 @@
               <div id="ws-clips-list" class="space-y-1.5 max-h-64 overflow-y-auto pr-1"></div>
             </div>
           </div>
+        </div>
+      </div>
+      </div>
+
+      <!-- Sub-tab Video Dài (> 90s) -->
+      <div id="tab4-sub-long" class="hidden space-y-4">
+        <div class="bg-studio-card border border-amber-500/35 rounded-2xl p-5 space-y-4">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h3 class="text-sm font-semibold text-amber-300">🎬 Kịch Bản &amp; Cấu Hình Lưu Trữ Video Dài (Theo Project)</h3>
+              <p id="lf-tab-vd-badge" class="text-xs text-zinc-400">Chưa có kịch bản Video dài nào được tạo cho project này.</p>
+            </div>
+            <div class="flex items-center gap-2">
+              <button type="button" onclick="loadLongformTabState()" class="px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-xs text-zinc-200">Làm mới</button>
+              <button type="button" onclick="saveLongformTabState()" class="px-3.5 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-xs font-semibold text-white">💾 Lưu Tiêu Đề &amp; Kịch Bản</button>
+            </div>
+          </div>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label class="block text-[11px] text-amber-200 font-medium mb-1">🎬 Tiêu đề Intro Vlog (Lưu theo Project)</label>
+              <input id="lf-tab-title" type="text" placeholder="Nhập tiêu đề cố định cho project..." class="w-full rounded-xl bg-zinc-900 border border-zinc-700 px-3 py-2 text-xs text-zinc-100" />
+            </div>
+            <div>
+              <label class="block text-[11px] text-amber-200 font-medium mb-1">📝 Chủ đề / Bối cảnh Vlog (Lưu theo Project)</label>
+              <input id="lf-tab-note" type="text" placeholder="vd: Cắm trại cuối tuần bên hồ..." class="w-full rounded-xl bg-zinc-900 border border-zinc-700 px-3 py-2 text-xs text-zinc-100" />
+            </div>
+          </div>
+          <div id="lf-tab-chapters-list" class="space-y-3"></div>
         </div>
       </div>
     </section>
@@ -1752,6 +1787,7 @@
       if (tabId === 'tab2') loadVoiceStatus();
       if (tabId === 'tab3') loadStyleData();
       if (tabId === 'tab4') loadWorkshopState();
+      if (tabId === 'tab4') { loadWorkshopState(); loadLongformTabState(); }
       if (tabId === 'tab5') loadOpenReelStatus();
       if (tabId === 'tab6') loadOutputGallery();
     }
@@ -4318,13 +4354,17 @@
       for (const item of selected) {
         if (!state.longformPerProject[item.id]) {
           try {
-            const res = await api(`/api/longform/clips?project_id=${encodeURIComponent(item.id)}`);
+            const [res, stRes] = await Promise.all([
+              api(`/api/longform/clips?project_id=${encodeURIComponent(item.id)}`),
+              api(`/api/longform/state?project_id=${encodeURIComponent(item.id)}`).catch(() => ({})),
+            ]);
+            const savedCfg = stRes?.config || {};
             state.longformPerProject[item.id] = {
               name: item.name,
               clips: res.clips || [],
               total_duration_sec: res.total_duration_sec || 0,
-              vlog_title: '',
-              product_note: '',
+              vlog_title: savedCfg.vlog_title || '',
+              product_note: savedCfg.product_note || '',
             };
           } catch (e) {
             state.longformPerProject[item.id] = {
@@ -4459,15 +4499,120 @@
       }
     }
 
+    function switchScriptSubTab(mode) {
+      const isLong = mode === 'long';
+      document.getElementById('tab4-sub-short')?.classList.toggle('hidden', isLong);
+      document.getElementById('tab4-sub-long')?.classList.toggle('hidden', !isLong);
+      const bShort = document.getElementById('tab4-btn-short');
+      const bLong = document.getElementById('tab4-btn-long');
+      if (bShort) {
+        bShort.className = isLong
+          ? 'px-3.5 py-2 rounded-xl text-xs font-semibold bg-zinc-800 text-zinc-300 hover:bg-zinc-700 transition'
+          : 'px-3.5 py-2 rounded-xl text-xs font-semibold bg-emerald-600 text-white transition';
+      }
+      if (bLong) {
+        bLong.className = isLong
+          ? 'px-3.5 py-2 rounded-xl text-xs font-semibold bg-amber-600 text-white transition'
+          : 'px-3.5 py-2 rounded-xl text-xs font-semibold bg-zinc-800 text-zinc-300 hover:bg-zinc-700 transition';
+      }
+      if (isLong) loadLongformTabState();
+    }
+
+    state.longformTabChapters = null;
+
+    async function loadLongformTabState() {
+      try {
+        const res = await api('/api/longform/state');
+        const cfg = res.config || {};
+        const chData = res.chapters_data || null;
+        state.longformTabChapters = chData;
+        const titleEl = document.getElementById('lf-tab-title');
+        const noteEl = document.getElementById('lf-tab-note');
+        const badgeEl = document.getElementById('lf-tab-vd-badge');
+        const listEl = document.getElementById('lf-tab-chapters-list');
+        if (titleEl) titleEl.value = cfg.vlog_title || chData?.video_title || '';
+        if (noteEl) noteEl.value = cfg.product_note || '';
+        if (badgeEl) {
+          const vd = chData?.visual_direction || {};
+          badgeEl.textContent = chData
+            ? `Style: ${vd.title_style || 'cinematic_glass'} · Phụ đề: ${vd.subtitle_style || 'editorial_clean'} · Màu: ${vd.accent_color || '#F59E0B'}`
+            : 'Chưa có kịch bản Video dài nào được tạo cho project này.';
+        }
+        if (listEl) {
+          const chs = chData?.chapters || [];
+          listEl.innerHTML = chs.length
+            ? chs.map((ch, ci) => {
+                const stk = ch.sticker || {};
+                const blks = ch.narration_blocks || [];
+                return `
+                  <div class="rounded-xl border border-zinc-800 bg-zinc-950/70 p-3 space-y-2">
+                    <div class="flex flex-wrap items-center justify-between gap-2">
+                      <span class="text-xs font-semibold text-amber-300">Chương ${ch.index || ci + 1} (${Math.round(ch.start_sec || 0)}s → ${Math.round(ch.end_sec || 0)}s)</span>
+                      <span class="text-[11px] px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-200">${escapeHtml(stk.emoji || '✨')} ${escapeHtml(stk.label || '')}</span>
+                    </div>
+                    <input type="text" data-lf-ch-title="${ci}" value="${escapeHtml(ch.chapter_title || '')}" class="w-full rounded-lg bg-zinc-900 border border-zinc-700 px-2.5 py-1.5 text-xs text-white font-semibold" />
+                    ${blks.map((b, bi) => `
+                      <textarea data-lf-blk="${ci}:${bi}" rows="2" class="w-full rounded-lg bg-zinc-900 border border-zinc-800 px-2.5 py-1.5 text-xs text-zinc-200">${escapeHtml(b.text || '')}</textarea>
+                    `).join('')}
+                  </div>
+                `;
+              }).join('')
+            : '<div class="text-xs text-zinc-500 p-3 border border-dashed border-zinc-800 rounded-xl">Hãy chạy 1 video dài hoặc nhập Tiêu đề + Chủ đề ở trên rồi bấm Lưu để ghi nhớ cho project này.</div>';
+        }
+      } catch (e) {}
+    }
+
+    async function saveLongformTabState() {
+      const title = document.getElementById('lf-tab-title')?.value?.trim() || '';
+      const note = document.getElementById('lf-tab-note')?.value?.trim() || '';
+      let chData = state.longformTabChapters ? JSON.parse(JSON.stringify(state.longformTabChapters)) : null;
+      if (chData && Array.isArray(chData.chapters)) {
+        chData.video_title = title || chData.video_title;
+        document.querySelectorAll('[data-lf-ch-title]').forEach((el) => {
+          const ci = Number(el.dataset.lfChTitle);
+          if (chData.chapters[ci]) chData.chapters[ci].chapter_title = el.value.trim();
+        });
+        document.querySelectorAll('[data-lf-blk]').forEach((el) => {
+          const [ci, bi] = el.dataset.lfBlk.split(':').map(Number);
+          if (chData.chapters[ci]?.narration_blocks?.[bi]) {
+            chData.chapters[ci].narration_blocks[bi].text = el.value.trim();
+          }
+        });
+      }
+      await api('/api/longform/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          config: { vlog_title: title, product_note: note },
+          chapters_data: chData,
+        }),
+      });
+      toast('Đã lưu Tiêu đề, Chủ đề & Kịch bản Video dài cho Project!', 'success');
+    }
+
     async function loadLongformClips(projectId = '') {
       const listEl = document.getElementById('longform-clip-list');
       const totEl = document.getElementById('longform-raw-total');
       if (!listEl) return;
       try {
         const url = projectId ? `/api/longform/clips?project_id=${encodeURIComponent(projectId)}` : '/api/longform/clips';
-        const res = await api(url);
+        const stUrl = projectId ? `/api/longform/state?project_id=${encodeURIComponent(projectId)}` : '/api/longform/state';
+        const [res, stRes] = await Promise.all([api(url), api(stUrl).catch(() => ({}))]);
         state.longformClips = res.clips || [];
         if (totEl) totEl.textContent = `${state.longformClips.length} clip · Tổng ${Math.round(res.total_duration_sec || 0)}s`;
+        const cfg = stRes?.config || {};
+        const tEl = document.getElementById('longform-title');
+        const nEl = document.getElementById('longform-topic-note');
+        const dEl = document.getElementById('longform-duration-sec');
+        const qEl = document.getElementById('longform-quality');
+        const afEl = document.getElementById('chk-longform-autofit');
+        const kaEl = document.getElementById('chk-longform-keep-audio');
+        if (tEl && cfg.vlog_title !== undefined) tEl.value = cfg.vlog_title || '';
+        if (nEl && cfg.product_note !== undefined) nEl.value = cfg.product_note || '';
+        if (dEl && cfg.target_duration_sec) dEl.value = String(Math.round(cfg.target_duration_sec));
+        if (qEl && cfg.quality_preset) qEl.value = cfg.quality_preset;
+        if (afEl && cfg.auto_fit_duration !== undefined) afEl.checked = !!cfg.auto_fit_duration;
+        if (kaEl && cfg.keep_clip_audio !== undefined) kaEl.checked = !!cfg.keep_clip_audio;
         renderLongformClipList();
       } catch (e) {
         if (totEl) totEl.textContent = 'Lỗi tải clip';

@@ -98,14 +98,19 @@ export const VlogIntro: React.FC<VlogIntroProps> = ({
   const subFontSize = isLandscape ? Math.round(width * 0.017) : Math.round(width * 0.032);
   const badgeFontSize = isLandscape ? 20 : 24;
 
+  const isLeftLayout = titleStyle === 'editorial_minimal';
+  const isBannerLayout = titleStyle === 'adventure_bold';
+
   return (
     <AbsoluteFill
       style={{
         backgroundColor: 'transparent',
         opacity: masterAlpha,
-        justifyContent: 'center',
-        alignItems: 'center',
-        padding: isLandscape ? '0 10%' : '0 8%',
+        justifyContent: isLeftLayout ? 'flex-end' : 'center',
+        alignItems: isLeftLayout ? 'flex-start' : 'center',
+        padding: isLeftLayout
+          ? (isLandscape ? '0 10% 10% 8%' : '0 8% 18% 8%')
+          : (isLandscape ? '0 10%' : '0 8%'),
       }}
     >
       {/* Subtle cinematic vignette scrim behind title so opening 4K clip stays vivid */}
@@ -122,9 +127,10 @@ export const VlogIntro: React.FC<VlogIntroProps> = ({
           position: 'relative',
           display: 'flex',
           flexDirection: 'column',
-          alignItems: 'center',
-          textAlign: 'center',
-          maxWidth: isLandscape ? '82%' : '92%',
+          alignItems: isLeftLayout ? 'flex-start' : 'center',
+          textAlign: isLeftLayout ? 'left' : 'center',
+          width: isBannerLayout ? '100%' : undefined,
+          maxWidth: isBannerLayout ? '96%' : isLandscape ? '82%' : '92%',
           backgroundColor: theme.cardBg,
           border: theme.cardBorder,
           borderRadius: theme.cardRadius,

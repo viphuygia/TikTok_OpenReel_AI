@@ -4658,6 +4658,53 @@ def api_longform_clips(project_id: str | None = None):
     }
 
 
+class LongformStateSaveReq(BaseModel):
+    project_id: str = ""
+    config: dict[str, Any] = Field(default_factory=dict)
+    chapters_data: dict[str, Any] | None = None
+
+
+@app.get("/api/longform/state")
+def api_longform_state(project_id: str | None = None):
+    pid = str(project_id or "").strip() or ACTIVE_PROJECT_ID
+    ws_dir = get_project_root(pid) / "04_workspace"
+    cfg_p = ws_dir / "longform_config.json"
+    ch_p = ws_dir / "longform_chapters.json"
+    cfg_data: dict[str, Any] = {}
+    ch_data: dict[str, Any] | None = None
+    if cfg_p.exists():
+        try:
+            cfg_data = json.loads(cfg_p.read_text(encoding="utf-8-sig"))
+        except Exception:
+            cfg_data = {}
+    if ch_p.exists():
+        try:
+            ch_data = json.loads(ch_p.read_text(encoding="utf-8-sig"))
+        except Exception:
+            ch_data = None
+    return {"ok": True, "project_id": pid, "config": cfg_data, "chapters_data": ch_data}
+
+
+@app.post("/api/longform/save")
+def api_longform_save(req: LongformStateSaveReq):
+    pid = str(req.project_id or "").strip() or ACTIVE_PROJECT_ID
+    ws_dir = get_project_root(pid) / "04_workspace"
+    ws_dir.mkdir(parents=True, exist_ok=True)
+    cfg_p = ws_dir / "longform_config.json"
+    existing_cfg: dict[str, Any] = {}
+    if cfg_p.exists():
+        try:
+            existing_cfg = json.loads(cfg_p.read_text(encoding="utf-8-sig"))
+        except Exception:
+            existing_cfg = {}
+    merged_cfg = {**existing_cfg, **(req.config or {})}
+    cfg_p.write_text(json.dumps(merged_cfg, ensure_ascii=False, indent=2), encoding="utf-8")
+    if isinstance(req.chapters_data, dict):
+        ch_p = ws_dir / "longform_chapters.json"
+        ch_p.write_text(json.dumps(req.chapters_data, ensure_ascii=False, indent=2), encoding="utf-8")
+    return {"ok": True, "project_id": pid, "config": merged_cfg}
+
+
 @app.get("/api/style/vibes")
 def api_style_vibes():
     import style_dna as _sd
@@ -5196,6 +5243,15 @@ def _execute_longform_vlog_pipeline(req: OneClickPipelineReq) -> None:
             ).get("response")
             or ""
         )
+    lf_cfg_file = DIR_WORKSPACE / "longform_config.json"
+    prev_lf_cfg: dict[str, Any] = {}
+    if lf_cfg_file.exists():
+        try:
+            prev_lf_cfg = json.loads(lf_cfg_file.read_text(encoding="utf-8-sig"))
+        except Exception:
+            prev_lf_cfg = {}
+    avoid_ts = str(prev_lf_cfg.get("last_title_style") or "").strip()
+
     ch_script = _lf.generate_longform_chapter_script(
         plan=plan,
         ordered_clips=ordered,
@@ -5205,10 +5261,27 @@ def _execute_longform_vlog_pipeline(req: OneClickPipelineReq) -> None:
         gemini_api_key=api_key,
         agy_caller=agy_caller,
         preview_dir=DIR_WORKSPACE / "frames" / "longform_preview",
+        avoid_title_style=avoid_ts,
     )
     (DIR_WORKSPACE / "longform_chapters.json").write_text(
         json.dumps(ch_script, ensure_ascii=False, indent=2), encoding="utf-8"
     )
+    vd_saved = ch_script.get("visual_direction") if isinstance(ch_script.get("visual_direction"), dict) else {}
+    saved_lf_cfg = {
+        **prev_lf_cfg,
+        "target_duration_sec": float(req.target_duration_sec or 300.0),
+        "quality_preset": req_quality,
+        "auto_fit_duration": bool(getattr(req, "auto_fit_duration", False)),
+        "keep_clip_audio": bool(getattr(req, "keep_clip_audio", False)),
+        "vlog_title": req_vlog_title,
+        "product_note": str(req.product_note or "").strip(),
+        "ordered_clips": [c["rel_path"] for c in ordered],
+        "aspect_ratio": req_aspect,
+        "content_vibe": req_vibe,
+        "last_title_style": str(vd_saved.get("title_style") or ""),
+        "last_subtitle_style": str(vd_saved.get("subtitle_style") or ""),
+    }
+    lf_cfg_file.write_text(json.dumps(saved_lf_cfg, ensure_ascii=False, indent=2), encoding="utf-8")
     disp_txt = " ".join(
         blk["text"] for ch in ch_script.get("chapters") or [] for blk in ch.get("narration_blocks") or []
     ).strip()
