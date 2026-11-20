@@ -292,15 +292,19 @@
               </div>
               <div id="longform-clip-list" class="max-h-40 overflow-y-auto space-y-1 pr-1"></div>
             </div>
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+            <div class="space-y-2.5">
               <div>
                 <label class="block text-[11px] text-amber-200 font-medium mb-1">🎬 Tiêu đề Intro Vlog (Tùy chọn)</label>
                 <input id="longform-title" type="text" placeholder="Để trống để AI tự đặt tiêu đề hay..." class="w-full rounded-lg bg-zinc-950 border border-zinc-700 px-2.5 py-2 text-xs text-zinc-100 placeholder-zinc-500" />
               </div>
               <div>
-                <label class="block text-[11px] text-amber-200 font-medium mb-1">📝 Chủ đề / Bối cảnh Vlog (Để AI viết sát cảnh)</label>
-                <input id="longform-topic-note" type="text" placeholder="vd: Cắm trại cuối tuần bên hồ, nấu ăn & chill..." class="w-full rounded-lg bg-zinc-950 border border-zinc-700 px-2.5 py-2 text-xs text-zinc-100 placeholder-zinc-500" />
+                <label class="block text-[11px] text-amber-200 font-medium mb-1">📝 AI Brief / Nội dung &amp; Bối cảnh Vlog (Để AI viết sát cảnh &amp; đúng ý)</label>
+                <textarea id="longform-topic-note" rows="4" placeholder="Mô tả chi tiết chuyến đi / bối cảnh, địa điểm, nhân vật, cảm xúc từng chặng, lưu ý từ cấm hoặc thông điệp muốn nhấn mạnh..." class="w-full rounded-lg bg-zinc-950 border border-zinc-700 px-3 py-2 text-xs text-zinc-100 placeholder-zinc-500 leading-relaxed"></textarea>
               </div>
+              <label class="flex items-center gap-2 text-cyan-200 cursor-pointer">
+                <input id="chk-longform-preserve-script" type="checkbox" class="rounded bg-zinc-800 border-cyan-500 text-cyan-500" />
+                <span>🔒 Giữ nguyên Kịch bản đã sửa ở Tab 2 (Bỏ qua AI viết lại đè lên)</span>
+              </label>
             </div>
           </div>
           <div id="longform-multi-proj-box" class="hidden space-y-2.5"></div>
@@ -1372,17 +1376,68 @@
             </div>
             <div class="flex items-center gap-2">
               <button type="button" onclick="loadLongformTabState()" class="px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-xs text-zinc-200">Làm mới</button>
-              <button type="button" onclick="saveLongformTabState()" class="px-3.5 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-xs font-semibold text-white">💾 Lưu Tiêu Đề &amp; Kịch Bản</button>
+              <button type="button" id="btn-lf-gen-script" onclick="generateLongformTabScript()" class="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-xs font-semibold text-white">🤖 AI Viết Kịch Bản</button>
+              <button type="button" onclick="saveLongformTabState()" class="px-3.5 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-xs font-semibold text-white">💾 Lưu Tất Cả</button>
             </div>
           </div>
-          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div class="space-y-3">
             <div>
               <label class="block text-[11px] text-amber-200 font-medium mb-1">🎬 Tiêu đề Intro Vlog (Lưu theo Project)</label>
               <input id="lf-tab-title" type="text" placeholder="Nhập tiêu đề cố định cho project..." class="w-full rounded-xl bg-zinc-900 border border-zinc-700 px-3 py-2 text-xs text-zinc-100" />
             </div>
             <div>
-              <label class="block text-[11px] text-amber-200 font-medium mb-1">📝 Chủ đề / Bối cảnh Vlog (Lưu theo Project)</label>
-              <input id="lf-tab-note" type="text" placeholder="vd: Cắm trại cuối tuần bên hồ..." class="w-full rounded-xl bg-zinc-900 border border-zinc-700 px-3 py-2 text-xs text-zinc-100" />
+              <label class="block text-[11px] text-amber-200 font-medium mb-1">📝 AI Brief / Nội dung &amp; Bối cảnh Video dài (Lưu theo Project)</label>
+              <textarea id="lf-tab-note" rows="4" placeholder="Mô tả chi tiết địa điểm, hành trình từng chặng, tone giọng kể chuyện, điểm nhấn cần nói..." class="w-full rounded-xl bg-zinc-900 border border-zinc-700 px-3 py-2 text-xs text-zinc-100 leading-relaxed"></textarea>
+            </div>
+            <div class="grid grid-cols-2 sm:grid-cols-5 gap-2.5">
+              <div>
+                <label class="block text-[11px] text-cyan-200 mb-1">🎨 Style Tiêu đề</label>
+                <select id="lf-tab-title-style" class="w-full rounded-lg bg-zinc-900 border border-zinc-700 px-2 py-1.5 text-xs text-zinc-100">
+                  <option value="">🤖 AI Tự Chọn</option>
+                  <option value="cinematic_glass">Cinema Kính Mờ</option>
+                  <option value="editorial_minimal">Tạp Chí Góc Trái</option>
+                  <option value="campfire_warm">Lửa Trại Ấm Áp</option>
+                  <option value="adventure_bold">Banner Du Lịch</option>
+                  <option value="pastel_soft">Pastel Dịu Mắt</option>
+                </select>
+              </div>
+              <div>
+                <label class="block text-[11px] text-cyan-200 mb-1">💬 Style Phụ đề</label>
+                <select id="lf-tab-sub-style" class="w-full rounded-lg bg-zinc-900 border border-zinc-700 px-2 py-1.5 text-xs text-zinc-100">
+                  <option value="">🤖 AI Tự Chọn</option>
+                  <option value="editorial_clean">Trắng Thanh Thoát</option>
+                  <option value="warm_vlog_gold">Vàng Ấm Vlog</option>
+                  <option value="mint_nature">Xanh Mint Thiên Nhiên</option>
+                  <option value="cinema_box">Hộp Nền Tối Cinema</option>
+                  <option value="highlight_bold">Nhấn Màu Động</option>
+                </select>
+              </div>
+              <div>
+                <label class="block text-[11px] text-cyan-200 mb-1">🎯 Màu Nhấn</label>
+                <input id="lf-tab-accent" type="color" value="#F59E0B" class="w-full h-8 rounded-lg bg-zinc-900 border border-zinc-700 px-1 py-0.5 cursor-pointer" />
+              </div>
+              <div>
+                <label class="block text-[11px] text-emerald-200 mb-1">🎙️ Tốc độ đọc</label>
+                <select id="lf-tab-voice-rate" class="w-full rounded-lg bg-zinc-900 border border-zinc-700 px-2 py-1.5 text-xs text-zinc-100">
+                  <option value="-10%">Chậm sâu (-10%)</option>
+                  <option value="-5%" selected>Vừa kể chuyện (-5%)</option>
+                  <option value="0%">Chuẩn tự nhiên (0%)</option>
+                  <option value="+5%">Hơi nhanh (+5%)</option>
+                </select>
+              </div>
+              <div>
+                <label class="block text-[11px] text-emerald-200 mb-1">⏸️ Nghỉ giữa câu</label>
+                <select id="lf-tab-pause" class="w-full rounded-lg bg-zinc-900 border border-zinc-700 px-2 py-1.5 text-xs text-zinc-100">
+                  <option value="0.5">Nhanh (0.5s)</option>
+                  <option value="0.85" selected>Vừa thở (0.85s)</option>
+                  <option value="1.2">Chậm chill (1.2s)</option>
+                  <option value="1.5">Rất thoáng (1.5s)</option>
+                </select>
+              </div>
+            </div>
+            <div>
+              <label class="block text-[11px] text-pink-200 font-medium mb-1">🗣️ Phiên âm cách đọc riêng (Mỗi dòng: Từ hiển thị = Cách đọc AI, giữ chữ đẹp trên phụ đề)</label>
+              <textarea id="lf-tab-phonetics" rows="2" placeholder="vd:&#10;camping = cam ping&#10;chill = chiu" class="w-full rounded-xl bg-zinc-900 border border-zinc-700 px-3 py-1.5 text-xs text-zinc-100 mono"></textarea>
             </div>
           </div>
           <div id="lf-tab-chapters-list" class="space-y-3"></div>
@@ -4409,9 +4464,9 @@
               <div class="text-xs font-semibold text-amber-200 truncate">${pIdx + 1}. ${escapeHtml(cfg.name || item.id)}</div>
               <span class="text-[11px] text-amber-300/80 mono shrink-0">${clips.length} clip · ${Math.round(cfg.total_duration_sec || 0)}s</span>
             </div>
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <div class="space-y-1.5">
               <input type="text" value="${escapeHtml(cfg.vlog_title || '')}" oninput="updateLongformProjectField('${escapeHtml(item.id)}', 'vlog_title', this.value)" placeholder="Tiêu đề riêng cho project này (tùy chọn)..." class="w-full rounded-lg bg-zinc-900 border border-zinc-700 px-2 py-1.5 text-[11px] text-zinc-100 placeholder-zinc-500" />
-              <input type="text" value="${escapeHtml(cfg.product_note || '')}" oninput="updateLongformProjectField('${escapeHtml(item.id)}', 'product_note', this.value)" placeholder="Chủ đề / Bối cảnh riêng cho project này..." class="w-full rounded-lg bg-zinc-900 border border-zinc-700 px-2 py-1.5 text-[11px] text-zinc-100 placeholder-zinc-500" />
+              <textarea rows="2" oninput="updateLongformProjectField('${escapeHtml(item.id)}', 'product_note', this.value)" placeholder="AI Brief / Chủ đề & bối cảnh riêng cho project này..." class="w-full rounded-lg bg-zinc-900 border border-zinc-700 px-2 py-1.5 text-[11px] text-zinc-100 placeholder-zinc-500">${escapeHtml(cfg.product_note || '')}</textarea>
             </div>
             <div class="max-h-28 overflow-y-auto space-y-1 pr-1">${clipRows}</div>
           </div>
@@ -4532,8 +4587,20 @@
         const listEl = document.getElementById('lf-tab-chapters-list');
         if (titleEl) titleEl.value = cfg.vlog_title || chData?.video_title || '';
         if (noteEl) noteEl.value = cfg.product_note || '';
+        const tsEl = document.getElementById('lf-tab-title-style');
+        const ssEl = document.getElementById('lf-tab-sub-style');
+        const acEl = document.getElementById('lf-tab-accent');
+        const vrEl = document.getElementById('lf-tab-voice-rate');
+        const psEl = document.getElementById('lf-tab-pause');
+        const phEl = document.getElementById('lf-tab-phonetics');
+        const vd = chData?.visual_direction || {};
+        if (tsEl) tsEl.value = cfg.preferred_title_style || '';
+        if (ssEl) ssEl.value = cfg.preferred_subtitle_style || '';
+        if (acEl) acEl.value = cfg.preferred_accent_color || vd.accent_color || '#F59E0B';
+        if (vrEl) vrEl.value = cfg.voice_rate_offset || '-5%';
+        if (psEl) psEl.value = String(cfg.sentence_pause_sec || '0.85');
+        if (phEl) phEl.value = cfg.phonetic_overrides || '';
         if (badgeEl) {
-          const vd = chData?.visual_direction || {};
           badgeEl.textContent = chData
             ? `Style: ${vd.title_style || 'cinematic_glass'} · Phụ đề: ${vd.subtitle_style || 'editorial_clean'} · Màu: ${vd.accent_color || '#F59E0B'}`
             : 'Chưa có kịch bản Video dài nào được tạo cho project này.';
@@ -4548,7 +4615,10 @@
                   <div class="rounded-xl border border-zinc-800 bg-zinc-950/70 p-3 space-y-2">
                     <div class="flex flex-wrap items-center justify-between gap-2">
                       <span class="text-xs font-semibold text-amber-300">Chương ${ch.index || ci + 1} (${Math.round(ch.start_sec || 0)}s → ${Math.round(ch.end_sec || 0)}s)</span>
-                      <span class="text-[11px] px-2 py-0.5 rounded-full bg-zinc-800 text-zinc-200">${escapeHtml(stk.emoji || '✨')} ${escapeHtml(stk.label || '')}</span>
+                      <div class="flex items-center gap-1.5">
+                        <input type="text" data-lf-stk-emoji="${ci}" value="${escapeHtml(stk.emoji || '✨')}" class="w-10 text-center rounded bg-zinc-900 border border-zinc-700 px-1 py-0.5 text-xs" title="Emoji Sticker" />
+                        <input type="text" data-lf-stk-label="${ci}" value="${escapeHtml(stk.label || '')}" placeholder="Nhãn sticker..." class="w-40 rounded bg-zinc-900 border border-zinc-700 px-2 py-0.5 text-[11px] text-zinc-200" title="Chữ trên Sticker động" />
+                      </div>
                     </div>
                     <input type="text" data-lf-ch-title="${ci}" value="${escapeHtml(ch.chapter_title || '')}" class="w-full rounded-lg bg-zinc-900 border border-zinc-700 px-2.5 py-1.5 text-xs text-white font-semibold" />
                     ${blks.map((b, bi) => `
@@ -4557,20 +4627,73 @@
                   </div>
                 `;
               }).join('')
-            : '<div class="text-xs text-zinc-500 p-3 border border-dashed border-zinc-800 rounded-xl">Hãy chạy 1 video dài hoặc nhập Tiêu đề + Chủ đề ở trên rồi bấm Lưu để ghi nhớ cho project này.</div>';
+            : '<div class="text-xs text-zinc-500 p-3 border border-dashed border-zinc-800 rounded-xl">Hãy bấm "🤖 AI Viết Kịch Bản" để tạo kịch bản xem trước, hoặc nhập Brief + Cách đọc ở trên rồi bấm Lưu.</div>';
         }
       } catch (e) {}
+    }
+
+    async function generateLongformTabScript() {
+      const btn = document.getElementById('btn-lf-gen-script');
+      const title = document.getElementById('lf-tab-title')?.value?.trim() || '';
+      const note = document.getElementById('lf-tab-note')?.value?.trim() || '';
+      const ts = document.getElementById('lf-tab-title-style')?.value || '';
+      const ss = document.getElementById('lf-tab-sub-style')?.value || '';
+      const ac = document.getElementById('lf-tab-accent')?.value || '';
+      if (btn) { btn.disabled = true; btn.textContent = '⏳ AI đang viết...'; }
+      try {
+        await api('/api/longform/generate-script', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            vlog_title: title,
+            product_note: note,
+            title_style: ts,
+            subtitle_style: ss,
+            accent_color: ac,
+          }),
+        });
+        await loadLongformTabState();
+        toast('Đã tạo kịch bản Video dài! Bạn có thể sửa câu chữ, sticker rồi bấm Lưu.', 'success');
+      } catch (e) {
+        toast('Lỗi tạo kịch bản: ' + e.message, 'error');
+      } finally {
+        if (btn) { btn.disabled = false; btn.textContent = '🤖 AI Viết Kịch Bản'; }
+      }
     }
 
     async function saveLongformTabState() {
       const title = document.getElementById('lf-tab-title')?.value?.trim() || '';
       const note = document.getElementById('lf-tab-note')?.value?.trim() || '';
+      const ts = document.getElementById('lf-tab-title-style')?.value || '';
+      const ss = document.getElementById('lf-tab-sub-style')?.value || '';
+      const ac = document.getElementById('lf-tab-accent')?.value || '#F59E0B';
+      const vr = document.getElementById('lf-tab-voice-rate')?.value || '-5%';
+      const ps = parseFloat(document.getElementById('lf-tab-pause')?.value || '0.85') || 0.85;
+      const ph = document.getElementById('lf-tab-phonetics')?.value || '';
       let chData = state.longformTabChapters ? JSON.parse(JSON.stringify(state.longformTabChapters)) : null;
       if (chData && Array.isArray(chData.chapters)) {
         chData.video_title = title || chData.video_title;
+        if (!chData.visual_direction) chData.visual_direction = {};
+        if (ts) chData.visual_direction.title_style = ts;
+        if (ss) chData.visual_direction.subtitle_style = ss;
+        if (ac) chData.visual_direction.accent_color = ac;
         document.querySelectorAll('[data-lf-ch-title]').forEach((el) => {
           const ci = Number(el.dataset.lfChTitle);
           if (chData.chapters[ci]) chData.chapters[ci].chapter_title = el.value.trim();
+        });
+        document.querySelectorAll('[data-lf-stk-emoji]').forEach((el) => {
+          const ci = Number(el.dataset.lfStkEmoji);
+          if (chData.chapters[ci]) {
+            if (!chData.chapters[ci].sticker) chData.chapters[ci].sticker = {};
+            chData.chapters[ci].sticker.emoji = el.value.trim() || '✨';
+          }
+        });
+        document.querySelectorAll('[data-lf-stk-label]').forEach((el) => {
+          const ci = Number(el.dataset.lfStkLabel);
+          if (chData.chapters[ci]) {
+            if (!chData.chapters[ci].sticker) chData.chapters[ci].sticker = {};
+            chData.chapters[ci].sticker.label = el.value.trim();
+          }
         });
         document.querySelectorAll('[data-lf-blk]').forEach((el) => {
           const [ci, bi] = el.dataset.lfBlk.split(':').map(Number);
@@ -4583,11 +4706,20 @@
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          config: { vlog_title: title, product_note: note },
+          config: {
+            vlog_title: title,
+            product_note: note,
+            preferred_title_style: ts,
+            preferred_subtitle_style: ss,
+            preferred_accent_color: ac,
+            voice_rate_offset: vr,
+            sentence_pause_sec: ps,
+            phonetic_overrides: ph,
+          },
           chapters_data: chData,
         }),
       });
-      toast('Đã lưu Tiêu đề, Chủ đề & Kịch bản Video dài cho Project!', 'success');
+      toast('Đã lưu Tiêu đề, Brief, Cách đọc & Kịch bản Video dài!', 'success');
     }
 
     async function loadLongformClips(projectId = '') {
@@ -4695,6 +4827,7 @@
       const content_vibe = document.getElementById('auto-content-vibe')?.value || 'learned_dna';
       const quality_preset = isLongVlog ? (document.getElementById('longform-quality')?.value || 'auto_source') : 'auto_source';
       const vlog_title = isLongVlog ? (document.getElementById('longform-title')?.value?.trim() || '') : '';
+      const preserve_longform_script = isLongVlog ? !!document.getElementById('chk-longform-preserve-script')?.checked : false;
       const mute_voice = !!document.getElementById('chk-mute-voice')?.checked;
       const hide_subtitles = !!document.getElementById('chk-hide-subtitles')?.checked;
       const project_configs = {};
@@ -4761,6 +4894,7 @@
             auto_fit_duration,
             quality_preset,
             vlog_title,
+            preserve_longform_script,
             project_ids: projectIds,
             project_configs,
             sync: false

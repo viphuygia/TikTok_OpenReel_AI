@@ -474,6 +474,9 @@ def generate_longform_chapter_script(
     agy_caller: Any = None,
     preview_dir: Path | None = None,
     avoid_title_style: str = "",
+    preferred_title_style: str = "",
+    preferred_subtitle_style: str = "",
+    preferred_accent_color: str = "",
 ) -> dict[str, Any]:
     """Generate structured non-repeating Vlog chapters with Intro/Chapter cards/Outro & breathing narration."""
     vibe_meta = _sd.get_content_vibe_meta(content_vibe if content_vibe != "learned_dna" else "outdoor_picnic")
@@ -757,10 +760,18 @@ def generate_longform_chapter_script(
     picked_ts = raw_ts if raw_ts in valid_title_styles else def_ts
     if avoid_title_style and picked_ts == avoid_title_style:
         picked_ts = def_ts
+    picked_ss = raw_ss if raw_ss in valid_sub_styles else def_ss
+    picked_ac = raw_ac if re.fullmatch(r"#[0-9a-fA-F]{6}", raw_ac) else def_ac
+    if preferred_title_style in valid_title_styles:
+        picked_ts = preferred_title_style
+    if preferred_subtitle_style in valid_sub_styles:
+        picked_ss = preferred_subtitle_style
+    if re.fullmatch(r"#[0-9a-fA-F]{6}", str(preferred_accent_color or "").strip()):
+        picked_ac = str(preferred_accent_color).strip()
     final_visual_dir = {
         "title_style": picked_ts,
-        "subtitle_style": raw_ss if raw_ss in valid_sub_styles else def_ss,
-        "accent_color": raw_ac if re.fullmatch(r"#[0-9a-fA-F]{6}", raw_ac) else def_ac,
+        "subtitle_style": picked_ss,
+        "accent_color": picked_ac,
     }
     default_chapter_stickers = [
         ("🏕️", "KHỞI HÀNH", "Mở đầu chuyến đi", "top-right"),
@@ -964,7 +975,32 @@ def _trim_pcm_silence(pcm: np.ndarray, sample_rate: int, thresh: float = 0.008) 
     return arr[st:en]
 
 
-def _vlog_edge_rate(raw_rate: str) -> str:
+def _parse_phonetic_overrides(raw_map: str | dict[str, str] | None) -> list[tuple[str, str]]:
+    if isinstance(raw_map, dict):
+        return [(str(k).strip(), str(v).strip()) for k, v in raw_map.items() if str(k).strip() and str(v).strip()]
+    pairs: list[tuple[str, str]] = []
+    for line in str(raw_map or "").splitlines():
+        ln = line.strip()
+        if not ln or "=" not in ln:
+            continue
+        k, v = ln.split("=", 1)
+        if k.strip() and v.strip():
+            pairs.append((k.strip(), v.strip()))
+    pairs.sort(key=lambda x: len(x[0]), reverse=True)
+    return pairs
+
+
+def _apply_phonetic_overrides(text: str, pairs: list[tuple[str, str]]) -> str:
+    out = str(text or "")
+    for src, dst in pairs:
+        out = re.sub(rf"(?<!\w){re.escape(src)}(?!\w)", dst, out, flags=re.IGNORECASE)
+    return out
+
+
+def _vlog_edge_rate(raw_rate: str, override_rate: str = "") -> str:
+    ov = str(override_rate or "").strip()
+    if re.fullmatch(r"[+-]?\d+%", ov):
+        return ov if ov[0] in "+-" else f"+{ov}"
     r = (raw_rate or "+0%").strip()
     if r.startswith("-") and len(r) >= 3:
         return r
@@ -977,19 +1013,27 @@ def build_longform_voice_and_srt(
     out_wav_path: Path,
     out_srt_path: Path,
     voice_preset: str = "edge_hoaimy_koc",
+    sentence_pause_sec: float = 0.85,
+    voice_rate_override: str = "",
+    phonetic_overrides: str | dict[str, str] | None = None,
 ) -> dict[str, Any]:
     """Synthesize calm sentence-spaced vlog narration distributed evenly across the entire video."""
     preset = _ve.resolve_voice_preset(voice_preset)
     engine = str(preset.get("tts_engine") or "edge_tts")
-    vlog_edge_rate = _vlog_edge_rate(str(preset.get("edge_rate") or "+0%"))
-    vlog_piper_scale = max(1.08, float(preset.get("piper_length_scale") or 1.0) * 1.10)
+    vlog_edge_rate = _vlog_edge_rate(str(preset.get("edge_rate") or "+0%"), override_rate=voice_rate_override)
+    rate_pct = 0
+    m_rate = re.match(r"([+-]?\d+)%", vlog_edge_rate)
+    if m_rate:
+        rate_pct = int(m_rate.group(1))
+    vlog_piper_scale = max(0.88, min(1.30, float(preset.get("piper_length_scale") or 1.0) * (1.0 - rate_pct / 100.0 + 0.05)))
     sr = 24000
     total_dur = float(plan.get("target_duration_sec") or 300.0)
     master_samples = np.zeros(int(round(total_dur * sr)), dtype=np.float32)
 
     ffmpeg_bin = find_binary("ffmpeg")
     srt_entries: list[tuple[float, float, str]] = []
-    sentence_pause_sec = 0.85
+    sentence_pause_sec = max(0.2, min(2.5, float(sentence_pause_sec if sentence_pause_sec is not None else 0.85)))
+    phonetic_pairs = _parse_phonetic_overrides(phonetic_overrides)
 
     piper_voice_obj = None
     piper_syn_cfg = None
@@ -997,7 +1041,10 @@ def build_longform_voice_and_srt(
     f5_ref_wav: Path | None = None
     f5_ref_text = ""
     f5_tmp_dir_obj = None
-    vlog_f5_speed = max(0.88, min(1.0, float(preset.get("speed") or 1.0) * 0.94))
+    base_f5 = float(preset.get("speed") or 1.0) * 0.94
+    if str(voice_rate_override or "").strip():
+        base_f5 = 1.0 + (rate_pct / 100.0)
+    vlog_f5_speed = max(0.80, min(1.15, base_f5))
 
     if engine == "f5_tts":
         try:
@@ -1173,7 +1220,7 @@ def build_longform_voice_and_srt(
                 sent_pcms: list[np.ndarray] = []
                 sent_disp: list[str] = []
                 for si, s_disp in enumerate(raw_sents, start=1):
-                    s_speak = _clean_tts_text(s_disp)
+                    s_speak = _clean_tts_text(_apply_phonetic_overrides(s_disp, phonetic_pairs))
                     if not s_speak:
                         continue
                     s_wav = tmp_p / f"ch{ch_idx}_b{bi}_s{si}.wav"

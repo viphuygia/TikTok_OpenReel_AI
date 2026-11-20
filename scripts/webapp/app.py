@@ -1214,6 +1214,7 @@ class OneClickPipelineReq(BaseModel):
     auto_fit_duration: bool = False
     quality_preset: str = "auto_source"
     vlog_title: str = ""
+    preserve_longform_script: bool = False
     mute_voice: bool = False
     hide_subtitles: bool = False
     project_ids: list[str] = Field(default_factory=list)
@@ -4705,6 +4706,78 @@ def api_longform_save(req: LongformStateSaveReq):
     return {"ok": True, "project_id": pid, "config": merged_cfg}
 
 
+class LongformGenScriptReq(BaseModel):
+    project_id: str = ""
+    target_duration_sec: float = 300.0
+    vlog_title: str = ""
+    product_note: str = ""
+    content_vibe: str = "outdoor_picnic"
+    title_style: str = ""
+    subtitle_style: str = ""
+    accent_color: str = ""
+
+
+@app.post("/api/longform/generate-script")
+def api_longform_generate_script(req: LongformGenScriptReq):
+    import longform_vlog as _lf
+
+    pid = str(req.project_id or "").strip() or ACTIVE_PROJECT_ID
+    proj_root = get_project_root(pid)
+    raw_dir = proj_root / "02_video_tho"
+    ws_dir = proj_root / "04_workspace"
+    ws_dir.mkdir(parents=True, exist_ok=True)
+    cfg_p = ws_dir / "longform_config.json"
+    prev_cfg: dict[str, Any] = {}
+    if cfg_p.exists():
+        try:
+            prev_cfg = json.loads(cfg_p.read_text(encoding="utf-8-sig"))
+        except Exception:
+            prev_cfg = {}
+
+    ordered = _lf.collect_ordered_raw_clips(raw_dir, ordered_names=prev_cfg.get("ordered_clips") or None)
+    if not ordered:
+        raise HTTPException(status_code=400, detail="Chưa có video thô nào trong 02_video_tho/.")
+    plan = _lf.build_longform_timeline_plan(
+        ordered,
+        target_duration_sec=float(req.target_duration_sec or prev_cfg.get("target_duration_sec") or 300.0),
+        auto_fit_duration=bool(prev_cfg.get("auto_fit_duration", False)),
+    )
+    app_cfg = load_config()
+    api_key = str(app_cfg.get("gemini_api_key") or "").strip()
+    agy_caller = None
+    if find_agy_executable():
+        agy_model = str(app_cfg.get("agy_model") or "").strip() or None
+        agy_effort = str(app_cfg.get("agy_effort") or "").strip() or None
+        agy_caller = lambda p: str(
+            call_agy_cli(p, model=agy_model, effort=agy_effort, mode="auto", disable_slash_commands=True, timeout=240).get("response") or ""
+        )
+    ch_script = _lf.generate_longform_chapter_script(
+        plan=plan,
+        ordered_clips=ordered,
+        topic_note=req.product_note or str(prev_cfg.get("product_note") or ""),
+        content_vibe=req.content_vibe or str(prev_cfg.get("content_vibe") or "outdoor_picnic"),
+        vlog_title=req.vlog_title or str(prev_cfg.get("vlog_title") or ""),
+        gemini_api_key=api_key,
+        agy_caller=agy_caller,
+        preview_dir=ws_dir / "frames" / "longform_preview",
+        avoid_title_style=str(prev_cfg.get("last_title_style") or ""),
+        preferred_title_style=req.title_style,
+        preferred_subtitle_style=req.subtitle_style,
+        preferred_accent_color=req.accent_color,
+    )
+    (ws_dir / "longform_chapters.json").write_text(json.dumps(ch_script, ensure_ascii=False, indent=2), encoding="utf-8")
+    merged_cfg = {
+        **prev_cfg,
+        "vlog_title": req.vlog_title or ch_script.get("video_title") or "",
+        "product_note": req.product_note or str(prev_cfg.get("product_note") or ""),
+        "preferred_title_style": req.title_style,
+        "preferred_subtitle_style": req.subtitle_style,
+        "preferred_accent_color": req.accent_color,
+    }
+    cfg_p.write_text(json.dumps(merged_cfg, ensure_ascii=False, indent=2), encoding="utf-8")
+    return {"ok": True, "project_id": pid, "chapters_data": ch_script, "config": merged_cfg}
+
+
 @app.get("/api/style/vibes")
 def api_style_vibes():
     import style_dna as _sd
@@ -5251,19 +5324,44 @@ def _execute_longform_vlog_pipeline(req: OneClickPipelineReq) -> None:
         except Exception:
             prev_lf_cfg = {}
     avoid_ts = str(prev_lf_cfg.get("last_title_style") or "").strip()
+    pref_ts = str(prev_lf_cfg.get("preferred_title_style") or "").strip()
+    pref_ss = str(prev_lf_cfg.get("preferred_subtitle_style") or "").strip()
+    pref_ac = str(prev_lf_cfg.get("preferred_accent_color") or "").strip()
 
-    ch_script = _lf.generate_longform_chapter_script(
-        plan=plan,
-        ordered_clips=ordered,
-        topic_note=req.product_note or "",
-        content_vibe=req_vibe,
-        vlog_title=req_vlog_title,
-        gemini_api_key=api_key,
-        agy_caller=agy_caller,
-        preview_dir=DIR_WORKSPACE / "frames" / "longform_preview",
-        avoid_title_style=avoid_ts,
-    )
-    (DIR_WORKSPACE / "longform_chapters.json").write_text(
+    ch_json_path = DIR_WORKSPACE / "longform_chapters.json"
+    ch_script = None
+    if bool(getattr(req, "preserve_longform_script", False)) and ch_json_path.exists():
+        try:
+            loaded_cs = json.loads(ch_json_path.read_text(encoding="utf-8-sig"))
+            if isinstance(loaded_cs, dict) and isinstance(loaded_cs.get("chapters"), list) and loaded_cs["chapters"]:
+                plan_chs = plan.get("chapters") or []
+                for ci, ch in enumerate(loaded_cs["chapters"]):
+                    if ci < len(plan_chs):
+                        ch["start_sec"] = float(plan_chs[ci].get("start_sec") or ch.get("start_sec") or 0.0)
+                        ch["end_sec"] = float(plan_chs[ci].get("end_sec") or ch.get("end_sec") or actual_target)
+                if req_vlog_title:
+                    loaded_cs["video_title"] = req_vlog_title
+                loaded_cs["ai_source"] = "user_edited"
+                ch_script = loaded_cs
+        except Exception:
+            ch_script = None
+
+    if ch_script is None:
+        ch_script = _lf.generate_longform_chapter_script(
+            plan=plan,
+            ordered_clips=ordered,
+            topic_note=req.product_note or "",
+            content_vibe=req_vibe,
+            vlog_title=req_vlog_title,
+            gemini_api_key=api_key,
+            agy_caller=agy_caller,
+            preview_dir=DIR_WORKSPACE / "frames" / "longform_preview",
+            avoid_title_style=avoid_ts,
+            preferred_title_style=pref_ts,
+            preferred_subtitle_style=pref_ss,
+            preferred_accent_color=pref_ac,
+        )
+    ch_json_path.write_text(
         json.dumps(ch_script, ensure_ascii=False, indent=2), encoding="utf-8"
     )
     vd_saved = ch_script.get("visual_direction") if isinstance(ch_script.get("visual_direction"), dict) else {}
@@ -5321,6 +5419,9 @@ def _execute_longform_vlog_pipeline(req: OneClickPipelineReq) -> None:
             out_wav_path=FILE_TTS_WAV,
             out_srt_path=FILE_TTS_SRT,
             voice_preset=vp,
+            sentence_pause_sec=float(prev_lf_cfg.get("sentence_pause_sec") or 0.85),
+            voice_rate_override=str(prev_lf_cfg.get("voice_rate_offset") or ""),
+            phonetic_overrides=prev_lf_cfg.get("phonetic_overrides") or "",
         )
         _update_pipeline(
             step_status=(3, "done", f"{voice_res['placed_blocks']} đoạn · {voice_res['srt_lines']} dòng SRT"),
