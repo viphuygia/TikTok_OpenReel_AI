@@ -979,7 +979,51 @@ def build_longform_voice_and_srt(
 
     piper_voice_obj = None
     piper_syn_cfg = None
-    if engine == "piper_tts":
+    f5_model = None
+    f5_ref_wav: Path | None = None
+    f5_ref_text = ""
+    f5_tmp_dir_obj = None
+    vlog_f5_speed = max(0.88, min(1.0, float(preset.get("speed") or 1.0) * 0.94))
+
+    if engine == "f5_tts":
+        try:
+            _ve.configure_runtime_paths()
+            _ve.patch_torchaudio_load()
+            from f5_tts.api import F5TTS
+
+            ref_raw = _ve.find_ref_audio(preset.get("ref_audio"))
+            f5_tmp_dir_obj = tempfile.TemporaryDirectory()
+            ref_norm_p = Path(f5_tmp_dir_obj.name) / "ref_norm.wav"
+            f5_ref_wav, was_clipped = _ve.normalize_reference_audio(ref_raw, ref_norm_p)
+            r_txt_p = ref_raw.with_suffix(".txt")
+            if not r_txt_p.exists() and _ve.DEFAULT_REF_TEXT_FILE.exists():
+                r_txt_p = _ve.DEFAULT_REF_TEXT_FILE
+            elif not r_txt_p.exists() and _ve.FALLBACK_REF_TEXT_FILE.exists():
+                r_txt_p = _ve.FALLBACK_REF_TEXT_FILE
+            r_txt = r_txt_p.read_text(encoding="utf-8-sig").strip() if r_txt_p.exists() and not was_clipped else ""
+            if not r_txt:
+                r_txt = _ve.transcribe_audio_text(f5_ref_wav, model_size="small")
+                if not r_txt_p.exists():
+                    r_txt_p.write_text(r_txt + "\n", encoding="utf-8")
+            f5_ref_text = r_txt.strip().lower()
+            if f5_ref_text and f5_ref_text[-1] not in ".!?":
+                f5_ref_text += "."
+
+            if not _ve.DEFAULT_MODEL_CKPT.exists() or not _ve.DEFAULT_VOCAB_FILE.exists():
+                raise FileNotFoundError("Thiếu model F5-TTS-Vietnamese.")
+            f5_model = F5TTS(
+                model="F5TTS_Base",
+                ckpt_file=str(_ve.DEFAULT_MODEL_CKPT),
+                vocab_file=str(_ve.DEFAULT_VOCAB_FILE),
+                device=_ve.select_device(),
+            )
+        except Exception as exc:
+            print(f"[LongForm F5-TTS Init WARN] {exc} -> fallback Edge-TTS")
+            f5_model = None
+            if f5_tmp_dir_obj is not None:
+                f5_tmp_dir_obj.cleanup()
+                f5_tmp_dir_obj = None
+    elif engine == "piper_tts":
         try:
             from piper.voice import PiperVoice
             from piper.config import SynthesisConfig
@@ -1004,6 +1048,33 @@ def build_longform_voice_and_srt(
             piper_voice_obj = None
 
     def _synth_one_sentence(sent_txt: str, out_w: Path) -> bool:
+        if f5_model is not None and f5_ref_wav is not None:
+            try:
+                gen_norm = _ve.normalize_vietnamese_script(sent_txt)
+                part_wav, part_sr, _ = f5_model.infer(
+                    ref_file=str(f5_ref_wav),
+                    ref_text=f5_ref_text,
+                    gen_text=gen_norm,
+                    speed=vlog_f5_speed,
+                    nfe_step=24,
+                    cfg_strength=2.0,
+                    sway_sampling_coef=-1.0,
+                    seed=42,
+                    remove_silence=False,
+                )
+                if part_wav is not None and len(part_wav) > 0:
+                    tmp_raw = out_w.with_name(f"{out_w.stem}_f5raw.wav")
+                    sf.write(str(tmp_raw), np.asarray(part_wav, dtype=np.float32), int(part_sr or sr))
+                    subprocess.run(
+                        [ffmpeg_bin, "-y", "-hide_banner", "-loglevel", "error", "-i", str(tmp_raw), "-ar", "24000", "-ac", "1", "-c:a", "pcm_s16le", str(out_w)],
+                        check=True,
+                        timeout=60,
+                    )
+                    tmp_raw.unlink(missing_ok=True)
+                    if out_w.exists() and out_w.stat().st_size > 800:
+                        return True
+            except Exception as exc:
+                print(f"[LongForm F5-TTS Infer WARN] {exc}")
         if piper_voice_obj is not None and piper_syn_cfg is not None:
             try:
                 tmp_raw = out_w.with_name(f"{out_w.stem}_praw.wav")
@@ -1019,28 +1090,15 @@ def build_longform_voice_and_srt(
                     return True
             except Exception:
                 pass
-        if engine in ("edge_tts", "piper_tts"):
-            if _synth_edge_tts_wav(
-                sent_txt,
-                out_w,
-                str(preset.get("edge_voice") or "vi-VN-HoaiMyNeural"),
-                vlog_edge_rate,
-                str(preset.get("edge_pitch") or "+0Hz"),
-            ):
-                return True
-        cli_cmd = [
-            sys.executable,
-            str(PROJECT_ROOT / "scripts" / "voice_engine.py"),
-            "--text",
+        if _synth_edge_tts_wav(
             sent_txt,
-            "--voice-preset",
-            str(preset.get("id") or "edge_hoaimy_koc"),
-            "--output-audio",
-            str(out_w),
-            "--no-srt",
-        ]
-        subprocess.run(cli_cmd, capture_output=True, timeout=180)
-        return out_w.exists() and out_w.stat().st_size > 800
+            out_w,
+            str(preset.get("edge_voice") or "vi-VN-HoaiMyNeural"),
+            vlog_edge_rate,
+            str(preset.get("edge_pitch") or "+0Hz"),
+        ):
+            return True
+        return False
 
     # Pass 1: Synthesize all blocks sentence-by-sentence with 0.85s natural breathing pauses
     synthesized_blocks: list[dict[str, Any]] = []
@@ -1094,6 +1152,22 @@ def build_longform_voice_and_srt(
                         "sent_offsets": sent_offsets,
                     }
                 )
+
+    if f5_model is not None:
+        del f5_model
+        try:
+            import gc, torch
+
+            gc.collect()
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+        except Exception:
+            pass
+    if f5_tmp_dir_obj is not None:
+        try:
+            f5_tmp_dir_obj.cleanup()
+        except Exception:
+            pass
 
     # Pass 2: Chapter-Locked Placement — keep each chapter's narration strictly inside its own [start_sec .. end_sec]
     safe_start = 4.8 if total_dur >= 20.0 else 0.3
