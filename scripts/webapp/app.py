@@ -5254,6 +5254,7 @@ def _execute_longform_vlog_pipeline(req: OneClickPipelineReq) -> None:
         out_dir=ov_dir,
         aspect_ratio=req_aspect,
         channel_name=ch_name,
+        sticker_density=str(req.sticker_density or "normal"),
     )
 
     bgm_name = str(req.bgm_track or "bgm_upbeat_tiktok.wav").strip()
@@ -5264,6 +5265,7 @@ def _execute_longform_vlog_pipeline(req: OneClickPipelineReq) -> None:
 
     DIR_OUTPUT.mkdir(parents=True, exist_ok=True)
     out_mp4 = DIR_OUTPUT / f"VLOG_{int(round(actual_target))}s_{req_aspect.replace(':', 'x')}_{q_label.split()[0]}_{int(time.time())}.mp4"
+    vd = ch_script.get("visual_direction") if isinstance(ch_script.get("visual_direction"), dict) else {}
 
     render_res = _lf.render_longform_ffmpeg_vlog(
         plan=plan,
@@ -5273,6 +5275,8 @@ def _execute_longform_vlog_pipeline(req: OneClickPipelineReq) -> None:
         output_mp4=out_mp4,
         overlays=overlays,
         bgm_volume=0.20,
+        subtitle_style=str(vd.get("subtitle_style") or "editorial_clean"),
+        accent_color=str(vd.get("accent_color") or "#F59E0B"),
         keep_clip_audio=bool(getattr(req, "keep_clip_audio", False)),
     )
     _update_pipeline(

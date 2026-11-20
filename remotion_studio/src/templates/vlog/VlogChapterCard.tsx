@@ -10,10 +10,50 @@ export const VlogChapterCard: React.FC<VlogChapterProps> = ({
   title,
   subtitle = '',
   accentColor = '#34D399',
+  titleStyle = 'cinematic_glass',
 }) => {
   const frame = useCurrentFrame();
   const { fps, durationInFrames, width, height } = useVideoConfig();
   const isLandscape = width > height;
+
+  const cardThemes = {
+    cinematic_glass: {
+      bg: 'rgba(10, 15, 28, 0.78)',
+      border: '1px solid rgba(255, 255, 255, 0.16)',
+      radius: 18,
+      titleColor: '#FFFFFF',
+      subColor: '#CBD5E1',
+    },
+    editorial_minimal: {
+      bg: 'rgba(255, 255, 255, 0.94)',
+      border: `2px solid ${accentColor}`,
+      radius: 12,
+      titleColor: '#0F172A',
+      subColor: '#475569',
+    },
+    campfire_warm: {
+      bg: 'rgba(30, 19, 11, 0.84)',
+      border: `1.5px solid ${accentColor}`,
+      radius: 22,
+      titleColor: '#FFFBEB',
+      subColor: '#FDE68A',
+    },
+    adventure_bold: {
+      bg: 'rgba(9, 14, 26, 0.88)',
+      border: `2px solid ${accentColor}`,
+      radius: 8,
+      titleColor: '#FFFFFF',
+      subColor: '#94A3B8',
+    },
+    pastel_soft: {
+      bg: 'rgba(248, 250, 252, 0.90)',
+      border: `1.5px solid ${accentColor}`,
+      radius: 28,
+      titleColor: '#1E293B',
+      subColor: '#64748B',
+    },
+  } as const;
+  const cTheme = cardThemes[titleStyle] || cardThemes.cinematic_glass;
 
   const enter = spring({ frame, fps, config: { damping: 15, stiffness: 130 } });
   const exitAlpha = interpolate(
@@ -50,11 +90,11 @@ export const VlogChapterCard: React.FC<VlogChapterProps> = ({
           opacity: enter * exitAlpha,
           display: 'flex',
           alignItems: 'stretch',
-          borderRadius: 18,
+          borderRadius: cTheme.radius,
           overflow: 'hidden',
-          backgroundColor: 'rgba(10, 15, 28, 0.78)',
-          border: '1px solid rgba(255, 255, 255, 0.16)',
-          boxShadow: '0 18px 44px rgba(0, 0, 0, 0.52)',
+          backgroundColor: cTheme.bg,
+          border: cTheme.border,
+          boxShadow: '0 18px 44px rgba(0, 0, 0, 0.45)',
         }}
       >
         {/* Spring accent bar */}
@@ -90,7 +130,7 @@ export const VlogChapterCard: React.FC<VlogChapterProps> = ({
                 fontFamily: "'Be Vietnam Pro', 'Baloo 2', sans-serif",
                 fontSize: titleFontSize,
                 fontWeight: 800,
-                color: '#FFFFFF',
+                color: cTheme.titleColor,
                 textTransform: 'uppercase',
                 letterSpacing: 0.8,
                 lineHeight: 1.2,
@@ -105,7 +145,7 @@ export const VlogChapterCard: React.FC<VlogChapterProps> = ({
                 fontFamily: "'Quicksand', 'Nunito', sans-serif",
                 fontSize: subFontSize,
                 fontWeight: 700,
-                color: '#CBD5E1',
+                color: cTheme.subColor,
                 paddingLeft: 2,
               }}
             >

@@ -292,7 +292,7 @@
         </div>
 
         <!-- 0. Multi-Project Sequential Selector -->
-        <div class="rounded-xl bg-zinc-900/70 border border-zinc-800 p-3 space-y-2">
+        <div id="shortform-projects-box" class="rounded-xl bg-zinc-900/70 border border-zinc-800 p-3 space-y-2">
           <div class="flex flex-wrap items-center justify-between gap-2">
             <div class="text-[11px] font-semibold uppercase tracking-wide text-zinc-400">0. Chọn 1 hoặc Nhiều Project (Chạy Tuần Tự)</div>
             <div class="flex items-center gap-1.5">
@@ -372,7 +372,7 @@
 
         <!-- Quick Visual / Audio / Pipeline Toggles -->
         <div class="rounded-xl bg-zinc-900/70 border border-zinc-800 p-3 space-y-2.5">
-          <div class="text-[11px] font-semibold uppercase tracking-wide text-zinc-400">3. Giọng Đọc AI, Nhịp Dựng &amp; Nhạc Nền (Dùng cho cả 3 Engine)</div>
+          <div id="auto-sec3-title" class="text-[11px] font-semibold uppercase tracking-wide text-zinc-400">3. Giọng Đọc AI, Nhịp Dựng &amp; Nhạc Nền (Dùng cho cả 3 Engine)</div>
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 items-end">
             <div class="min-w-0">
               <label class="block text-[11px] text-sky-300 font-medium mb-1 truncate">📐 Tỷ lệ Khung hình</label>
@@ -406,7 +406,7 @@
             </select>
           </div>
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 items-end">
-            <div class="min-w-0">
+            <div id="wrap-auto-sfx" class="min-w-0">
               <label class="block text-[11px] text-emerald-300 font-medium mb-1 truncate">🔊 Hiệu ứng Âm thanh (SFX)</label>
               <select id="auto-sfx-level" class="w-full rounded-lg bg-zinc-950 border border-zinc-700 px-2.5 py-2 text-xs text-zinc-100">
                 <option value="subtle" selected>🌿 Tinh tế (3–4 pop/swoosh nhẹ)</option>
@@ -414,7 +414,7 @@
                 <option value="off">🔇 Tắt hoàn toàn SFX</option>
               </select>
             </div>
-            <div class="min-w-0">
+            <div id="wrap-auto-transition" class="min-w-0">
               <label class="block text-[11px] text-emerald-300 font-medium mb-1 truncate">🎞️ Nhịp cắt &amp; Chuyển cảnh <span class="hidden md:inline">(AI chia cảnh)</span></label>
               <select id="auto-transition-level" class="w-full rounded-lg bg-zinc-950 border border-zinc-700 px-2.5 py-2 text-xs text-zinc-100">
                 <option value="gentle">🌿 Nhẹ &amp; Tinh tế (4–6 cảnh)</option>
@@ -424,7 +424,7 @@
             </div>
           </div>
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 items-end">
-            <div class="min-w-0">
+            <div id="wrap-auto-icon-density" class="min-w-0">
               <label class="block text-[11px] text-amber-300 font-medium mb-1 truncate">🎨 Mức độ Icon chữ <span class="hidden sm:inline">(Twemoji)</span></label>
               <select id="auto-icon-density" class="w-full rounded-lg bg-zinc-950 border border-zinc-700 px-2.5 py-1.5 text-xs text-zinc-100">
                 <option value="minimal">🌿 Ít / Sạch (Chỉ CTA)</option>
@@ -433,7 +433,7 @@
               </select>
             </div>
             <div class="min-w-0">
-              <label class="block text-[11px] text-pink-300 font-medium mb-1 truncate">✨ Mức độ Sticker <span class="hidden sm:inline">(Lottie + Chat)</span></label>
+              <label id="wrap-auto-sticker-label" class="block text-[11px] text-pink-300 font-medium mb-1 truncate">✨ Mức độ Sticker <span class="hidden sm:inline">(Lottie + Chat)</span></label>
               <select id="auto-sticker-density" class="w-full rounded-lg bg-zinc-950 border border-zinc-700 px-2.5 py-1.5 text-xs text-zinc-100">
                 <option value="off">🚫 Tắt Sticker Động</option>
                 <option value="normal" selected>⚖️ Vừa phải (4 Sticker)</option>
@@ -442,7 +442,7 @@
             </div>
           </div>
           <div id="auto-single-style-grid" class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-            <div>
+            <div id="wrap-auto-badge-theme">
               <label class="block text-[11px] text-zinc-400 mb-1">Theme Đồng Bộ</label>
               <select id="auto-badge-theme" class="w-full rounded-lg bg-zinc-950 border border-zinc-700 px-2.5 py-1.5 text-xs text-zinc-100">
                 <option value="auto">🤖 Tự động phối theo Kịch bản</option>
@@ -471,7 +471,7 @@
               <input id="chk-auto-switch-tab" type="checkbox" checked class="rounded bg-zinc-800 border-zinc-600 text-indigo-500" />
               <span>Tự chuyển Tab theo tiến độ</span>
             </label>
-            <label class="flex items-center gap-2 text-cyan-300 cursor-pointer sm:col-span-2">
+            <label id="wrap-auto-flash-shake" class="flex items-center gap-2 text-cyan-300 cursor-pointer sm:col-span-2">
               <input id="chk-disable-flash-shake" type="checkbox" checked class="rounded bg-zinc-800 border-cyan-500 text-cyan-500" />
               <span>🛡️ Chống chớp &amp; Chống rung (Tắt chớp trắng Flash, Rung camera &amp; Motion Trail)</span>
             </label>
@@ -4287,10 +4287,35 @@
           : 'text-left rounded-xl border border-zinc-700 bg-zinc-900/70 p-3 transition';
       }
       document.getElementById('longform-config-box')?.classList.toggle('hidden', !isLong);
+      document.getElementById('shortform-projects-box')?.classList.toggle('hidden', isLong);
       document.getElementById('shortform-engine-box')?.classList.toggle('hidden', isLong);
       document.getElementById('shortform-batch-box')?.classList.toggle('hidden', isLong);
       document.getElementById('wrap-preserve-clips')?.classList.toggle('hidden', isLong);
       document.getElementById('wrap-pipeline-regen')?.classList.toggle('hidden', isLong);
+      document.getElementById('wrap-auto-sfx')?.classList.toggle('hidden', isLong);
+      document.getElementById('wrap-auto-transition')?.classList.toggle('hidden', isLong);
+      document.getElementById('wrap-auto-icon-density')?.classList.toggle('hidden', isLong);
+      document.getElementById('wrap-auto-badge-theme')?.classList.toggle('hidden', isLong);
+      document.getElementById('wrap-auto-flash-shake')?.classList.toggle('hidden', isLong);
+
+      const sec3Title = document.getElementById('auto-sec3-title');
+      if (sec3Title) {
+        sec3Title.textContent = isLong
+          ? '3. Giọng Đọc, Nhạc Nền & AI Đạo Diễn Vlog'
+          : '3. Giọng Đọc AI, Nhịp Dựng & Nhạc Nền (Dùng cho cả 3 Engine)';
+      }
+      const stLabel = document.getElementById('wrap-auto-sticker-label');
+      if (stLabel) {
+        stLabel.textContent = isLong
+          ? '✨ Sticker Động Vlog (AI Đạo diễn)'
+          : '✨ Mức độ Sticker (Lottie + Chat)';
+      }
+      if (isLong) {
+        document.getElementById('auto-innovation-opts')?.classList.add('hidden');
+      } else {
+        const curEng = document.querySelector('input[name="auto-render-engine"]:checked')?.value || 'remotion_classic';
+        document.getElementById('auto-innovation-opts')?.classList.toggle('hidden', curEng !== 'remotion_innovation');
+      }
 
       if (isLong) {
         // Apply recommended unified settings for Long-Form Vlog (>90s)

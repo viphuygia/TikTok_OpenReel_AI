@@ -5,7 +5,8 @@ import { InnovationComposition } from './templates/innovation/InnovationComposit
 import { VlogIntro } from './templates/vlog/VlogIntro';
 import { VlogChapterCard } from './templates/vlog/VlogChapterCard';
 import { VlogOutro } from './templates/vlog/VlogOutro';
-import { VlogIntroProps, VlogChapterProps, VlogOutroProps } from './templates/vlog/types';
+import { VlogStickerOverlay } from './templates/vlog/VlogStickerOverlay';
+import { VlogIntroProps, VlogChapterProps, VlogOutroProps, VlogStickerProps } from './templates/vlog/types';
 import { TikTokVideoProps } from './types';
 
 const defaultProps: TikTokVideoProps = {
@@ -103,6 +104,15 @@ export const RemotionRoot: React.FC = () => {
     durationSec: 6.0,
     aspectRatio: '16:9',
   };
+  const defaultVlogSticker: VlogStickerProps = {
+    emoji: '🔥',
+    label: 'NHÓM LỬA TRẠI',
+    sublabel: 'Khoảnh khắc ấm áp',
+    position: 'top-right',
+    accentColor: '#F59E0B',
+    durationSec: 3.5,
+    aspectRatio: '16:9',
+  };
 
   return (
     <>
@@ -154,6 +164,16 @@ export const RemotionRoot: React.FC = () => {
         width={1920}
         height={1080}
         defaultProps={defaultVlogOutro}
+        calculateMetadata={calcVlogMeta}
+      />
+      <Composition
+        id="VlogStickerOverlay"
+        component={VlogStickerOverlay}
+        durationInFrames={105}
+        fps={30}
+        width={1920}
+        height={1080}
+        defaultProps={defaultVlogSticker}
         calculateMetadata={calcVlogMeta}
       />
     </>

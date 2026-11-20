@@ -579,11 +579,17 @@ def generate_longform_chapter_script(
         '  "video_subtitle": "Dòng mô tả ngắn (<= 65 ký tự)",\n'
         '  "outro_title": "CẢM ƠN BẠN ĐÃ ĐỒNG HÀNH!",\n'
         f'  "outro_cta": "{vibe_meta.get("cta_default") or "Theo dõi để xem những hành trình tiếp theo nhé!"}",\n'
+        '  "visual_direction": {\n'
+        '    "title_style": "cinematic_glass | editorial_minimal | campfire_warm | adventure_bold | pastel_soft",\n'
+        '    "subtitle_style": "editorial_clean | warm_vlog_gold | mint_nature | cinema_box | highlight_bold",\n'
+        '    "accent_color": "#F59E0B"\n'
+        '  },\n'
         '  "chapters": [\n'
         '    {\n'
         '      "index": 1,\n'
         '      "chapter_title": "TÊN CHƯƠNG NGẮN (<= 26 ký tự)",\n'
         '      "chapter_subtitle": "Mô tả nhanh 1 dòng (<= 45 ký tự)",\n'
+        '      "sticker": {"emoji": "🏕️", "label": "DỰNG TRẠI BÊN HỒ", "sublabel": "Khởi đầu hành trình", "position": "top-right"},\n'
         '      "narration_blocks": [\n'
         '        {"offset_ratio": 0.14, "text": "Đoạn lời bình mở chương bám sát ảnh đầu chương (~20-26 từ)."},\n'
         '        {"offset_ratio": 0.58, "text": "Đoạn lời bình tiếp nối bám sát ảnh sau của chương (~20-26 từ)."}\n'
@@ -721,6 +727,36 @@ def generate_longform_chapter_script(
                     break
         return " ".join(picked)
 
+    vibe_visual_defaults = {
+        "outdoor_picnic": ("campfire_warm", "warm_vlog_gold", "#F59E0B"),
+        "travel_vlog": ("adventure_bold", "mint_nature", "#38BDF8"),
+        "food_cafe": ("pastel_soft", "cinema_box", "#FB7185"),
+        "daily_story": ("editorial_minimal", "editorial_clean", "#34D399"),
+        "creative_internet": ("cinematic_glass", "highlight_bold", "#A78BFA"),
+    }
+    def_ts, def_ss, def_ac = vibe_visual_defaults.get(
+        content_vibe, ("cinematic_glass", "editorial_clean", "#F59E0B")
+    )
+    raw_vd = (parsed_ai or {}).get("visual_direction") if isinstance((parsed_ai or {}).get("visual_direction"), dict) else {}
+    valid_title_styles = {"cinematic_glass", "editorial_minimal", "campfire_warm", "adventure_bold", "pastel_soft"}
+    valid_sub_styles = {"editorial_clean", "warm_vlog_gold", "mint_nature", "cinema_box", "highlight_bold"}
+    raw_ts = str(raw_vd.get("title_style") or "").strip().split("|")[0].strip()
+    raw_ss = str(raw_vd.get("subtitle_style") or "").strip().split("|")[0].strip()
+    raw_ac = str(raw_vd.get("accent_color") or "").strip()
+    final_visual_dir = {
+        "title_style": raw_ts if raw_ts in valid_title_styles else def_ts,
+        "subtitle_style": raw_ss if raw_ss in valid_sub_styles else def_ss,
+        "accent_color": raw_ac if re.fullmatch(r"#[0-9a-fA-F]{6}", raw_ac) else def_ac,
+    }
+    default_chapter_stickers = [
+        ("🏕️", "KHỞI HÀNH", "Mở đầu chuyến đi", "top-right"),
+        ("🚗", "TRÊN ĐƯỜNG", "Khung cảnh dọc đường", "top-left"),
+        ("🌿", "KHÁM PHÁ", "Không gian thiên nhiên", "top-right"),
+        ("🔥", "TRẢI NGHIỆM", "Khoảnh khắc đáng nhớ", "bottom-right"),
+        ("🌅", "THƯ GIÃN", "Nhịp sống chậm lại", "top-right"),
+        ("✨", "KỶ NIỆM", "Lưu giữ hành trình", "top-left"),
+    ]
+
     ai_chapters = (parsed_ai or {}).get("chapters") or []
     final_chapters: list[dict[str, Any]] = []
     for ci, ch_plan in enumerate(chapters_plan):
@@ -728,6 +764,17 @@ def generate_longform_chapter_script(
         def_t, def_sub = default_titles[min(ci, len(default_titles) - 1)]
         c_title = str(ai_ch.get("chapter_title") or def_t).strip()[:30]
         c_sub = str(ai_ch.get("chapter_subtitle") or def_sub).strip()[:50]
+        raw_stk = ai_ch.get("sticker") if isinstance(ai_ch.get("sticker"), dict) else {}
+        def_em, def_sl, def_ssub, def_pos = default_chapter_stickers[ci % len(default_chapter_stickers)]
+        stk_pos = str(raw_stk.get("position") or def_pos).strip()
+        if stk_pos not in {"top-right", "top-left", "bottom-right"}:
+            stk_pos = def_pos
+        clean_sticker = {
+            "emoji": str(raw_stk.get("emoji") or def_em).strip()[:4] or def_em,
+            "label": str(raw_stk.get("label") or c_title or def_sl).strip()[:24],
+            "sublabel": str(raw_stk.get("sublabel") or def_ssub).strip()[:32],
+            "position": stk_pos,
+        }
         raw_blocks = ai_ch.get("narration_blocks") if isinstance(ai_ch.get("narration_blocks"), list) else []
 
         clean_blocks: list[dict[str, Any]] = []
@@ -763,6 +810,7 @@ def generate_longform_chapter_script(
                 "index": ch_plan["index"],
                 "chapter_title": c_title,
                 "chapter_subtitle": c_sub,
+                "sticker": clean_sticker,
                 "start_sec": float(ch_plan["start_sec"]),
                 "end_sec": float(ch_plan["end_sec"]),
                 "narration_blocks": clean_blocks,
@@ -780,6 +828,7 @@ def generate_longform_chapter_script(
         "video_subtitle": final_sub,
         "outro_title": outro_title,
         "outro_cta": outro_cta,
+        "visual_direction": final_visual_dir,
         "chapters": final_chapters,
     }
 
@@ -1191,11 +1240,16 @@ def render_vlog_remotion_overlays(
     out_dir: Path,
     aspect_ratio: str = "16:9",
     channel_name: str = "VLOG JOURNAL",
+    sticker_density: str = "normal",
 ) -> list[dict[str, Any]]:
-    """Render transparent Remotion WebM overlays for VlogIntro, VlogChapterCards, and VlogOutro."""
+    """Render transparent Remotion WebM overlays for VlogIntro, VlogChapterCards, VlogStickers, and VlogOutro."""
     npx, browser_exe = _find_remotion_tools()
     if not npx or not (DIR_REMOTION / "src" / "Root.tsx").exists():
         return []
+
+    vd = chapter_script.get("visual_direction") if isinstance(chapter_script.get("visual_direction"), dict) else {}
+    title_style = str(vd.get("title_style") or "cinematic_glass")
+    accent_color = str(vd.get("accent_color") or "#F59E0B")
 
     out_dir.mkdir(parents=True, exist_ok=True)
     is_portrait = aspect_ratio != "16:9"
@@ -1264,7 +1318,8 @@ def render_vlog_remotion_overlays(
             "title": chapter_script.get("video_title") or "CHUYẾN ĐI ĐÁNG NHỚ",
             "subtitle": chapter_script.get("video_subtitle") or "",
             "badgeText": f"{channel_name.upper()} · {plan.get('quality_label', '4K')}",
-            "accentColor": "#F59E0B",
+            "accentColor": accent_color,
+            "titleStyle": title_style,
             "durationSec": 4.5,
             "width": ov_w,
             "height": ov_h,
@@ -1274,10 +1329,13 @@ def render_vlog_remotion_overlays(
         0.2,
     )
 
-    # 2. Chapter Cards (3.5s each at start of chapters 1..N; ch1 delayed after Intro at 5.2s)
-    for ch in chapter_script.get("chapters") or []:
+    # 2. Chapter Cards & Contextual Animated Stickers
+    chapters_list = chapter_script.get("chapters") or []
+    stk_mode = str(sticker_density or "normal").strip().lower()
+    for ci, ch in enumerate(chapters_list):
         c_idx = int(ch.get("index") or 1)
         ch_start = float(ch.get("start_sec") or 0.0)
+        ch_end = float(ch.get("end_sec") or total_dur)
         place_t = max(5.2, ch_start + 0.4) if c_idx == 1 else ch_start + 0.3
         if place_t >= total_dur - 8.5:
             continue
@@ -1287,7 +1345,8 @@ def render_vlog_remotion_overlays(
                 "chapterNumber": f"{c_idx:02d}",
                 "title": ch.get("chapter_title") or f"CHẶNG {c_idx}",
                 "subtitle": ch.get("chapter_subtitle") or "",
-                "accentColor": "#34D399",
+                "accentColor": accent_color,
+                "titleStyle": title_style,
                 "durationSec": 3.5,
                 "width": ov_w,
                 "height": ov_h,
@@ -1296,6 +1355,29 @@ def render_vlog_remotion_overlays(
             f"chapter_{c_idx:02d}.webm",
             place_t,
         )
+
+        # Render contextual animated sticker inside the chapter (non-overlapping with ChapterCard/Outro)
+        want_sticker = (stk_mode == "rich") or (stk_mode == "normal" and (ci % 2 == 0 or len(chapters_list) <= 4))
+        stk = ch.get("sticker") if isinstance(ch.get("sticker"), dict) else None
+        if want_sticker and stk and (ch_end - ch_start) >= 12.0:
+            stk_t = max(place_t + 4.2, ch_start + (ch_end - ch_start) * 0.48)
+            if stk_t < min(ch_end - 4.0, total_dur - 10.0):
+                _render_one(
+                    "VlogStickerOverlay",
+                    {
+                        "emoji": str(stk.get("emoji") or "✨"),
+                        "label": str(stk.get("label") or ch.get("chapter_title") or "KHOẢNH KHẮC"),
+                        "sublabel": str(stk.get("sublabel") or ""),
+                        "position": str(stk.get("position") or "top-right"),
+                        "accentColor": accent_color,
+                        "durationSec": 3.5,
+                        "width": ov_w,
+                        "height": ov_h,
+                        "aspectRatio": aspect_ratio,
+                    },
+                    f"sticker_{c_idx:02d}.webm",
+                    stk_t,
+                )
 
     # 3. Outro Card (6.0s at end of video)
     outro_dur = min(6.0, max(3.5, total_dur * 0.1))
@@ -1306,7 +1388,8 @@ def render_vlog_remotion_overlays(
             "subtitle": "Hẹn gặp lại trong những hành trình tiếp theo",
             "ctaText": chapter_script.get("outro_cta") or "",
             "channelName": channel_name,
-            "accentColor": "#F59E0B",
+            "accentColor": accent_color,
+            "titleStyle": title_style,
             "durationSec": outro_dur,
             "width": ov_w,
             "height": ov_h,
@@ -1326,20 +1409,80 @@ def _sec_to_ass_time(sec: float) -> str:
     return f"{h}:{m:02d}:{rem:05.2f}"
 
 
+def _hex_to_ass_bgr(hex_col: str, alpha_hex: str = "00") -> str:
+    h = (hex_col or "").strip().lstrip("#")
+    if len(h) == 6:
+        rr, gg, bb = h[0:2], h[2:4], h[4:6]
+        return f"&H{alpha_hex}{bb.upper()}{gg.upper()}{rr.upper()}"
+    return f"&H{alpha_hex}0BF59E"
+
+
 def srt_to_ass_file(
     srt_path: Path,
     ass_path: Path,
     width: int = 1920,
     height: int = 1080,
     font_name: str = "Baloo 2",
+    subtitle_style: str = "editorial_clean",
+    accent_color: str = "#F59E0B",
 ) -> Path:
-    """Convert SRT subtitles into refined cinematic Vlog ASS subtitles with smooth fade & soft backdrop."""
+    """Convert SRT subtitles into AI-directed Vlog ASS subtitles across 5 distinct visual presets."""
     is_landscape = width > height
     font_size = int(round(height * (0.040 if is_landscape else 0.033)))
     margin_v = int(round(height * (0.056 if is_landscape else 0.165)))
     margin_lr = int(round(width * 0.07))
     outline_px = max(2, int(round(font_size * 0.055)))
     shadow_px = max(2, int(round(font_size * 0.05)))
+
+    presets = {
+        "editorial_clean": {
+            "primary": "&H00F8FAFC",
+            "outline_col": "&H220F172A",
+            "back_col": "&H78000000",
+            "border_style": 1,
+            "outline": outline_px,
+            "shadow": shadow_px,
+            "fad": r"\fad(160,160)\blur0.5",
+        },
+        "warm_vlog_gold": {
+            "primary": "&H00E4F6FF",
+            "outline_col": "&H380A1424",
+            "back_col": "&H82080E18",
+            "border_style": 1,
+            "outline": outline_px + 1,
+            "shadow": shadow_px,
+            "fad": r"\fad(180,180)\blur0.4",
+        },
+        "mint_nature": {
+            "primary": "&H00FFFFFF",
+            "outline_col": "&H30082018",
+            "back_col": "&H75041812",
+            "border_style": 1,
+            "outline": outline_px,
+            "shadow": shadow_px + 1,
+            "fad": r"\fad(150,150)\blur0.5",
+        },
+        "cinema_box": {
+            "primary": "&H00F8FAFC",
+            "outline_col": "&H990B101B",
+            "back_col": "&H990B101B",
+            "border_style": 3,
+            "outline": max(8, int(round(font_size * 0.22))),
+            "shadow": 0,
+            "fad": r"\fad(140,140)",
+        },
+        "highlight_bold": {
+            "primary": "&H00FFFFFF",
+            "outline_col": "&H18000000",
+            "back_col": "&H88000000",
+            "border_style": 1,
+            "outline": outline_px + 1,
+            "shadow": shadow_px + 1,
+            "fad": r"\fad(130,130)\blur0.4",
+        },
+    }
+    st_cfg = presets.get(subtitle_style, presets["editorial_clean"])
+    accent_ass = _hex_to_ass_bgr(accent_color, "00")
 
     header = (
         "[Script Info]\n"
@@ -1352,8 +1495,8 @@ def srt_to_ass_file(
         "Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, "
         "Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, "
         "Alignment, MarginL, MarginR, MarginV, Encoding\n"
-        f"Style: Default,{font_name},{font_size},&H00F8FAFC,&H0067E8F9,&H220F172A,&H78000000,"
-        f"-1,0,0,0,100,100,0.4,0,1,{outline_px},{shadow_px},2,{margin_lr},{margin_lr},{margin_v},1\n\n"
+        f"Style: Default,{font_name},{font_size},{st_cfg['primary']},&H0067E8F9,{st_cfg['outline_col']},{st_cfg['back_col']},"
+        f"-1,0,0,0,100,100,0.4,0,{st_cfg['border_style']},{st_cfg['outline']},{st_cfg['shadow']},2,{margin_lr},{margin_lr},{margin_v},1\n\n"
         "[Events]\n"
         "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"
     )
@@ -1362,7 +1505,7 @@ def srt_to_ass_file(
     if srt_path.exists():
         raw = srt_path.read_text(encoding="utf-8-sig")
         blocks = re.split(r"\r?\n\r?\n+", raw.strip())
-        for blk in blocks:
+        for blk_idx, blk in enumerate(blocks):
             lines = [ln.strip() for ln in blk.splitlines() if ln.strip()]
             if len(lines) < 2:
                 continue
@@ -1377,8 +1520,16 @@ def srt_to_ass_file(
             txt = re.sub(r"\s+", " ", txt)
             if not txt or en <= st:
                 continue
+            if subtitle_style == "highlight_bold" or (blk_idx % 3 == 1 and len(txt.split()) >= 5):
+                words = txt.split()
+                split_at = max(1, len(words) - 2)
+                head_txt = " ".join(words[:split_at])
+                tail_txt = " ".join(words[split_at:])
+                styled_txt = f"{head_txt} {{\\c{accent_ass}&}}{tail_txt}{{\\c{st_cfg['primary']}&}}"
+            else:
+                styled_txt = txt
             events.append(
-                f"Dialogue: 0,{_sec_to_ass_time(st)},{_sec_to_ass_time(en)},Default,,0,0,0,,{{\\fad(160,160)\\blur0.5}}{txt}"
+                f"Dialogue: 0,{_sec_to_ass_time(st)},{_sec_to_ass_time(en)},Default,,0,0,0,,{{{st_cfg['fad']}}}{styled_txt}"
             )
 
     ass_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1458,6 +1609,8 @@ def render_longform_ffmpeg_vlog(
     bgm_volume: float = 0.20,
     keep_clip_audio: bool = False,
     font_name: str = "Baloo 2",
+    subtitle_style: str = "editorial_clean",
+    accent_color: str = "#F59E0B",
     progress_cb: Any = None,
 ) -> dict[str, Any]:
     """Render 4K/2K/1080p Vlog master with Remotion transparent overlays, sidechain ducking, & crisp ASS subs."""
@@ -1527,7 +1680,15 @@ def render_longform_ffmpeg_vlog(
         ass_file = tmp_path / "subs.ass"
         has_ass = False
         if srt_path and srt_path.exists():
-            srt_to_ass_file(srt_path, ass_file, width=target_w, height=target_h, font_name=font_name)
+            srt_to_ass_file(
+                srt_path,
+                ass_file,
+                width=target_w,
+                height=target_h,
+                font_name=font_name,
+                subtitle_style=subtitle_style,
+                accent_color=accent_color,
+            )
             has_ass = True
 
         comp_cmd = [ffmpeg_bin, "-y", "-i", str(merged_video)]
