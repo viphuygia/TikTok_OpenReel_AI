@@ -1215,6 +1215,8 @@ class OneClickPipelineReq(BaseModel):
     quality_preset: str = "auto_source"
     vlog_title: str = ""
     preserve_longform_script: bool = False
+    longform_random_mode: bool = False
+    longform_random_count: int = 1
     mute_voice: bool = False
     hide_subtitles: bool = False
     project_ids: list[str] = Field(default_factory=list)
@@ -5239,15 +5241,49 @@ def _build_fallback_script_from_brief(brief: dict[str, Any], target_dur: float) 
     return tts_script, display_script
 
 
-def _execute_longform_vlog_pipeline(req: OneClickPipelineReq) -> None:
+def _record_render_history(ws_dir: Path, filename: str, meta: dict[str, Any]) -> None:
+    try:
+        ws_dir.mkdir(parents=True, exist_ok=True)
+        hist_p = ws_dir / "render_history.json"
+        hist: dict[str, Any] = {}
+        if hist_p.exists():
+            try:
+                loaded = json.loads(hist_p.read_text(encoding="utf-8-sig"))
+                if isinstance(loaded, dict):
+                    hist = loaded
+            except Exception:
+                hist = {}
+        hist[str(filename)] = {
+            "created_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+            **meta,
+        }
+        hist_p.write_text(json.dumps(hist, ensure_ascii=False, indent=2), encoding="utf-8")
+    except Exception:
+        pass
+
+
+def _remove_render_history(ws_dir: Path, filename: str) -> None:
+    try:
+        hist_p = ws_dir / "render_history.json"
+        if not hist_p.exists():
+            return
+        hist = json.loads(hist_p.read_text(encoding="utf-8-sig"))
+        if isinstance(hist, dict) and filename in hist:
+            hist.pop(filename, None)
+            hist_p.write_text(json.dumps(hist, ensure_ascii=False, indent=2), encoding="utf-8")
+    except Exception:
+        pass
+
+
+def _execute_longform_vlog_pipeline(req: OneClickPipelineReq, variant_tag: str = "") -> list[dict[str, Any]]:
     """Broadcast-Quality 4K Hybrid Remotion + FFmpeg Master Pipeline for Long-Form Vlog (>90s to 20m)."""
     import longform_vlog as _lf
     import style_dna as _sd
     import voice_engine as _ve
 
-    req_aspect = str(getattr(req, "aspect_ratio", "16:9") or "16:9").strip()
-    if req_aspect not in ("9:16", "16:9"):
-        req_aspect = "16:9"
+    raw_ar = str(getattr(req, "aspect_ratio", "16:9") or "16:9").strip()
+    aspect_list = ["16:9", "9:16"] if raw_ar == "both" else ([raw_ar] if raw_ar in ("9:16", "16:9") else ["16:9"])
+    req_aspect = aspect_list[0]
     req_vibe = str(getattr(req, "content_vibe", "outdoor_picnic") or "outdoor_picnic").strip()
     if req_vibe == "learned_dna":
         req_vibe = "outdoor_picnic"
@@ -5429,26 +5465,6 @@ def _execute_longform_vlog_pipeline(req: OneClickPipelineReq) -> None:
             log_line=f"[Bước 3/5] Hoàn tất giọng ({voice_res['preset_label']}), chừa nhịp thở B-roll & {voice_res['srt_lines']} dòng phụ đề.",
         )
 
-    _update_pipeline(
-        current_step=4,
-        percent=72,
-        message=f"Bước 4/5 (Remotion + Master {q_label}): Render Intro, Thẻ Chương, Ending & xuất {req_aspect}...",
-        step_status=(4, "running", f"Remotion + {q_label}"),
-        log_line="[Bước 4/5] Render Motion Graphics bằng Remotion (Intro/Chapter/Outro) và Master bằng FFmpeg...",
-    )
-    ch_prof = api_get_channel_profile()
-    ch_name = str(ch_prof.get("name") or "VLOG JOURNAL").strip()
-    ov_dir = DIR_WORKSPACE / "vlog_overlays"
-    shutil.rmtree(ov_dir, ignore_errors=True)
-    overlays = _lf.render_vlog_remotion_overlays(
-        plan=plan,
-        chapter_script=ch_script,
-        out_dir=ov_dir,
-        aspect_ratio=req_aspect,
-        channel_name=ch_name,
-        sticker_density=str(req.sticker_density or "normal"),
-    )
-
     bgm_name = str(req.bgm_track or "bgm_upbeat_tiktok.wav").strip()
     bgm_file = PROJECT_ROOT / "06_assets_audio" / "bgm" / Path(bgm_name).name
     if not bgm_file.exists():
@@ -5456,50 +5472,163 @@ def _execute_longform_vlog_pipeline(req: OneClickPipelineReq) -> None:
         bgm_file = bgm_cand[0] if bgm_cand else bgm_file
 
     DIR_OUTPUT.mkdir(parents=True, exist_ok=True)
-    out_mp4 = DIR_OUTPUT / f"VLOG_{int(round(actual_target))}s_{req_aspect.replace(':', 'x')}_{q_label.split()[0]}_{int(time.time())}.mp4"
     vd = ch_script.get("visual_direction") if isinstance(ch_script.get("visual_direction"), dict) else {}
+    ch_prof = api_get_channel_profile()
+    ch_name = str(ch_prof.get("name") or "VLOG JOURNAL").strip()
+    exported_list: list[dict[str, Any]] = []
+    last_out_mp4: Path | None = None
+    last_render_res: dict[str, Any] = {}
 
-    render_res = _lf.render_longform_ffmpeg_vlog(
-        plan=plan,
-        voice_wav=(None if req_mute_voice else (FILE_TTS_WAV if FILE_TTS_WAV.exists() else None)),
-        srt_path=(None if (req_hide_subs or req_mute_voice) else (FILE_TTS_SRT if FILE_TTS_SRT.exists() else None)),
-        bgm_path=bgm_file if bgm_file.exists() else None,
-        output_mp4=out_mp4,
-        overlays=overlays,
-        bgm_volume=0.20,
-        subtitle_style=str(vd.get("subtitle_style") or "editorial_clean"),
-        accent_color=str(vd.get("accent_color") or "#F59E0B"),
-        keep_clip_audio=bool(getattr(req, "keep_clip_audio", False)),
-    )
+    for ar_idx, cur_ar in enumerate(aspect_list, start=1):
+        ar_plan = dict(plan)
+        if cur_ar != req_aspect:
+            tw, th, _ = _lf.resolve_target_resolution(ordered, aspect_ratio=cur_ar, quality_preset=req_quality)
+            ar_plan["target_resolution"] = [tw, th]
+            ar_plan["aspect_ratio"] = cur_ar
+        _update_pipeline(
+            current_step=4,
+            percent=72 + (ar_idx - 1) * 12,
+            message=f"Bước 4/5 ({ar_idx}/{len(aspect_list)} · {cur_ar} {q_label}): Render Motion & Master...",
+            step_status=(4, "running", f"{cur_ar} · {q_label}"),
+            log_line=f"[Bước 4/5] Render Motion Graphics & FFmpeg Master cho {cur_ar} {variant_tag}...",
+        )
+        ov_dir = DIR_WORKSPACE / "vlog_overlays"
+        shutil.rmtree(ov_dir, ignore_errors=True)
+        overlays = _lf.render_vlog_remotion_overlays(
+            plan=ar_plan,
+            chapter_script=ch_script,
+            out_dir=ov_dir,
+            aspect_ratio=cur_ar,
+            channel_name=ch_name,
+            sticker_density=str(req.sticker_density or "normal"),
+        )
+        tag_slug = f"_{variant_tag}" if variant_tag else ""
+        out_mp4 = DIR_OUTPUT / f"VLOG_{int(round(actual_target))}s_{cur_ar.replace(':', 'x')}_{q_label.split()[0]}{tag_slug}_{int(time.time())}.mp4"
+        render_res = _lf.render_longform_ffmpeg_vlog(
+            plan=ar_plan,
+            voice_wav=(None if req_mute_voice else (FILE_TTS_WAV if FILE_TTS_WAV.exists() else None)),
+            srt_path=(None if (req_hide_subs or req_mute_voice) else (FILE_TTS_SRT if FILE_TTS_SRT.exists() else None)),
+            bgm_path=bgm_file if bgm_file.exists() else None,
+            output_mp4=out_mp4,
+            overlays=overlays,
+            bgm_volume=0.20,
+            subtitle_style=str(vd.get("subtitle_style") or "editorial_clean"),
+            accent_color=str(vd.get("accent_color") or "#F59E0B"),
+            keep_clip_audio=bool(getattr(req, "keep_clip_audio", False)),
+        )
+        _record_render_history(
+            DIR_WORKSPACE,
+            out_mp4.name,
+            {
+                "mode": "long_random" if variant_tag else "long_vlog",
+                "variant": variant_tag or "standard",
+                "engine": "longform_remotion_4k",
+                "aspect_ratio": cur_ar,
+                "quality": q_label,
+                "duration_sec": render_res.get("duration_sec"),
+                "voice_preset": "muted" if req_mute_voice else str(getattr(req, "voice_preset", "") or "edge_hoaimy_koc"),
+                "bgm_track": bgm_file.name if bgm_file.exists() else "",
+                "title": str(ch_script.get("video_title") or req_vlog_title or ""),
+                "title_style": str(vd.get("title_style") or "cinematic_glass"),
+                "subtitle_style": str(vd.get("subtitle_style") or "editorial_clean"),
+                "accent_color": str(vd.get("accent_color") or "#F59E0B"),
+                "sticker_density": str(req.sticker_density or "normal"),
+                "mute_voice": req_mute_voice,
+                "hide_subtitles": req_hide_subs,
+                "keep_clip_audio": bool(getattr(req, "keep_clip_audio", False)),
+                "product_note": str(req.product_note or "")[:240],
+                "chapters_summary": [
+                    f"C{c.get('index')}: {c.get('chapter_title')}" for c in (ch_script.get("chapters") or [])
+                ],
+            },
+        )
+        exported_list.append({"filename": out_mp4.name, "aspect_ratio": cur_ar, "duration_sec": render_res.get("duration_sec")})
+        last_out_mp4 = out_mp4
+        last_render_res = render_res
+
     _update_pipeline(
-        step_status=(4, "done", f"{q_label} · {render_res['overlays_count']} Motion OK"),
+        step_status=(4, "done", f"{q_label} · {len(exported_list)} MP4 OK"),
         percent=94,
     )
+    out_names = ", ".join(x["filename"] for x in exported_list)
     _update_pipeline(
         running=False,
         current_step=5,
         percent=100,
-        message=f"Hoàn tất Vlog {q_label} ({render_res['duration_sec']:.0f}s · {out_mp4.name})!",
-        step_status=(5, "done", f"{q_label} · {render_res['duration_sec']:.0f}s"),
+        message=f"Hoàn tất Vlog {q_label} ({len(exported_list)} MP4 · {out_names})!",
+        step_status=(5, "done", f"{q_label} · {len(exported_list)} MP4"),
         result={
             "ok": True,
-            "output_file": str(out_mp4),
-            "output_url": f"/files/05_output/{out_mp4.name}",
-            "duration_sec": render_res["duration_sec"],
-            "aspect_ratio": req_aspect,
+            "output_file": str(last_out_mp4) if last_out_mp4 else "",
+            "output_url": f"/files/05_output/{last_out_mp4.name}" if last_out_mp4 else "",
+            "exported": exported_list,
+            "duration_sec": last_render_res.get("duration_sec", actual_target),
+            "aspect_ratio": raw_ar,
             "quality_label": q_label,
             "ai_source": ai_src_lbl,
             "segments_count": n_shots,
             "chapters_count": n_chaps,
-            "overlays_count": render_res["overlays_count"],
+            "overlays_count": last_render_res.get("overlays_count", 0),
         },
-        log_line=f"[HOÀN TẤT] Xuất Vlog {q_label} ({n_shots} cảnh, {n_chaps} chương, {render_res['overlays_count']} Remotion motion): {out_mp4.name}",
+        log_line=f"[HOÀN TẤT] Xuất Vlog {q_label} ({n_shots} cảnh, {n_chaps} chương): {out_names}",
     )
+    return exported_list
 
 
 def _run_single_project_pipeline(req: OneClickPipelineReq) -> None:
     try:
         if getattr(req, "pipeline_category", "short_tiktok") == "long_vlog" or float(req.target_duration_sec or 0) > 90.0:
+            if bool(getattr(req, "longform_random_mode", False)):
+                import random as _rnd
+                from audio_bgm import ensure_royalty_free_bgm_library
+
+                n_rand = max(1, min(5, int(getattr(req, "longform_random_count", 1) or 1)))
+                all_bgms = ensure_royalty_free_bgm_library()
+                vlog_bgms = [
+                    b["id"]
+                    for b in all_bgms
+                    if any(tag in b["label"] for tag in ("[Vlog]", "[Du Lịch]", "[Piano]", "[Lo-Fi]", "[Lifestyle]", "[Jazz]", "[Ambient]", "Chill", "Acoustic"))
+                ] or [b["id"] for b in all_bgms]
+                _rnd.shuffle(vlog_bgms)
+                angles = [
+                    "Kể chuyện nhật ký trải nghiệm chân thực",
+                    "Góc nhìn thư giãn, chậm rãi & cảm xúc",
+                    "Khám phá chi tiết từng khoảnh khắc đáng nhớ",
+                    "Phong cách điện ảnh nhẹ nhàng & sâu lắng",
+                    "Hành trình cuối tuần đầy năng lượng tích cực",
+                ]
+                all_exported: list[dict[str, Any]] = []
+                for v_idx in range(1, n_rand + 1):
+                    pick_bgm = vlog_bgms[(v_idx - 1) % len(vlog_bgms)]
+                    pick_stk = "normal" if v_idx % 2 == 1 else "rich"
+                    angle_hint = angles[(v_idx - 1) % len(angles)]
+                    base_note = str(req.product_note or "").strip()
+                    rand_note = f"{base_note}\n[Đạo diễn biến thể #{v_idx}: {angle_hint}]".strip()
+                    rand_req = req.model_copy(
+                        update={
+                            "preserve_longform_script": False,
+                            "vlog_title": "",
+                            "bgm_track": pick_bgm,
+                            "sticker_density": pick_stk,
+                            "product_note": rand_note,
+                        }
+                    )
+                    _update_pipeline(
+                        running=True,
+                        log_line=f"🎲 [Random Vlog #{v_idx}/{n_rand}] BGM={pick_bgm}, Sticker={pick_stk}, Voice={req.voice_preset}",
+                    )
+                    res_list = _execute_longform_vlog_pipeline(rand_req, variant_tag=f"R{v_idx}")
+                    all_exported.extend(res_list)
+                names_joined = ", ".join(x["filename"] for x in all_exported)
+                _update_pipeline(
+                    running=False,
+                    current_step=5,
+                    current_tab="tab6",
+                    percent=100,
+                    message=f"🎲 Hoàn tất {len(all_exported)} Video Random: {names_joined}",
+                    step_status=(5, "done", f"Xong {len(all_exported)} MP4 Random"),
+                )
+                return
             _execute_longform_vlog_pipeline(req)
             return
 
@@ -5949,6 +6078,25 @@ def _run_single_project_pipeline(req: OneClickPipelineReq) -> None:
                         }
                     )
                     r_res = _render_by_engine(slot_engine)
+                    _record_render_history(
+                        DIR_WORKSPACE,
+                        str(r_res.get("output_filename") or ""),
+                        {
+                            "mode": "short_batch",
+                            "engine": slot_engine,
+                            "aspect_ratio": req_aspect,
+                            "duration_sec": r_res.get("duration_sec"),
+                            "voice_preset": "muted" if bool(getattr(req, "mute_voice", False)) else str(slot_preset["id"] if slot_preset else req.voice_preset),
+                            "bgm_track": mix_prof.get("bgm_track"),
+                            "title": opt_title,
+                            "visual_theme": mix_prof.get("visual_theme"),
+                            "badge_style": mix_prof.get("badge_style"),
+                            "sticker_density": req.sticker_density or "normal",
+                            "mute_voice": bool(getattr(req, "mute_voice", False)),
+                            "hide_subtitles": bool(getattr(req, "hide_subtitles", False)),
+                            "product_note": str(req.product_note or "")[:240],
+                        },
+                    )
                     rendered_batch.append(
                         {
                             "option_id": opt_id,
@@ -6135,6 +6283,25 @@ def _run_single_project_pipeline(req: OneClickPipelineReq) -> None:
         render_res = _render_by_engine(req.render_engine or "remotion_classic")
         out_fname = str(render_res.get("output_filename") or "final_tiktok.mp4")
         sel_meta = render_res.get("selected_script") or {}
+        _record_render_history(
+            DIR_WORKSPACE,
+            out_fname,
+            {
+                "mode": "short_tiktok",
+                "engine": single_engine,
+                "aspect_ratio": req_aspect,
+                "duration_sec": render_res.get("duration_sec"),
+                "voice_preset": "muted" if bool(getattr(req, "mute_voice", False)) else str(getattr(req, "voice_preset", "") or "random_neural"),
+                "bgm_track": req.bgm_track or "bgm_upbeat_tiktok.wav",
+                "title": str(sel_meta.get("label") or ""),
+                "visual_theme": req.visual_theme or "auto",
+                "badge_style": req.badge_style,
+                "sticker_density": req.sticker_density or "normal",
+                "mute_voice": bool(getattr(req, "mute_voice", False)),
+                "hide_subtitles": bool(getattr(req, "hide_subtitles", False)),
+                "product_note": str(req.product_note or "")[:240],
+            },
+        )
         frames = _collect_remotion_preview_frames()
         _update_pipeline(
             running=False,
@@ -6584,6 +6751,15 @@ def api_list_project_outputs(project_id: str = Query("all")):
             key=lambda x: x.stat().st_mtime,
             reverse=True,
         )
+        hist_file = p_root / "04_workspace" / "render_history.json"
+        hist_map: dict[str, Any] = {}
+        if hist_file.exists():
+            try:
+                loaded_h = json.loads(hist_file.read_text(encoding="utf-8-sig"))
+                if isinstance(loaded_h, dict):
+                    hist_map = loaded_h
+            except Exception:
+                hist_map = {}
         for mp4 in mp4s:
             meta = probe_media(mp4)
             stat = mp4.stat()
@@ -6600,6 +6776,7 @@ def api_list_project_outputs(project_id: str = Query("all")):
                     "width": meta.get("width", 1080),
                     "height": meta.get("height", 1920),
                     "mtime": int(stat.st_mtime),
+                    "render_meta": hist_map.get(mp4.name),
                 }
             )
     outputs.sort(key=lambda x: x["mtime"], reverse=True)
@@ -6660,4 +6837,5 @@ def api_delete_project_output(payload: dict[str, Any]):
     if not fp.is_relative_to(p_root) or not fp.exists() or not fp.is_file():
         raise HTTPException(status_code=404, detail="Không tìm thấy file để xóa.")
     fp.unlink()
+    _remove_render_history(p_root / "04_workspace", name)
     return {"ok": True, "deleted": name, "project_id": pid}

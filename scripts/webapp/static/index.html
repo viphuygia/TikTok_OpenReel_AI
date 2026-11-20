@@ -301,10 +301,26 @@
                 <label class="block text-[11px] text-amber-200 font-medium mb-1">📝 AI Brief / Nội dung &amp; Bối cảnh Vlog (Để AI viết sát cảnh &amp; đúng ý)</label>
                 <textarea id="longform-topic-note" rows="4" placeholder="Mô tả chi tiết chuyến đi / bối cảnh, địa điểm, nhân vật, cảm xúc từng chặng, lưu ý từ cấm hoặc thông điệp muốn nhấn mạnh..." class="w-full rounded-lg bg-zinc-950 border border-zinc-700 px-3 py-2 text-xs text-zinc-100 placeholder-zinc-500 leading-relaxed"></textarea>
               </div>
-              <label class="flex items-center gap-2 text-cyan-200 cursor-pointer">
+              <label id="wrap-longform-preserve-script" class="flex items-center gap-2 text-cyan-200 cursor-pointer">
                 <input id="chk-longform-preserve-script" type="checkbox" class="rounded bg-zinc-800 border-cyan-500 text-cyan-500" />
                 <span>🔒 Giữ nguyên Kịch bản đã sửa ở Tab 2 (Bỏ qua AI viết lại đè lên)</span>
               </label>
+              <div class="rounded-lg border border-purple-500/35 bg-purple-950/20 p-2.5 space-y-2">
+                <label class="flex items-center gap-2 text-purple-200 font-medium cursor-pointer">
+                  <input id="chk-longform-random" type="checkbox" onchange="toggleLongformRandomUi()" class="rounded bg-zinc-800 border-purple-500 text-purple-500" />
+                  <span>🎲 Random (AI Đạo diễn toàn bộ: Giữ giọng cố định, tự viết mới kịch bản &amp; phối Style/Nhạc nền)</span>
+                </label>
+                <div id="wrap-longform-random-count" class="hidden flex items-center gap-2.5 pl-6">
+                  <span class="text-[11px] text-purple-200">Số lượng video Random:</span>
+                  <select id="longform-random-count" class="rounded-lg bg-zinc-950 border border-purple-500/40 px-2.5 py-1 text-xs text-zinc-100">
+                    <option value="1">1 video</option>
+                    <option value="2" selected>2 video (Tuần tự)</option>
+                    <option value="3">3 video (Tuần tự)</option>
+                    <option value="4">4 video (Tuần tự)</option>
+                    <option value="5">5 video (Tuần tự)</option>
+                  </select>
+                </div>
+              </div>
             </div>
           </div>
           <div id="longform-multi-proj-box" class="hidden space-y-2.5"></div>
@@ -386,6 +402,7 @@
               <select id="auto-aspect-ratio" class="w-full rounded-lg bg-zinc-950 border border-zinc-700 px-2.5 py-2 text-xs text-zinc-100">
                 <option value="9:16" selected>📱 9:16 Dọc (TikTok / Reels)</option>
                 <option value="16:9">🖥️ 16:9 Ngang (YouTube / Vlog)</option>
+                <option id="opt-ar-both" value="both" class="hidden">🔄 Cả 2: 16:9 + 9:16 (Tuần tự 1 lần bấm)</option>
               </select>
             </div>
             <div class="min-w-0">
@@ -4515,6 +4532,11 @@
       document.getElementById('wrap-auto-icon-density')?.classList.toggle('hidden', isLong);
       document.getElementById('wrap-auto-badge-theme')?.classList.toggle('hidden', isLong);
       document.getElementById('wrap-auto-flash-shake')?.classList.toggle('hidden', isLong);
+      document.getElementById('opt-ar-both')?.classList.toggle('hidden', !isLong);
+      if (!isLong) {
+        const arEl = document.getElementById('auto-aspect-ratio');
+        if (arEl && arEl.value === 'both') arEl.value = '9:16';
+      }
 
       const sec3Title = document.getElementById('auto-sec3-title');
       if (sec3Title) {
@@ -4827,7 +4849,9 @@
       const content_vibe = document.getElementById('auto-content-vibe')?.value || 'learned_dna';
       const quality_preset = isLongVlog ? (document.getElementById('longform-quality')?.value || 'auto_source') : 'auto_source';
       const vlog_title = isLongVlog ? (document.getElementById('longform-title')?.value?.trim() || '') : '';
-      const preserve_longform_script = isLongVlog ? !!document.getElementById('chk-longform-preserve-script')?.checked : false;
+      const longform_random_mode = isLongVlog ? !!document.getElementById('chk-longform-random')?.checked : false;
+      const longform_random_count = isLongVlog ? (parseInt(document.getElementById('longform-random-count')?.value || '1', 10) || 1) : 1;
+      const preserve_longform_script = (isLongVlog && !longform_random_mode) ? !!document.getElementById('chk-longform-preserve-script')?.checked : false;
       const mute_voice = !!document.getElementById('chk-mute-voice')?.checked;
       const hide_subtitles = !!document.getElementById('chk-hide-subtitles')?.checked;
       const project_configs = {};
@@ -4895,6 +4919,8 @@
             quality_preset,
             vlog_title,
             preserve_longform_script,
+            longform_random_mode,
+            longform_random_count,
             project_ids: projectIds,
             project_configs,
             sync: false
@@ -5297,6 +5323,34 @@
     // Tab 6: Output Gallery per Project
     state.galleryProjectId = 'all';
 
+    function toggleLongformRandomUi() {
+      const on = !!document.getElementById('chk-longform-random')?.checked;
+      document.getElementById('wrap-longform-random-count')?.classList.toggle('hidden', !on);
+      document.getElementById('wrap-longform-preserve-script')?.classList.toggle('hidden', on);
+      if (on) {
+        const ps = document.getElementById('chk-longform-preserve-script');
+        if (ps) ps.checked = false;
+      }
+    }
+
+    function showOutputRenderMeta(encJson) {
+      try {
+        const m = JSON.parse(decodeURIComponent(encJson));
+        const lines = [
+          `📅 Tạo lúc: ${m.created_at || ''}`,
+          `🎬 Chế độ: ${m.mode || ''} (${m.aspect_ratio || ''} · ${m.quality || m.engine || ''})`,
+          `🎙️ Giọng đọc: ${m.voice_preset || ''}${m.mute_voice ? ' (Đã tắt)' : ''}`,
+          `🎵 Nhạc nền: ${m.bgm_track || 'Mặc định'}`,
+          `🎨 Style: ${m.title_style || m.visual_theme || ''} · Phụ đề: ${m.subtitle_style || (m.hide_subtitles ? 'Đã ẩn' : 'Mặc định')}`,
+          m.sticker_density ? `✨ Sticker: ${m.sticker_density}` : '',
+          m.title ? `🏷️ Tiêu đề: ${m.title}` : '',
+          Array.isArray(m.chapters_summary) && m.chapters_summary.length ? `📑 Chương:\n  - ${m.chapters_summary.join('\n  - ')}` : '',
+          m.product_note ? `📝 Brief: ${m.product_note}` : '',
+        ].filter(Boolean).join('\n');
+        alert(lines);
+      } catch (e) {}
+    }
+
     async function loadOutputGallery(projectId = state.galleryProjectId || 'all') {
       state.galleryProjectId = projectId;
       try {
@@ -5343,6 +5397,10 @@
                     <span class="mono text-[11px] text-zinc-400 shrink-0">${o.duration_sec}s · ${o.size_mb} MB</span>
                   </div>
                   <div class="font-medium text-zinc-100 truncate" title="${escapeHtml(o.name)}">${escapeHtml(o.name)}</div>
+                  ${o.render_meta ? `<div class="flex items-center justify-between gap-1.5 text-[10px] text-zinc-400 bg-zinc-950/80 border border-zinc-800 rounded-lg px-2 py-1">
+                    <span class="truncate">🎙️ ${escapeHtml(o.render_meta.voice_preset || '')} · 🎵 ${escapeHtml((o.render_meta.bgm_track || '').replace('bgm_', '').replace('.wav', ''))}</span>
+                    <button type="button" onclick="showOutputRenderMeta('${encodeURIComponent(JSON.stringify(o.render_meta))}')" class="shrink-0 text-cyan-300 hover:text-cyan-200 font-semibold">📋 Cấu hình</button>
+                  </div>` : ''}
                   <div class="grid grid-cols-2 gap-1.5">
                     <button type="button" onclick="triggerFileDownload('${escapeHtml(o.rel_path)}', '${escapeHtml(o.project_id)}')" class="py-1.5 px-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold">⬇️ Tải MP4</button>
                     <button type="button" onclick="shareOrSaveVideoMobile('${escapeHtml(o.rel_path)}', '${escapeHtml(o.name)}', '${escapeHtml(o.project_id)}')" class="py-1.5 px-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold">📲 Lưu iPhone</button>
