@@ -470,6 +470,14 @@
               <input id="chk-auto-switch-tab" type="checkbox" checked class="rounded bg-zinc-800 border-zinc-600 text-indigo-500" />
               <span>Tự chuyển Tab theo tiến độ</span>
             </label>
+            <label class="flex items-center gap-2 text-amber-300 cursor-pointer">
+              <input id="chk-mute-voice" type="checkbox" class="rounded bg-zinc-800 border-amber-500 text-amber-500" />
+              <span>🔇 Ẩn giọng đọc AI (Chỉ nhạc nền)</span>
+            </label>
+            <label class="flex items-center gap-2 text-rose-300 cursor-pointer">
+              <input id="chk-hide-subtitles" type="checkbox" class="rounded bg-zinc-800 border-rose-500 text-rose-500" />
+              <span>🚫 Ẩn phụ đề (Video sạch đăng Story)</span>
+            </label>
             <label id="wrap-auto-flash-shake" class="flex items-center gap-2 text-cyan-300 cursor-pointer sm:col-span-2">
               <input id="chk-disable-flash-shake" type="checkbox" checked class="rounded bg-zinc-800 border-cyan-500 text-cyan-500" />
               <span>🛡️ Chống chớp &amp; Chống rung (Tắt chớp trắng Flash, Rung camera &amp; Motion Trail)</span>
@@ -4286,7 +4294,6 @@
           : 'text-left rounded-xl border border-zinc-700 bg-zinc-900/70 p-3 transition';
       }
       document.getElementById('longform-config-box')?.classList.toggle('hidden', !isLong);
-      document.getElementById('shortform-projects-box')?.classList.toggle('hidden', isLong);
       document.getElementById('shortform-engine-box')?.classList.toggle('hidden', isLong);
       document.getElementById('shortform-batch-box')?.classList.toggle('hidden', isLong);
       document.getElementById('wrap-preserve-clips')?.classList.toggle('hidden', isLong);
@@ -4422,6 +4429,8 @@
       const content_vibe = document.getElementById('auto-content-vibe')?.value || 'learned_dna';
       const quality_preset = isLongVlog ? (document.getElementById('longform-quality')?.value || 'auto_source') : 'auto_source';
       const vlog_title = isLongVlog ? (document.getElementById('longform-title')?.value?.trim() || '') : '';
+      const mute_voice = !!document.getElementById('chk-mute-voice')?.checked;
+      const hide_subtitles = !!document.getElementById('chk-hide-subtitles')?.checked;
       _lastAutoTab = null;
       try {
         const p = await api('/api/pipeline/run-all', {
@@ -4448,6 +4457,8 @@
             transition_level,
             icon_density,
             sticker_density,
+            mute_voice,
+            hide_subtitles,
             disable_flash_shake,
             mix_engines,
             tts_engine,

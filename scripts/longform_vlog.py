@@ -1399,7 +1399,13 @@ def render_vlog_remotion_overlays(
     except Exception:
         pass
 
-    def _render_one(comp_id: str, props_dict: dict[str, Any], filename: str, start_sec: float) -> None:
+    def _render_one(
+        comp_id: str,
+        props_dict: dict[str, Any],
+        filename: str,
+        start_sec: float,
+        dur_sec: float = 4.0,
+    ) -> None:
         props_file = out_dir / f"{Path(filename).stem}_props.json"
         out_webm = out_dir / filename
         props_file.write_text(json.dumps(props_dict, ensure_ascii=False), encoding="utf-8")
@@ -1428,7 +1434,13 @@ def render_vlog_remotion_overlays(
                 timeout=180,
             )
             if proc.returncode == 0 and out_webm.exists() and out_webm.stat().st_size > 2000:
-                overlays.append({"path": out_webm, "start_sec": round(max(0.0, start_sec), 2)})
+                overlays.append(
+                    {
+                        "path": out_webm,
+                        "start_sec": round(max(0.0, start_sec), 2),
+                        "duration_sec": round(max(0.5, dur_sec), 2),
+                    }
+                )
             else:
                 err_tail = ((proc.stderr or "") + "\n" + (proc.stdout or "")).strip()[-300:]
                 print(f"[LongForm Remotion WARN] {comp_id} failed ({proc.returncode}): {err_tail}")
@@ -1451,6 +1463,7 @@ def render_vlog_remotion_overlays(
         },
         "intro_overlay.webm",
         0.2,
+        4.5,
     )
 
     # 2. Chapter Cards & Contextual Animated Stickers
@@ -1478,30 +1491,33 @@ def render_vlog_remotion_overlays(
             },
             f"chapter_{c_idx:02d}.webm",
             place_t,
+            3.5,
         )
 
-        # Render contextual animated sticker inside the chapter (non-overlapping with ChapterCard/Outro)
-        want_sticker = (stk_mode == "rich") or (stk_mode == "normal" and (ci % 2 == 0 or len(chapters_list) <= 4))
+        # Render contextual animated sticker(s) inside EVERY chapter (4.5s each)
         stk = ch.get("sticker") if isinstance(ch.get("sticker"), dict) else None
-        if want_sticker and stk and (ch_end - ch_start) >= 12.0:
-            stk_t = max(place_t + 4.2, ch_start + (ch_end - ch_start) * 0.48)
-            if stk_t < min(ch_end - 4.0, total_dur - 10.0):
-                _render_one(
-                    "VlogStickerOverlay",
-                    {
-                        "emoji": str(stk.get("emoji") or "✨"),
-                        "label": str(stk.get("label") or ch.get("chapter_title") or "KHOẢNH KHẮC"),
-                        "sublabel": str(stk.get("sublabel") or ""),
-                        "position": str(stk.get("position") or "top-right"),
-                        "accentColor": accent_color,
-                        "durationSec": 3.5,
-                        "width": ov_w,
-                        "height": ov_h,
-                        "aspectRatio": aspect_ratio,
-                    },
-                    f"sticker_{c_idx:02d}.webm",
-                    stk_t,
-                )
+        if stk_mode != "off" and stk and (ch_end - ch_start) >= 10.0:
+            stk_ratios = [0.32, 0.70] if stk_mode == "rich" else [0.45]
+            for s_i, s_rat in enumerate(stk_ratios):
+                stk_t = max(place_t + 3.8 + s_i * 5.2, ch_start + (ch_end - ch_start) * s_rat)
+                if stk_t < min(ch_end - 1.5, total_dur - 5.5):
+                    _render_one(
+                        "VlogStickerOverlay",
+                        {
+                            "emoji": str(stk.get("emoji") or "✨"),
+                            "label": str(stk.get("label") or ch.get("chapter_title") or "KHOẢNH KHẮC"),
+                            "sublabel": str(stk.get("sublabel") or ""),
+                            "position": str(stk.get("position") or ("top-right" if (c_idx + s_i) % 2 == 1 else "top-left")),
+                            "accentColor": accent_color,
+                            "durationSec": 4.5,
+                            "width": ov_w,
+                            "height": ov_h,
+                            "aspectRatio": aspect_ratio,
+                        },
+                        f"sticker_{c_idx:02d}_{s_i + 1}.webm",
+                        stk_t,
+                        4.5,
+                    )
 
     # 3. Outro Card (6.0s at end of video)
     outro_dur = min(6.0, max(3.5, total_dur * 0.1))
@@ -1521,6 +1537,7 @@ def render_vlog_remotion_overlays(
         },
         "outro_overlay.webm",
         max(0.0, total_dur - outro_dur),
+        outro_dur,
     )
     return overlays
 
@@ -1822,11 +1839,12 @@ def render_longform_ffmpeg_vlog(
             ov for ov in (overlays or [])
             if isinstance(ov, dict) and ov.get("path") and Path(ov["path"]).exists()
         ]
-        ov_inputs: list[tuple[int, float]] = []
+        ov_inputs: list[tuple[int, float, float]] = []
         for ov in valid_overlays:
             st_sec = max(0.0, float(ov.get("start_sec") or 0.0))
+            dur_ov = float(ov.get("duration_sec") or 0.0)
             comp_cmd.extend(["-itsoffset", f"{st_sec:.3f}", "-c:v", "libvpx-vp9", "-i", str(ov["path"])])
-            ov_inputs.append((next_idx, st_sec))
+            ov_inputs.append((next_idx, st_sec, dur_ov))
             next_idx += 1
 
         has_voice = bool(voice_wav and voice_wav.exists())
@@ -1849,11 +1867,12 @@ def render_longform_ffmpeg_vlog(
             filter_parts.append(f"[{cur_v}]ass='{ass_esc}'[vsub]")
             cur_v = "vsub"
 
-        for oi, (in_idx, _st_sec) in enumerate(ov_inputs):
+        for oi, (in_idx, st_sec, dur_ov) in enumerate(ov_inputs):
             ov_lbl = f"ov{oi}"
             out_lbl = f"vov{oi}"
             filter_parts.append(f"[{in_idx}:v]scale={target_w}:{target_h}:flags=lanczos,format=yuva420p[{ov_lbl}]")
-            filter_parts.append(f"[{cur_v}][{ov_lbl}]overlay=0:0:eof_action=pass:shortest=0[{out_lbl}]")
+            en_expr = f":enable='between(t,{st_sec:.3f},{st_sec + dur_ov + 0.1:.3f})'" if dur_ov > 0.0 else ""
+            filter_parts.append(f"[{cur_v}][{ov_lbl}]overlay=0:0:eof_action=pass:shortest=0{en_expr}[{out_lbl}]")
             cur_v = out_lbl
 
         v_map = f"[{cur_v}]" if cur_v != "0:v" else "0:v"

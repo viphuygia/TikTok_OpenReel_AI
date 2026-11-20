@@ -1214,8 +1214,8 @@ class OneClickPipelineReq(BaseModel):
     auto_fit_duration: bool = False
     quality_preset: str = "auto_source"
     vlog_title: str = ""
-    keep_clip_audio: bool = False
-    auto_fit_duration: bool = False
+    mute_voice: bool = False
+    hide_subtitles: bool = False
     project_ids: list[str] = Field(default_factory=list)
     sync: bool = False
 
@@ -5220,22 +5220,31 @@ def _execute_longform_vlog_pipeline(req: OneClickPipelineReq) -> None:
         step_status=(3, "running", "Giọng + Nhịp nghỉ 4-7s"),
         log_line="[Bước 3/5] Tạo 1 giọng đọc xuyên suốt theo mốc chương & đồng bộ phụ đề SRT...",
     )
-    sync_voice_clone_files()
-    vp = str(getattr(req, "voice_preset", "") or "edge_hoaimy_koc").strip()
-    if vp.startswith("random_"):
-        vp = _ve.pick_random_voice_presets(vp, count=1)[0]["id"]
-    voice_res = _lf.build_longform_voice_and_srt(
-        chapter_script=ch_script,
-        plan=plan,
-        out_wav_path=FILE_TTS_WAV,
-        out_srt_path=FILE_TTS_SRT,
-        voice_preset=vp,
-    )
-    _update_pipeline(
-        step_status=(3, "done", f"{voice_res['placed_blocks']} đoạn · {voice_res['srt_lines']} dòng SRT"),
-        percent=66,
-        log_line=f"[Bước 3/5] Hoàn tất giọng ({voice_res['preset_label']}), chừa nhịp thở B-roll & {voice_res['srt_lines']} dòng phụ đề.",
-    )
+    req_mute_voice = bool(getattr(req, "mute_voice", False))
+    req_hide_subs = bool(getattr(req, "hide_subtitles", False))
+    if req_mute_voice:
+        _update_pipeline(
+            step_status=(3, "done", "Đã tắt giọng đọc (Story)"),
+            percent=66,
+            log_line="[Bước 3/5] Đang bật Ẩn giọng đọc AI — giữ nhạc nền & hiệu ứng.",
+        )
+    else:
+        sync_voice_clone_files()
+        vp = str(getattr(req, "voice_preset", "") or "edge_hoaimy_koc").strip()
+        if vp.startswith("random_"):
+            vp = _ve.pick_random_voice_presets(vp, count=1)[0]["id"]
+        voice_res = _lf.build_longform_voice_and_srt(
+            chapter_script=ch_script,
+            plan=plan,
+            out_wav_path=FILE_TTS_WAV,
+            out_srt_path=FILE_TTS_SRT,
+            voice_preset=vp,
+        )
+        _update_pipeline(
+            step_status=(3, "done", f"{voice_res['placed_blocks']} đoạn · {voice_res['srt_lines']} dòng SRT"),
+            percent=66,
+            log_line=f"[Bước 3/5] Hoàn tất giọng ({voice_res['preset_label']}), chừa nhịp thở B-roll & {voice_res['srt_lines']} dòng phụ đề.",
+        )
 
     _update_pipeline(
         current_step=4,
@@ -5269,8 +5278,8 @@ def _execute_longform_vlog_pipeline(req: OneClickPipelineReq) -> None:
 
     render_res = _lf.render_longform_ffmpeg_vlog(
         plan=plan,
-        voice_wav=FILE_TTS_WAV if FILE_TTS_WAV.exists() else None,
-        srt_path=FILE_TTS_SRT if FILE_TTS_SRT.exists() else None,
+        voice_wav=(None if req_mute_voice else (FILE_TTS_WAV if FILE_TTS_WAV.exists() else None)),
+        srt_path=(None if (req_hide_subs or req_mute_voice) else (FILE_TTS_SRT if FILE_TTS_SRT.exists() else None)),
         bgm_path=bgm_file if bgm_file.exists() else None,
         output_mp4=out_mp4,
         overlays=overlays,
@@ -5643,11 +5652,14 @@ def _run_single_project_pipeline(req: OneClickPipelineReq) -> None:
                         tts_args.extend(["--ref-audio", vp["wav_path"]])
                         if vp.get("ref_text_path"):
                             tts_args.extend(["--ref-text", vp["ref_text_path"]])
-                    tts_res = run_python_script("scripts/voice_engine.py", tts_args)
-                    if not tts_res.get("ok"):
-                        raise RuntimeError(f"voice_engine.py lỗi ở {opt_id}: {tts_res.get('log', '')[-300:]}")
-                    rep = repair_subtitles_and_beats()
-                    vb_total = float((rep.get("voice_beats") or {}).get("total_duration_sec") or req.target_duration_sec)
+                    if bool(getattr(req, "mute_voice", False)):
+                        vb_total = float(req.target_duration_sec)
+                    else:
+                        tts_res = run_python_script("scripts/voice_engine.py", tts_args)
+                        if not tts_res.get("ok"):
+                            raise RuntimeError(f"voice_engine.py lỗi ở {opt_id}: {tts_res.get('log', '')[-300:]}")
+                        rep = repair_subtitles_and_beats()
+                        vb_total = float((rep.get("voice_beats") or {}).get("total_duration_sec") or req.target_duration_sec)
 
                     _update_pipeline(
                         current_step=4,
@@ -5748,6 +5760,8 @@ def _run_single_project_pipeline(req: OneClickPipelineReq) -> None:
                             "sfx_level": getattr(req, "sfx_level", "subtle") or "subtle",
                             "aspect_ratio": req_aspect,
                             "content_vibe": req_vibe,
+                            "mute_voice": bool(getattr(req, "mute_voice", False)),
+                            "hide_subtitles": bool(getattr(req, "hide_subtitles", False)),
                             **({"wildcard_spec": slot_wildcard} if slot_wildcard else {}),
                         }
                     )
@@ -5789,61 +5803,69 @@ def _run_single_project_pipeline(req: OneClickPipelineReq) -> None:
             step_status=(3, "running", f"F5-TTS -> {req.target_duration_sec:.0f}s"),
             log_line=f"[Bước 3/5] Tạo giọng đọc chuẩn {req.target_duration_sec:.0f}s & đồng bộ phụ đề...",
         )
-        existing_wav_dur = probe_media(FILE_TTS_WAV).get("duration_sec", 0.0) if FILE_TTS_WAV.exists() else 0.0
-        duration_mismatch = abs(existing_wav_dur - req.target_duration_sec) > 1.8
-        script_newer = (
-            FILE_SCRIPT.exists()
-            and FILE_TTS_WAV.exists()
-            and FILE_SCRIPT.stat().st_mtime > FILE_TTS_WAV.stat().st_mtime + 1.0
-        )
-        if req.force_tts or not FILE_TTS_WAV.exists() or not FILE_VOICE_BEATS.exists() or script_newer or duration_mismatch:
-            sync_voice_clone_files()
-            import voice_engine as _ve
-            single_vp = str(getattr(req, "voice_preset", "") or "").strip()
-            if single_vp.startswith("random_"):
-                single_vp = _ve.pick_random_voice_presets(single_vp, count=1)[0]["id"]
-            if single_vp:
-                single_tts_args = [
-                    "--script",
-                    "04_workspace/kich_ban.txt",
-                    "--voice-preset",
-                    single_vp,
-                    "--nfe-step",
-                    "48",
-                    "--whisper-model",
-                    "small",
-                    "--target-duration",
-                    f"{req.target_duration_sec:.2f}",
-                ]
-            else:
-                single_tts_args = [
-                    "--script",
-                    "04_workspace/kich_ban.txt",
-                    "--tts-engine",
-                    str(getattr(req, "tts_engine", "edge_tts") or "edge_tts"),
-                    "--edge-voice",
-                    str(getattr(req, "edge_voice", "vi-VN-HoaiMyNeural") or "vi-VN-HoaiMyNeural"),
-                    "--speed",
-                    "1.04",
-                    "--nfe-step",
-                    "48",
-                    "--whisper-model",
-                    "small",
-                    "--target-duration",
-                    f"{req.target_duration_sec:.2f}",
-                ]
-            tts_res = run_python_script(
-                "scripts/voice_engine.py",
-                single_tts_args,
+        if bool(getattr(req, "mute_voice", False)):
+            vb_total = float(req.target_duration_sec)
+            _update_pipeline(
+                step_status=(3, "done", "Đã tắt giọng đọc (Story)"),
+                percent=65,
+                log_line="[Bước 3/5] Đang bật Ẩn giọng đọc AI — bỏ qua tổng hợp giọng.",
             )
-            if not tts_res.get("ok"):
-                raise RuntimeError(f"voice_engine.py lỗi: {tts_res.get('log', '')[-400:]}")
-        rep = repair_subtitles_and_beats()
-        vb_total = float((rep.get("voice_beats") or {}).get("total_duration_sec") or 0.0)
-        _update_pipeline(
-            step_status=(3, "done", f"Voice {vb_total:.2f}s · {rep.get('words_count', 0)} từ sạch"),
-            percent=65,
-        )
+        else:
+            existing_wav_dur = probe_media(FILE_TTS_WAV).get("duration_sec", 0.0) if FILE_TTS_WAV.exists() else 0.0
+            duration_mismatch = abs(existing_wav_dur - req.target_duration_sec) > 1.8
+            script_newer = (
+                FILE_SCRIPT.exists()
+                and FILE_TTS_WAV.exists()
+                and FILE_SCRIPT.stat().st_mtime > FILE_TTS_WAV.stat().st_mtime + 1.0
+            )
+            if req.force_tts or not FILE_TTS_WAV.exists() or not FILE_VOICE_BEATS.exists() or script_newer or duration_mismatch:
+                sync_voice_clone_files()
+                import voice_engine as _ve
+                single_vp = str(getattr(req, "voice_preset", "") or "").strip()
+                if single_vp.startswith("random_"):
+                    single_vp = _ve.pick_random_voice_presets(single_vp, count=1)[0]["id"]
+                if single_vp:
+                    single_tts_args = [
+                        "--script",
+                        "04_workspace/kich_ban.txt",
+                        "--voice-preset",
+                        single_vp,
+                        "--nfe-step",
+                        "48",
+                        "--whisper-model",
+                        "small",
+                        "--target-duration",
+                        f"{req.target_duration_sec:.2f}",
+                    ]
+                else:
+                    single_tts_args = [
+                        "--script",
+                        "04_workspace/kich_ban.txt",
+                        "--tts-engine",
+                        str(getattr(req, "tts_engine", "edge_tts") or "edge_tts"),
+                        "--edge-voice",
+                        str(getattr(req, "edge_voice", "vi-VN-HoaiMyNeural") or "vi-VN-HoaiMyNeural"),
+                        "--speed",
+                        "1.04",
+                        "--nfe-step",
+                        "48",
+                        "--whisper-model",
+                        "small",
+                        "--target-duration",
+                        f"{req.target_duration_sec:.2f}",
+                    ]
+                tts_res = run_python_script(
+                    "scripts/voice_engine.py",
+                    single_tts_args,
+                )
+                if not tts_res.get("ok"):
+                    raise RuntimeError(f"voice_engine.py lỗi: {tts_res.get('log', '')[-400:]}")
+            rep = repair_subtitles_and_beats()
+            vb_total = float((rep.get("voice_beats") or {}).get("total_duration_sec") or 0.0)
+            _update_pipeline(
+                step_status=(3, "done", f"Voice {vb_total:.2f}s · {rep.get('words_count', 0)} từ sạch"),
+                percent=65,
+            )
 
         # Step 4: Thực Thi - Khớp & Cắt Clip 9:16 bám Beat (tôn trọng Khóa Clips)
         _update_pipeline(
@@ -5922,6 +5944,8 @@ def _run_single_project_pipeline(req: OneClickPipelineReq) -> None:
                 "sfx_level": getattr(req, "sfx_level", "subtle") or "subtle",
                 "aspect_ratio": req_aspect,
                 "content_vibe": req_vibe,
+                "mute_voice": bool(getattr(req, "mute_voice", False)),
+                "hide_subtitles": bool(getattr(req, "hide_subtitles", False)),
                 **({"wildcard_spec": single_wildcard} if single_wildcard else {}),
             }
         )
