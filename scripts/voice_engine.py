@@ -77,188 +77,10 @@ VOCAL_EQ_FILTERS: dict[str, str] = {
 }
 
 FREE_VOICE_CATALOG: list[dict[str, Any]] = [
-    # 10 Edge Neural KOC presets (0d, Online, chuan Anh-Viet)
-    {
-        "id": "edge_hoaimy_koc",
-        "label": "Nữ Hoài My · KOC Tự Nhiên (Neural)",
-        "group": "Edge Neural KOC (0đ · Online)",
-        "tts_engine": "edge_tts",
-        "edge_voice": "vi-VN-HoaiMyNeural",
-        "edge_rate": "+4%",
-        "edge_pitch": "+0Hz",
-        "vocal_eq": "neutral",
-        "gender": "female",
-    },
-    {
-        "id": "edge_hoaimy_energetic",
-        "label": "Nữ Hoài My · Săn Deal Năng Lượng",
-        "group": "Edge Neural KOC (0đ · Online)",
-        "tts_engine": "edge_tts",
-        "edge_voice": "vi-VN-HoaiMyNeural",
-        "edge_rate": "+11%",
-        "edge_pitch": "+8Hz",
-        "vocal_eq": "energetic",
-        "gender": "female",
-    },
-    {
-        "id": "edge_hoaimy_soft",
-        "label": "Nữ Hoài My · Tâm Sự Nhẹ Nhàng",
-        "group": "Edge Neural KOC (0đ · Online)",
-        "tts_engine": "edge_tts",
-        "edge_voice": "vi-VN-HoaiMyNeural",
-        "edge_rate": "-3%",
-        "edge_pitch": "-6Hz",
-        "vocal_eq": "soft",
-        "gender": "female",
-    },
-    {
-        "id": "edge_hoaimy_story",
-        "label": "Nữ Hoài My · Kể Chuyện Mượt Mà",
-        "group": "Edge Neural KOC (0đ · Online)",
-        "tts_engine": "edge_tts",
-        "edge_voice": "vi-VN-HoaiMyNeural",
-        "edge_rate": "+1%",
-        "edge_pitch": "-3Hz",
-        "vocal_eq": "warm",
-        "gender": "female",
-    },
-    {
-        "id": "edge_hoaimy_bright",
-        "label": "Nữ Hoài My · Trong Trẻo Skincare",
-        "group": "Edge Neural KOC (0đ · Online)",
-        "tts_engine": "edge_tts",
-        "edge_voice": "vi-VN-HoaiMyNeural",
-        "edge_rate": "+6%",
-        "edge_pitch": "+5Hz",
-        "vocal_eq": "bright",
-        "gender": "female",
-    },
-    {
-        "id": "edge_namminh_review",
-        "label": "Nam Minh · Review Công Nghệ Chuẩn",
-        "group": "Edge Neural KOC (0đ · Online)",
-        "tts_engine": "edge_tts",
-        "edge_voice": "vi-VN-NamMinhNeural",
-        "edge_rate": "+4%",
-        "edge_pitch": "+0Hz",
-        "vocal_eq": "crisp",
-        "gender": "male",
-    },
-    {
-        "id": "edge_namminh_fast",
-        "label": "Nam Minh · Nhịp Nhanh Bắt Trend",
-        "group": "Edge Neural KOC (0đ · Online)",
-        "tts_engine": "edge_tts",
-        "edge_voice": "vi-VN-NamMinhNeural",
-        "edge_rate": "+12%",
-        "edge_pitch": "+6Hz",
-        "vocal_eq": "energetic",
-        "gender": "male",
-    },
-    {
-        "id": "edge_namminh_deep",
-        "label": "Nam Minh · Trầm Ấm Chuyên Gia",
-        "group": "Edge Neural KOC (0đ · Online)",
-        "tts_engine": "edge_tts",
-        "edge_voice": "vi-VN-NamMinhNeural",
-        "edge_rate": "-2%",
-        "edge_pitch": "-8Hz",
-        "vocal_eq": "deep",
-        "gender": "male",
-    },
-    {
-        "id": "edge_namminh_warm",
-        "label": "Nam Minh · Gần Gũi Đời Thường",
-        "group": "Edge Neural KOC (0đ · Online)",
-        "tts_engine": "edge_tts",
-        "edge_voice": "vi-VN-NamMinhNeural",
-        "edge_rate": "+2%",
-        "edge_pitch": "-4Hz",
-        "vocal_eq": "warm",
-        "gender": "male",
-    },
-    {
-        "id": "edge_namminh_podcast",
-        "label": "Nam Minh · Podcast Radio Sắc Nét",
-        "group": "Edge Neural KOC (0đ · Online)",
-        "tts_engine": "edge_tts",
-        "edge_voice": "vi-VN-NamMinhNeural",
-        "edge_rate": "+5%",
-        "edge_pitch": "+3Hz",
-        "vocal_eq": "radio",
-        "gender": "male",
-    },
-    # 6 Offline Piper TTS Vietnamese presets (0d, 100% Offline)
-    {
-        "id": "piper_vais1000",
-        "label": "Piper · VAIS1000 Rõ Ràng (Offline)",
-        "group": "Piper Offline Việt Nam (0đ · Không cần mạng)",
-        "tts_engine": "piper_tts",
-        "piper_model": "vi_VN-vais1000-medium",
-        "piper_length_scale": 0.96,
-        "piper_speaker": None,
-        "vocal_eq": "neutral",
-        "gender": "female",
-    },
-    {
-        "id": "piper_vais1000_fast",
-        "label": "Piper · VAIS1000 Nhanh Gọn (Offline)",
-        "group": "Piper Offline Việt Nam (0đ · Không cần mạng)",
-        "tts_engine": "piper_tts",
-        "piper_model": "vi_VN-vais1000-medium",
-        "piper_length_scale": 0.86,
-        "piper_speaker": None,
-        "vocal_eq": "bright",
-        "gender": "female",
-    },
-    {
-        "id": "piper_25hours",
-        "label": "Piper · 25Hours Tự Nhiên (Offline)",
-        "group": "Piper Offline Việt Nam (0đ · Không cần mạng)",
-        "tts_engine": "piper_tts",
-        "piper_model": "vi_VN-25hours_single-low",
-        "piper_length_scale": 0.95,
-        "piper_speaker": None,
-        "vocal_eq": "crisp",
-        "gender": "female",
-    },
-    {
-        "id": "piper_25hours_warm",
-        "label": "Piper · 25Hours Ấm Áp (Offline)",
-        "group": "Piper Offline Việt Nam (0đ · Không cần mạng)",
-        "tts_engine": "piper_tts",
-        "piper_model": "vi_VN-25hours_single-low",
-        "piper_length_scale": 1.03,
-        "piper_speaker": None,
-        "vocal_eq": "warm",
-        "gender": "female",
-    },
-    {
-        "id": "piper_vivos_s0",
-        "label": "Piper · VIVOS Giọng 1 (Offline)",
-        "group": "Piper Offline Việt Nam (0đ · Không cần mạng)",
-        "tts_engine": "piper_tts",
-        "piper_model": "vi_VN-vivos-x_low",
-        "piper_length_scale": 0.94,
-        "piper_speaker": 0,
-        "vocal_eq": "neutral",
-        "gender": "neutral",
-    },
-    {
-        "id": "piper_vivos_s1",
-        "label": "Piper · VIVOS Giọng 2 (Offline)",
-        "group": "Piper Offline Việt Nam (0đ · Không cần mạng)",
-        "tts_engine": "piper_tts",
-        "piper_model": "vi_VN-vivos-x_low",
-        "piper_length_scale": 0.95,
-        "piper_speaker": 1,
-        "vocal_eq": "bright",
-        "gender": "neutral",
-    },
-    # 4 F5-TTS Local GPU Clone presets (0d, Local GPU)
+    # F5-TTS Local GPU Clone presets (0đ, Local GPU — tự nhiên nhất từ giọng mẫu thật)
     {
         "id": "f5_clone_default",
-        "label": "F5-TTS · Clone Giọng Mẫu Chuẩn",
+        "label": "F5-TTS · Clone Giọng Mẫu Chuẩn (Khuyên dùng)",
         "group": "F5-TTS Clone Giọng Mẫu (0đ · Local GPU)",
         "tts_engine": "f5_tts",
         "speed": 1.05,
@@ -266,17 +88,8 @@ FREE_VOICE_CATALOG: list[dict[str, Any]] = [
         "gender": "custom",
     },
     {
-        "id": "f5_clone_fast",
-        "label": "F5-TTS · Clone Nhanh Chốt Đơn",
-        "group": "F5-TTS Clone Giọng Mẫu (0đ · Local GPU)",
-        "tts_engine": "f5_tts",
-        "speed": 1.15,
-        "vocal_eq": "energetic",
-        "gender": "custom",
-    },
-    {
         "id": "f5_clone_warm",
-        "label": "F5-TTS · Clone Trầm Ấm Review",
+        "label": "F5-TTS · Clone Trầm Ấm Vlog",
         "group": "F5-TTS Clone Giọng Mẫu (0đ · Local GPU)",
         "tts_engine": "f5_tts",
         "speed": 0.98,
@@ -292,20 +105,82 @@ FREE_VOICE_CATALOG: list[dict[str, Any]] = [
         "vocal_eq": "crisp",
         "gender": "custom",
     },
+    {
+        "id": "f5_clone_fast",
+        "label": "F5-TTS · Clone Nhịp Nhanh TikTok",
+        "group": "F5-TTS Clone Giọng Mẫu (0đ · Local GPU)",
+        "tts_engine": "f5_tts",
+        "speed": 1.15,
+        "vocal_eq": "energetic",
+        "gender": "custom",
+    },
+    # Edge Neural Chuẩn (+0Hz nguyên bản, không kéo pitch méo tiếng)
+    {
+        "id": "edge_hoaimy_koc",
+        "label": "Nữ Hoài My · Chuẩn Tự Nhiên (+0Hz)",
+        "group": "Edge Neural Chuẩn (0đ · Online)",
+        "tts_engine": "edge_tts",
+        "edge_voice": "vi-VN-HoaiMyNeural",
+        "edge_rate": "+2%",
+        "edge_pitch": "+0Hz",
+        "vocal_eq": "neutral",
+        "gender": "female",
+    },
+    {
+        "id": "edge_hoaimy_story",
+        "label": "Nữ Hoài My · Kể Chuyện Chậm (+0Hz)",
+        "group": "Edge Neural Chuẩn (0đ · Online)",
+        "tts_engine": "edge_tts",
+        "edge_voice": "vi-VN-HoaiMyNeural",
+        "edge_rate": "-2%",
+        "edge_pitch": "+0Hz",
+        "vocal_eq": "warm",
+        "gender": "female",
+    },
+    {
+        "id": "edge_namminh_review",
+        "label": "Nam Minh · Chuẩn Tự Nhiên (+0Hz)",
+        "group": "Edge Neural Chuẩn (0đ · Online)",
+        "tts_engine": "edge_tts",
+        "edge_voice": "vi-VN-NamMinhNeural",
+        "edge_rate": "+2%",
+        "edge_pitch": "+0Hz",
+        "vocal_eq": "crisp",
+        "gender": "male",
+    },
+    {
+        "id": "edge_namminh_warm",
+        "label": "Nam Minh · Trầm Ấm Vlog (+0Hz)",
+        "group": "Edge Neural Chuẩn (0đ · Online)",
+        "tts_engine": "edge_tts",
+        "edge_voice": "vi-VN-NamMinhNeural",
+        "edge_rate": "-2%",
+        "edge_pitch": "+0Hz",
+        "vocal_eq": "warm",
+        "gender": "male",
+    },
+    # Offline Piper fallback
+    {
+        "id": "piper_vais1000",
+        "label": "Piper · VAIS1000 Dự Phòng (Offline)",
+        "group": "Piper Offline (Dự phòng khi mất mạng)",
+        "tts_engine": "piper_tts",
+        "piper_model": "vi_VN-vais1000-medium",
+        "piper_length_scale": 0.96,
+        "piper_speaker": None,
+        "vocal_eq": "neutral",
+        "gender": "female",
+    },
 ]
 
 RANDOM_VOICE_MODES: list[dict[str, str]] = [
     {
         "id": "random_neural",
-        "label": "🎲 Random Thông Minh: 3 Giọng Edge Neural KOC Khác Nhau (Khuyên dùng)",
-    },
-    {
-        "id": "random_piper_neural",
-        "label": "🎲 Random Đa Dạng: Mix Edge Neural + Piper Offline",
+        "label": "🎲 Random: Giọng Edge Neural Chuẩn (Nam/Nữ +0Hz)",
     },
     {
         "id": "random_all",
-        "label": "🎲 Random Toàn Kho (20+ Giọng Miễn Phí 0đ)",
+        "label": "🎲 Random: Mix F5-TTS Clone + Edge Chuẩn",
     },
 ]
 
@@ -333,7 +208,7 @@ def _discover_f5_voice_profiles() -> list[dict[str, Any]]:
 
 
 def list_free_voice_catalog() -> dict[str, Any]:
-    presets = [dict(p) for p in FREE_VOICE_CATALOG] + _discover_f5_voice_profiles()
+    presets = _discover_f5_voice_profiles() + [dict(p) for p in FREE_VOICE_CATALOG]
     return {
         "presets": presets,
         "random_modes": [dict(m) for m in RANDOM_VOICE_MODES],
@@ -343,12 +218,24 @@ def list_free_voice_catalog() -> dict[str, Any]:
 
 def resolve_voice_preset(preset_id: str) -> dict[str, Any]:
     pid = (preset_id or "").strip()
-    if pid in ("edge_tts", ""):
-        pid = "edge_hoaimy_koc"
-    elif pid == "f5_tts":
-        pid = "f5_clone_default"
-    elif pid == "piper_tts":
-        pid = "piper_vais1000"
+    legacy_alias = {
+        "edge_tts": "edge_hoaimy_koc",
+        "": "edge_hoaimy_koc",
+        "f5_tts": "f5_clone_default",
+        "piper_tts": "piper_vais1000",
+        "edge_hoaimy_energetic": "edge_hoaimy_koc",
+        "edge_hoaimy_soft": "edge_hoaimy_story",
+        "edge_hoaimy_bright": "edge_hoaimy_koc",
+        "edge_namminh_fast": "edge_namminh_review",
+        "edge_namminh_deep": "edge_namminh_warm",
+        "edge_namminh_podcast": "edge_namminh_review",
+        "piper_vais1000_fast": "piper_vais1000",
+        "piper_25hours": "piper_vais1000",
+        "piper_25hours_warm": "piper_vais1000",
+        "piper_vivos_s0": "piper_vais1000",
+        "piper_vivos_s1": "piper_vais1000",
+    }
+    pid = legacy_alias.get(pid, pid)
 
     catalog = list_free_voice_catalog()["presets"]
     for item in catalog:

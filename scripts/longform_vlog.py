@@ -1119,6 +1119,7 @@ def build_longform_voice_and_srt(
         blocks_by_chap.setdefault(int(b_info["chapter_index"]), []).append(b_info)
 
     placed_blocks = 0
+    placed_sentences: list[tuple[float, float, str]] = []
     for ch_idx in sorted(blocks_by_chap.keys()):
         ch_blocks = blocks_by_chap[ch_idx]
         win_st, win_en = chap_windows.get(ch_idx, (safe_start, safe_end))
@@ -1160,15 +1161,7 @@ def build_longform_voice_and_srt(
                 abs_en = min(cursor_t + s_off_en, cursor_t + copy_len / float(sr))
                 if abs_en <= abs_st + 0.15:
                     continue
-                lines = _split_display_caption_lines(s_disp, max_words=9)
-                total_chars = max(1, sum(len(ln) for ln in lines))
-                cur_l = abs_st
-                for ln in lines:
-                    ln_dur = max(0.8, (len(ln) / float(total_chars)) * (abs_en - abs_st))
-                    ln_end = min(abs_en, cur_l + ln_dur)
-                    if ln_end > cur_l + 0.18:
-                        srt_entries.append((cur_l, ln_end, ln))
-                    cur_l = ln_end
+                placed_sentences.append((abs_st, abs_en, s_disp))
 
             cursor_t += (copy_len / float(sr)) + gap_after_each
 
@@ -1203,6 +1196,63 @@ def build_longform_voice_and_srt(
         raw_master.unlink(missing_ok=True)
     except Exception:
         os.replace(str(raw_master), str(out_wav_path))
+
+    # Align SRT subtitles directly to the real mastered WAV via Faster-Whisper word timestamps
+    whisper_words: list[dict[str, Any]] = []
+    if placed_sentences and out_wav_path.exists():
+        w_model = None
+        try:
+            w_model = _ve.load_whisper("small")
+            segs_gen, _ = w_model.transcribe(
+                str(out_wav_path),
+                language="vi",
+                vad_filter=True,
+                vad_parameters={"min_silence_duration_ms": 350},
+                word_timestamps=True,
+                beam_size=3,
+            )
+            whisper_words = _ve.extract_word_timestamps(list(segs_gen))
+        except Exception as exc:
+            print(f"[LongForm Whisper Align WARN] {exc}")
+        finally:
+            if w_model is not None:
+                del w_model
+            try:
+                import gc, torch
+
+                gc.collect()
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+            except Exception:
+                pass
+
+    for abs_st, abs_en, s_disp in placed_sentences:
+        s_start, s_end = _sd._trim_wav_beat_silence(out_wav_path, abs_st, abs_en)
+        sent_ww = [
+            w
+            for w in whisper_words
+            if isinstance(w, dict)
+            and (abs_st - 0.15) <= ((float(w.get("start") or 0.0) + float(w.get("end") or 0.0)) * 0.5) <= (abs_en + 0.15)
+        ]
+        tokens = s_disp.split()
+        if sent_ww and tokens:
+            aligned_w = _sd._align_tokens_to_beat_window(tokens, s_start, s_end, sent_ww)
+            grp = _sd._group_words_to_srt_entries(aligned_w, max_words=9)
+            for gs, ge, gt in grp:
+                if ge > gs + 0.12 and gt:
+                    srt_entries.append((gs, ge, gt))
+            continue
+
+        lines = _split_display_caption_lines(s_disp, max_words=9)
+        total_chars = max(1, sum(len(ln) for ln in lines))
+        cur_l = s_start
+        span_s = max(0.2, s_end - s_start)
+        for ln in lines:
+            ln_dur = (len(ln) / float(total_chars)) * span_s
+            ln_end = min(s_end, cur_l + ln_dur)
+            if ln_end > cur_l + 0.15:
+                srt_entries.append((cur_l, ln_end, ln))
+            cur_l = ln_end
 
     srt_blocks: list[str] = []
     for idx, (st_s, en_s, txt) in enumerate(srt_entries, start=1):
@@ -1636,7 +1686,7 @@ def render_longform_ffmpeg_vlog(
                 progress_cb(idx, total_segs)
             src_p = Path(seg["abs_path"])
             st = float(seg.get("start") or 0.0)
-            dur = max(0.5, float(seg.get("duration") or 3.0))
+            dur = max(0.5, round(float(seg.get("duration") or 3.0) * 30.0) / 30.0)
             seg_out = tmp_path / f"seg_{idx:04d}.mp4"
             fade_part = ",fade=t=in:st=0:d=0.35" if seg.get("is_chapter_start") and idx > 1 else ""
             vf = (

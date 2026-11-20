@@ -1061,7 +1061,9 @@ def repair_subtitles_and_beats(
     tts_sents = _split_sentences(raw_tts)
 
     existing_beats: dict[str, Any] = {}
-    if FILE_VOICE_BEATS.exists():
+    wav_mtime = FILE_TTS_WAV.stat().st_mtime if FILE_TTS_WAV.exists() else 0.0
+    beats_mtime = FILE_VOICE_BEATS.stat().st_mtime if FILE_VOICE_BEATS.exists() else 0.0
+    if not force_rebuild and FILE_VOICE_BEATS.exists() and beats_mtime >= (wav_mtime - 0.5):
         try:
             loaded_vb = json.loads(FILE_VOICE_BEATS.read_text(encoding="utf-8-sig"))
             if (
