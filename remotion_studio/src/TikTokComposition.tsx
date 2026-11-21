@@ -14,6 +14,7 @@ import { loadProjectFonts } from './fonts';
 import { FloralHookBadge } from './components/FloralHookBadge';
 import { MulticolorCallout } from './components/MulticolorCallout';
 import { KaraokeSubtitles } from './components/KaraokeSubtitles';
+import { SharedLottieSticker, resolveLottieStem } from './components/SharedLottieSticker';
 import { TikTokVideoProps, VideoClipItem } from './types';
 import { VisualThemeTokens, resolveVisualTheme } from './themes';
 
@@ -431,6 +432,36 @@ export const TikTokComposition: React.FC<TikTokVideoProps> = (props) => {
           />
         </div>
       ) : null}
+
+      {props.stickerDensity !== 'off' ? (() => {
+        const stkStems = props.stickerDensity === 'rich'
+          ? ['1f525', '2728', '1f680', '1f389', '26a1', '2764_fe0f']
+          : ['1f525', '2728', '1f389', '2764_fe0f'];
+        const segDurF = Math.max(45, Math.floor(durationInFrames / stkStems.length));
+        return stkStems.map((st, sIdx) => {
+          const stF = sIdx * segDurF + 10;
+          const durF = Math.min(84, Math.max(30, segDurF - 14));
+          if (stF >= durationInFrames - 18) return null;
+          const isRight = sIdx % 2 === 0;
+          return (
+            <Sequence key={`stk-${sIdx}`} from={stF} durationInFrames={durF}>
+              <div
+                style={{
+                  position: 'absolute',
+                  top: '14%',
+                  right: isRight ? 36 : undefined,
+                  left: isRight ? undefined : 36,
+                  zIndex: 44,
+                  pointerEvents: 'none',
+                  filter: 'drop-shadow(0 8px 18px rgba(0,0,0,0.45))',
+                }}
+              >
+                <SharedLottieSticker stem={resolveLottieStem(undefined, st) === '2728' ? st : st} size={126} startFrame={0} />
+              </div>
+            </Sequence>
+          );
+        });
+      })() : null}
 
       {showCartPointer ? (
         <div

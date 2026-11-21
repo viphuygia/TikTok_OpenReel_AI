@@ -1,6 +1,7 @@
 import React from 'react';
 import { AbsoluteFill, interpolate, spring, useCurrentFrame, useVideoConfig } from 'remotion';
 import { loadProjectFonts } from '../../fonts';
+import { SharedLottieSticker, resolveLottieStem } from '../../components/SharedLottieSticker';
 import { VlogStickerProps } from './types';
 
 loadProjectFonts();
@@ -24,9 +25,10 @@ export const VlogStickerOverlay: React.FC<VlogStickerProps> = ({
     { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' }
   );
 
-  const bobY = Math.sin(frame * 0.14) * 4;
-  const emojiTilt = Math.sin(frame * 0.18) * 7;
-  const ringPulse = 1 + 0.12 * Math.sin(frame * 0.2);
+  const bobY = Math.sin(frame * 0.14) * 5;
+  const ringPulse = 1 + 0.08 * Math.sin(frame * 0.18);
+  const lottieStem = resolveLottieStem(emoji, `${label} ${sublabel}`);
+  const lottieSize = isLandscape ? 72 : 66;
 
   const posStyle: React.CSSProperties =
     position === 'top-left'
@@ -62,19 +64,19 @@ export const VlogStickerOverlay: React.FC<VlogStickerProps> = ({
         <div
           style={{
             position: 'relative',
-            width: isLandscape ? 48 : 44,
-            height: isLandscape ? 48 : 44,
+            width: lottieSize,
+            height: lottieSize,
             borderRadius: 999,
             backgroundColor: `${accentColor}26`,
-            border: `1.5px solid ${accentColor}88`,
+            border: `2px solid ${accentColor}99`,
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            transform: `scale(${ringPulse}) rotate(${emojiTilt}deg)`,
-            fontSize: isLandscape ? 26 : 24,
+            transform: `scale(${ringPulse})`,
+            flexShrink: 0,
           }}
         >
-          {emoji}
+          <SharedLottieSticker stem={lottieStem} size={lottieSize - 8} startFrame={0} />
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
           <span

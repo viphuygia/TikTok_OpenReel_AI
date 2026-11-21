@@ -5075,13 +5075,36 @@
       }
     }
 
+    function fallbackCopyText(val, okMsg) {
+      try {
+        const ta = document.createElement('textarea');
+        ta.value = val;
+        ta.setAttribute('readonly', '');
+        ta.style.position = 'fixed';
+        ta.style.top = '-9999px';
+        ta.style.left = '-9999px';
+        document.body.appendChild(ta);
+        ta.focus();
+        ta.select();
+        ta.setSelectionRange(0, val.length);
+        const ok = document.execCommand('copy');
+        document.body.removeChild(ta);
+        if (ok) {
+          toast(okMsg, 'success');
+          return true;
+        }
+      } catch (e) {}
+      toast('Không tự chép được, bạn copy thủ công: ' + val, 'info');
+      return false;
+    }
+
     function copyTextValue(txt, okMsg = 'Đã chép vào bộ nhớ tạm!') {
       const val = String(txt || '').trim();
       if (!val) return;
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        navigator.clipboard.writeText(val).then(() => toast(okMsg, 'success')).catch(() => toast(val, 'info'));
+      if (window.isSecureContext && navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(val).then(() => toast(okMsg, 'success')).catch(() => fallbackCopyText(val, okMsg));
       } else {
-        toast(val, 'info');
+        fallbackCopyText(val, okMsg);
       }
     }
 

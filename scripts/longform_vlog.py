@@ -206,6 +206,7 @@ def build_longform_timeline_plan(
     auto_fit_duration: bool = False,
     aspect_ratio: str = "16:9",
     quality_preset: str = "auto_source",
+    shot_jitter_sec: float = 0.0,
 ) -> dict[str, Any]:
     """Slice raw clips into crisp chronological 4.5-8.5s vlog highlight cuts grouped into chapters."""
     if not ordered_clips:
@@ -246,7 +247,11 @@ def build_longform_timeline_plan(
                     dur_s = min(per_shot, usable_end - st)
                 else:
                     slot = usable_span / n_shots
+                    max_shift = max(0.0, slot - per_shot)
+                    jitter = min(max_shift, max(0.0, float(shot_jitter_sec or 0.0)))
                     st = usable_start + si * slot + max(0.0, (slot - per_shot) * 0.35)
+                    if jitter > 0.05:
+                        st = min(usable_end - per_shot, usable_start + si * slot + jitter)
                     dur_s = min(per_shot, usable_end - st)
                 dur_s = round(max(2.5, dur_s), 2)
                 en = round(min(c_dur, st + dur_s), 2)
@@ -1180,7 +1185,7 @@ def build_longform_voice_and_srt(
                     return True
             except Exception:
                 pass
-        for _edge_try in range(2):
+        for _edge_try, _wait_s in enumerate((2.0, 4.0, 7.0, 11.0, 16.0), start=1):
             if _synth_edge_tts_wav(
                 sent_txt,
                 out_w,
@@ -1188,7 +1193,10 @@ def build_longform_voice_and_srt(
                 vlog_edge_rate,
                 str(preset.get("edge_pitch") or "+0Hz"),
             ):
+                time.sleep(0.28)
                 return True
+            print(f"[LongForm Edge-TTS Retry {_edge_try}/5] Đợi {_wait_s:.0f}s rồi thử lại để giữ đúng 1 giọng...")
+            time.sleep(_wait_s)
         if _ensure_piper_fallback():
             try:
                 tmp_raw = out_w.with_name(f"{out_w.stem}_pfb.wav")
@@ -1846,6 +1854,15 @@ def _has_audio_stream(ffprobe_bin: str, media_path: Path) -> bool:
         return False
 
 
+COLOR_PRESET_FILTERS: dict[str, str] = {
+    "natural": "eq=contrast=1.02:saturation=1.05",
+    "warm_sunset": "colorbalance=rs=0.06:gs=0.02:bs=-0.05:rm=0.04:bm=-0.04,eq=contrast=1.05:saturation=1.12",
+    "fresh_cool": "colorbalance=rs=-0.04:gs=0.02:bs=0.06:rm=-0.03:bm=0.05,eq=contrast=1.03:saturation=1.08",
+    "cinema_contrast": "colorbalance=rs=0.03:bs=-0.03:gs=-0.01,eq=contrast=1.09:brightness=-0.02:saturation=0.96",
+    "soft_film": "colorbalance=rs=0.03:gs=0.02:bs=0.01,eq=contrast=0.98:brightness=0.02:saturation=1.06",
+}
+
+
 def render_longform_ffmpeg_vlog(
     plan: dict[str, Any],
     voice_wav: Path | None,
@@ -1858,6 +1875,7 @@ def render_longform_ffmpeg_vlog(
     font_name: str = "Baloo 2",
     subtitle_style: str = "editorial_clean",
     accent_color: str = "#F59E0B",
+    color_preset: str = "natural",
     progress_cb: Any = None,
 ) -> dict[str, Any]:
     """Render 4K/2K/1080p Vlog master with Remotion transparent overlays, sidechain ducking, & crisp ASS subs."""
@@ -1886,10 +1904,11 @@ def render_longform_ffmpeg_vlog(
             dur = max(0.5, round(float(seg.get("duration") or 3.0) * 30.0) / 30.0)
             seg_out = tmp_path / f"seg_{idx:04d}.mp4"
             fade_part = ",fade=t=in:st=0:d=0.35" if seg.get("is_chapter_start") and idx > 1 else ""
+            color_filter = COLOR_PRESET_FILTERS.get(str(color_preset or "natural"), COLOR_PRESET_FILTERS["natural"])
             vf = (
                 f"crop='min(iw,ih*{target_w}/{target_h})':'min(ih,iw*{target_h}/{target_w})',"
                 f"scale={target_w}:{target_h}:flags=lanczos,unsharp=3:3:0.35:3:3:0.0,"
-                f"eq=contrast=1.02:saturation=1.05,setsar=1,fps=30,format=yuv420p{fade_part}"
+                f"{color_filter},setsar=1,fps=30,format=yuv420p{fade_part}"
             )
             color_tags = ["-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709"]
             if keep_clip_audio and not _has_audio_stream(ffprobe_bin, src_p):

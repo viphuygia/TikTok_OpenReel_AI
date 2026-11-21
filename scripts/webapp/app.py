@@ -5275,7 +5275,13 @@ def _remove_render_history(ws_dir: Path, filename: str) -> None:
         pass
 
 
-def _execute_longform_vlog_pipeline(req: OneClickPipelineReq, variant_tag: str = "") -> list[dict[str, Any]]:
+def _execute_longform_vlog_pipeline(
+    req: OneClickPipelineReq,
+    variant_tag: str = "",
+    forced_style: tuple[str, str, str] | None = None,
+    forced_color_preset: str = "",
+    shot_jitter_sec: float = 0.0,
+) -> list[dict[str, Any]]:
     """Broadcast-Quality 4K Hybrid Remotion + FFmpeg Master Pipeline for Long-Form Vlog (>90s to 20m)."""
     import longform_vlog as _lf
     import style_dna as _sd
@@ -5317,6 +5323,7 @@ def _execute_longform_vlog_pipeline(req: OneClickPipelineReq, variant_tag: str =
         auto_fit_duration=bool(getattr(req, "auto_fit_duration", False)),
         aspect_ratio=req_aspect,
         quality_preset=req_quality,
+        shot_jitter_sec=shot_jitter_sec,
     )
     actual_target = float(plan["target_duration_sec"])
     n_shots = len(plan.get("segments") or [])
@@ -5360,9 +5367,10 @@ def _execute_longform_vlog_pipeline(req: OneClickPipelineReq, variant_tag: str =
         except Exception:
             prev_lf_cfg = {}
     avoid_ts = str(prev_lf_cfg.get("last_title_style") or "").strip()
-    pref_ts = str(prev_lf_cfg.get("preferred_title_style") or "").strip()
-    pref_ss = str(prev_lf_cfg.get("preferred_subtitle_style") or "").strip()
-    pref_ac = str(prev_lf_cfg.get("preferred_accent_color") or "").strip()
+    pref_ts = forced_style[0] if forced_style else str(prev_lf_cfg.get("preferred_title_style") or "").strip()
+    pref_ss = forced_style[1] if forced_style else str(prev_lf_cfg.get("preferred_subtitle_style") or "").strip()
+    pref_ac = forced_style[2] if forced_style else str(prev_lf_cfg.get("preferred_accent_color") or "").strip()
+    eff_color_preset = forced_color_preset or str(getattr(req, "color_preset", "") or "natural")
 
     ch_json_path = DIR_WORKSPACE / "longform_chapters.json"
     ch_script = None
@@ -5502,6 +5510,10 @@ def _execute_longform_vlog_pipeline(req: OneClickPipelineReq, variant_tag: str =
             channel_name=ch_name,
             sticker_density=str(req.sticker_density or "normal"),
         )
+        stk_rendered = sum(1 for ov in overlays if "sticker_" in str(ov.get("path") or ""))
+        _update_pipeline(
+            log_line=f"[Bước 4/5] {cur_ar}: Đã render {len(overlays)} Remotion motion ({stk_rendered} Sticker Lottie).",
+        )
         tag_slug = f"_{variant_tag}" if variant_tag else ""
         out_mp4 = DIR_OUTPUT / f"VLOG_{int(round(actual_target))}s_{cur_ar.replace(':', 'x')}_{q_label.split()[0]}{tag_slug}_{int(time.time())}.mp4"
         render_res = _lf.render_longform_ffmpeg_vlog(
@@ -5514,6 +5526,7 @@ def _execute_longform_vlog_pipeline(req: OneClickPipelineReq, variant_tag: str =
             bgm_volume=0.20,
             subtitle_style=str(vd.get("subtitle_style") or "editorial_clean"),
             accent_color=str(vd.get("accent_color") or "#F59E0B"),
+            color_preset=eff_color_preset,
             keep_clip_audio=bool(getattr(req, "keep_clip_audio", False)),
         )
         _record_render_history(
@@ -5531,8 +5544,11 @@ def _execute_longform_vlog_pipeline(req: OneClickPipelineReq, variant_tag: str =
                 "title": str(ch_script.get("video_title") or req_vlog_title or ""),
                 "title_style": str(vd.get("title_style") or "cinematic_glass"),
                 "subtitle_style": str(vd.get("subtitle_style") or "editorial_clean"),
+                "color_preset": eff_color_preset,
+                "content_vibe": req_vibe,
                 "accent_color": str(vd.get("accent_color") or "#F59E0B"),
                 "sticker_density": str(req.sticker_density or "normal"),
+                "stickers_count": stk_rendered,
                 "mute_voice": req_mute_voice,
                 "hide_subtitles": req_hide_subs,
                 "keep_clip_audio": bool(getattr(req, "keep_clip_audio", False)),
@@ -5597,10 +5613,27 @@ def _run_single_project_pipeline(req: OneClickPipelineReq) -> None:
                     "Phong cách điện ảnh nhẹ nhàng & sâu lắng",
                     "Hành trình cuối tuần đầy năng lượng tích cực",
                 ]
+                style_combos = [
+                    ("campfire_warm", "warm_vlog_gold", "#F59E0B"),
+                    ("adventure_bold", "mint_nature", "#38BDF8"),
+                    ("editorial_minimal", "editorial_clean", "#34D399"),
+                    ("pastel_soft", "cinema_box", "#FB7185"),
+                    ("cinematic_glass", "highlight_bold", "#A78BFA"),
+                ]
+                vibe_pool = ["outdoor_picnic", "travel_vlog", "daily_story", "food_cafe", "creative_internet"]
+                color_pool = ["warm_sunset", "fresh_cool", "natural", "soft_film", "cinema_contrast"]
+                jitter_pool = [0.0, 1.8, 3.4, 1.1, 2.6]
+                _rnd.shuffle(style_combos)
+                _rnd.shuffle(vibe_pool)
+                _rnd.shuffle(color_pool)
                 all_exported: list[dict[str, Any]] = []
                 for v_idx in range(1, n_rand + 1):
                     pick_bgm = vlog_bgms[(v_idx - 1) % len(vlog_bgms)]
                     pick_stk = "normal" if v_idx % 2 == 1 else "rich"
+                    pick_style = style_combos[(v_idx - 1) % len(style_combos)]
+                    pick_vibe = vibe_pool[(v_idx - 1) % len(vibe_pool)]
+                    pick_color = color_pool[(v_idx - 1) % len(color_pool)]
+                    pick_jitter = jitter_pool[(v_idx - 1) % len(jitter_pool)]
                     angle_hint = angles[(v_idx - 1) % len(angles)]
                     base_note = str(req.product_note or "").strip()
                     rand_note = f"{base_note}\n[Đạo diễn biến thể #{v_idx}: {angle_hint}]".strip()
@@ -5610,14 +5643,21 @@ def _run_single_project_pipeline(req: OneClickPipelineReq) -> None:
                             "vlog_title": "",
                             "bgm_track": pick_bgm,
                             "sticker_density": pick_stk,
+                            "content_vibe": pick_vibe,
                             "product_note": rand_note,
                         }
                     )
                     _update_pipeline(
                         running=True,
-                        log_line=f"🎲 [Random Vlog #{v_idx}/{n_rand}] BGM={pick_bgm}, Sticker={pick_stk}, Voice={req.voice_preset}",
+                        log_line=f"🎲 [Random Vlog #{v_idx}/{n_rand}] Vibe={pick_vibe}, Style={pick_style[0]}, Color={pick_color}, BGM={pick_bgm}, Voice={req.voice_preset}",
                     )
-                    res_list = _execute_longform_vlog_pipeline(rand_req, variant_tag=f"R{v_idx}")
+                    res_list = _execute_longform_vlog_pipeline(
+                        rand_req,
+                        variant_tag=f"R{v_idx}",
+                        forced_style=pick_style,
+                        forced_color_preset=pick_color,
+                        shot_jitter_sec=pick_jitter,
+                    )
                     all_exported.extend(res_list)
                 names_joined = ", ".join(x["filename"] for x in all_exported)
                 _update_pipeline(
