@@ -532,12 +532,17 @@ def generate_longform_chapter_script(
                     seg = ch_segs[si]
                     seg_dur = float(seg.get("duration") or 2.0)
                     seek_in_clip = float(seg.get("start") or 0.0) + seg_dur * (0.25 if len(picked_indices) == 1 else 0.65)
-                    tl_t = float(seg.get("timeline_start") or ch_st) + seg_dur * 0.5
+                    tl_st = float(seg.get("timeline_start") or ch_st)
+                    tl_en = float(seg.get("timeline_end") or (tl_st + seg_dur))
+                    tl_t = tl_st + seg_dur * 0.5
                     chapter_frame_specs.append(
                         {
+                            "frame_id": f"F{len(chapter_frame_specs) + 1:02d}",
                             "chapter_index": ch_idx,
                             "ch_start": ch_st,
                             "ch_end": ch_en,
+                            "tl_start": tl_st,
+                            "tl_end": tl_en,
                             "timeline_sec": tl_t,
                             "abs_path": str(seg.get("abs_path") or ""),
                             "duration_sec": seg_dur,
@@ -600,8 +605,8 @@ def generate_longform_chapter_script(
         '      "chapter_subtitle": "Mô tả nhanh 1 dòng (<= 45 ký tự)",\n'
         '      "sticker": {"emoji": "🏕️", "label": "DỰNG TRẠI BÊN HỒ", "sublabel": "Khởi đầu hành trình", "position": "top-right"},\n'
         '      "visual_cues": [\n'
-        '        {"variant": "pointer", "target_x": 58, "target_y": 62, "emoji": "🦀", "label": "Gọi đúng tên vật thể trên hình", "sublabel": "Mô tả ngắn điểm thú vị của vật thể", "position": "center-left", "offset_ratio": 0.36},\n'
-        '        {"variant": "lower_third", "emoji": "📍", "label": "Điểm nhấn khoảnh khắc", "sublabel": "Ghi chú bối cảnh / cảm xúc", "position": "bottom-left", "offset_ratio": 0.72}\n'
+        '        {"frame_id": "F01", "variant": "pointer", "target_x": 58, "target_y": 62, "emoji": "🦀", "label": "Gọi đúng tên vật thể nhìn thấy trong frame_id đó", "sublabel": "Mô tả ngắn đúng chi tiết trên ảnh", "position": "center-left", "offset_ratio": 0.36},\n'
+        '        {"frame_id": "F02", "variant": "lower_third", "emoji": "📍", "label": "Điểm nhấn đúng khung hình frame_id", "sublabel": "Ghi chú bối cảnh thực tế trong ảnh", "position": "bottom-left", "offset_ratio": 0.72}\n'
         '      ],\n'
         '      "narration_blocks": [\n'
         '        {"offset_ratio": 0.14, "text": "Đoạn lời bình mở chương bám sát ảnh đầu chương (~20-26 từ)."},\n'
@@ -631,8 +636,9 @@ def generate_longform_chapter_script(
                     parts_payload.append(
                         {
                             "text": (
-                                f"[Chương {spec['chapter_index']} | {spec['ch_start']:.0f}s->{spec['ch_end']:.0f}s "
-                                f"| Mốc {spec['timeline_sec']:.0f}s | {spec['clip_name']}]"
+                                f"[{spec.get('frame_id', 'F00')} | Chương {spec['chapter_index']} | "
+                                f"Cảnh {spec.get('tl_start', spec['timeline_sec']):.1f}s->{spec.get('tl_end', spec['timeline_sec'] + 4.0):.1f}s "
+                                f"| {spec['clip_name']}]"
                             )
                         }
                     )
@@ -673,12 +679,18 @@ def generate_longform_chapter_script(
                         seek_sec=spec.get("seek_sec"),
                     ):
                         frame_lines.append(
-                            f"- [Chương {spec['chapter_index']} | {spec['ch_start']:.0f}s->{spec['ch_end']:.0f}s "
-                            f"| Mốc {spec['timeline_sec']:.0f}s | {spec['clip_name']}]: {out_jpg}"
+                            f"- [{spec.get('frame_id', f'F{idx:02d}')} | Chương {spec['chapter_index']} "
+                            f"| Cảnh {spec.get('tl_start', spec['timeline_sec']):.1f}s->{spec.get('tl_end', spec['timeline_sec'] + 4.0):.1f}s "
+                            f"| {spec['clip_name']}]: {out_jpg}"
                         )
             agy_prompt = json_prompt
             if frame_lines:
-                agy_prompt += "\n\nHãy xem khung hình đại diện được gắn đúng từng Chương theo trình tự thời gian:\n" + "\n".join(frame_lines)
+                agy_prompt += (
+                    "\n\n=== BẮT BUỘC XEM ẢNH KHUNG HÌNH TRƯỚC KHI TRẢ LỜI ===\n"
+                    "Hãy dùng tool đọc/xem TẤT CẢ các file ảnh `.jpg` bên dưới trước khi viết JSON. "
+                    "Mỗi `visual_cues` PHẢI gắn đúng `frame_id` (`F01`, `F02`...), chỉ gọi tên & tọa độ (`target_x`, `target_y`) của vật thể THẬT SỰ nhìn thấy trong chính file ảnh đó:\n"
+                    + "\n".join(frame_lines)
+                )
             agy_raw = str(agy_caller(agy_prompt) or "").strip()
             cand_json = _extract_json_block(agy_raw)
             if cand_json and isinstance(cand_json.get("chapters"), list) and cand_json["chapters"]:
@@ -840,18 +852,30 @@ def generate_longform_chapter_script(
                 ty = float(rc.get("target_y") if rc.get("target_y") is not None else 58)
             except Exception:
                 ty = 58.0
-            clean_cues.append(
-                {
-                    "variant": cv,
-                    "emoji": str(rc.get("emoji") or clean_sticker["emoji"]).strip()[:4] or clean_sticker["emoji"],
-                    "label": cl,
-                    "sublabel": csub,
-                    "position": cp,
-                    "target_x": max(12.0, min(88.0, tx)),
-                    "target_y": max(16.0, min(82.0, ty)),
-                    "offset_ratio": max(0.22, min(0.84, off_r)),
-                }
-            )
+            fid = str(rc.get("frame_id") or "").strip().upper()
+            matched_spec = next((sp for sp in chapter_frame_specs if sp.get("frame_id") == fid), None)
+            if matched_spec is None:
+                ch_specs = [sp for sp in chapter_frame_specs if int(sp.get("chapter_index") or 0) == int(ch_plan["index"])]
+                if ch_specs:
+                    matched_spec = ch_specs[min(cue_i, len(ch_specs) - 1)]
+            cue_obj: dict[str, Any] = {
+                "frame_id": matched_spec.get("frame_id", fid) if matched_spec else fid,
+                "variant": cv,
+                "emoji": str(rc.get("emoji") or clean_sticker["emoji"]).strip()[:4] or clean_sticker["emoji"],
+                "label": cl,
+                "sublabel": csub,
+                "position": cp,
+                "target_x": max(12.0, min(88.0, tx)),
+                "target_y": max(16.0, min(82.0, ty)),
+                "offset_ratio": max(0.22, min(0.84, off_r)),
+            }
+            if matched_spec and matched_spec.get("tl_start") is not None and matched_spec.get("tl_end") is not None:
+                tl_s = float(matched_spec["tl_start"])
+                tl_e = float(matched_spec["tl_end"])
+                if tl_e - tl_s >= 1.8:
+                    cue_obj["start_sec"] = round(tl_s + 0.15, 2)
+                    cue_obj["end_sec"] = round(tl_e - 0.1, 2)
+            clean_cues.append(cue_obj)
         raw_blocks = ai_ch.get("narration_blocks") if isinstance(ai_ch.get("narration_blocks"), list) else []
 
         clean_blocks: list[dict[str, Any]] = []
@@ -1748,7 +1772,17 @@ def render_vlog_remotion_overlays(
 
                 for s_i, cue in enumerate(cue_items):
                     off_r = float(cue.get("offset_ratio") or (0.36 + s_i * 0.34))
-                    stk_t = max(place_t + 3.8 + s_i * 5.2, ch_start + (ch_end - ch_start) * off_r)
+                    cue_dur = 4.5
+                    if cue.get("start_sec") is not None and cue.get("end_sec") is not None:
+                        c_s = float(cue["start_sec"])
+                        c_e = float(cue["end_sec"])
+                        stk_t = max(place_t + 3.6, c_s)
+                        if c_e - stk_t >= 1.8:
+                            cue_dur = round(max(2.0, min(4.5, c_e - stk_t)), 2)
+                        else:
+                            stk_t = max(place_t + 3.8 + s_i * 5.2, ch_start + (ch_end - ch_start) * off_r)
+                    else:
+                        stk_t = max(place_t + 3.8 + s_i * 5.2, ch_start + (ch_end - ch_start) * off_r)
                     if stk_t < min(ch_end - 1.5, total_dur - 5.5):
                         _render_one(
                             "VlogStickerOverlay",
@@ -1761,14 +1795,14 @@ def render_vlog_remotion_overlays(
                                 "targetX": float(cue.get("target_x") or 56.0),
                                 "targetY": float(cue.get("target_y") or 58.0),
                                 "accentColor": accent_color,
-                                "durationSec": 4.5,
+                                "durationSec": cue_dur,
                                 "width": ov_w,
                                 "height": ov_h,
                                 "aspectRatio": aspect_ratio,
                             },
                             f"sticker_{c_idx:02d}_{s_i + 1}.webm",
                             stk_t,
-                            4.5,
+                            cue_dur,
                         )
 
     # 3. Outro Card (6.0s at end of video)

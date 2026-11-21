@@ -1731,20 +1731,7 @@ def api_list_directories():
     return {"directories": list_selectable_directories()}
 
 
-@app.get("/api/files")
-def api_list_files(dir: str = Query(default="02_video_tho")):
-    target = resolve_safe_path(dir)
-    if not target.exists() or not target.is_dir():
-        raise HTTPException(status_code=404, detail=f"Không tìm thấy thư mục: {dir}")
-    return {"dir": to_rel_posix(target), "files": list_media_in_dir(target)}
-
-
-@app.post("/api/files/upload")
-async def api_upload_files(
-    target_dir: str = Form("02_video_tho"),
-    project_id: str = Form(""),
-    files: list[UploadFile] = File(...),
-):
+def _resolve_project_scoped_dir(target_dir: str, project_id: str = "") -> Path:
     pid = str(project_id or "").strip()
     if pid:
         proj_root = get_project_root(pid)
@@ -1756,11 +1743,29 @@ async def api_upload_files(
         if top_seg in PROJECT_SCOPED_ROOTS:
             dest_dir = (proj_root / rel_norm).resolve()
             if proj_root.resolve() not in dest_dir.parents and dest_dir != proj_root.resolve():
-                raise HTTPException(status_code=400, detail="Đường dẫn upload không hợp lệ.")
-        else:
-            dest_dir = resolve_safe_path(target_dir)
-    else:
-        dest_dir = resolve_safe_path(target_dir)
+                raise HTTPException(status_code=400, detail="Đường dẫn thư mục không hợp lệ.")
+            return dest_dir
+    return resolve_safe_path(target_dir)
+
+
+@app.get("/api/files")
+def api_list_files(
+    dir: str = Query(default="02_video_tho"),
+    project_id: str = Query(default=""),
+):
+    target = _resolve_project_scoped_dir(dir, project_id)
+    if not target.exists() or not target.is_dir():
+        raise HTTPException(status_code=404, detail=f"Không tìm thấy thư mục: {dir}")
+    return {"dir": to_rel_posix(target), "project_id": project_id or ACTIVE_PROJECT_ID, "files": list_media_in_dir(target)}
+
+
+@app.post("/api/files/upload")
+async def api_upload_files(
+    target_dir: str = Form("02_video_tho"),
+    project_id: str = Form(""),
+    files: list[UploadFile] = File(...),
+):
+    dest_dir = _resolve_project_scoped_dir(target_dir, project_id)
     assert_mutable_path(dest_dir)
     dest_dir.mkdir(parents=True, exist_ok=True)
 

@@ -2233,9 +2233,11 @@
 
     async function loadTab1Files() {
       const dir = document.getElementById('dl-target-dir').value || '02_video_tho';
-      document.getElementById('tab1-cur-dir').textContent = dir;
+      const targetPid = state.pipelineRunning && state.uploadTargetProjectId ? state.uploadTargetProjectId : '';
+      document.getElementById('tab1-cur-dir').textContent = targetPid ? `${dir} (Upload -> ${targetPid})` : dir;
       try {
-        const data = await api(`/api/files?dir=${encodeURIComponent(dir)}`);
+        const url = `/api/files?dir=${encodeURIComponent(dir)}` + (targetPid ? `&project_id=${encodeURIComponent(targetPid)}` : '');
+        const data = await api(url);
         state.tab1Files = data.files || [];
         const box = document.getElementById('tab1-file-list');
         if (!state.tab1Files.length) {
@@ -5269,6 +5271,7 @@
     async function switchProject(projectId) {
       if (state.pipelineRunning) {
         state.uploadTargetProjectId = projectId;
+        await loadTab1Files();
         toast(`Đang render: Đã chọn [${projectId}] làm đích Upload video thô (không ảnh hưởng render đang chạy)!`, 'success');
         return;
       }
@@ -5325,6 +5328,7 @@
         if (isRunning && data.created_id) {
           state.uploadTargetProjectId = data.created_id;
           renderProjectSelect(data);
+          await loadTab1Files();
           toast(`Đã tạo Project [${data.created_id}] & đặt làm đích Upload (render hiện tại vẫn chạy an toàn)!`, 'success');
         } else {
           state.uploadTargetProjectId = '';
