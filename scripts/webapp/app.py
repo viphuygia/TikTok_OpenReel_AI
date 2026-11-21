@@ -6894,6 +6894,60 @@ def api_download_file(
     )
 
 
+REVIEW_360_LOCK = threading.Lock()
+REVIEW_360_JOBS: dict[str, dict[str, Any]] = {}
+
+
+def _review_360_path(p_root: Path, src_name: str) -> Path:
+    stem = Path(src_name).stem
+    return p_root / "05_output" / "_review_360p" / f"{stem}_360p.mp4"
+
+
+def _run_review_360_transcode(job_key: str, src_path: Path, dest_path: Path) -> None:
+    tmp_path = dest_path.with_name(f".tmp_{dest_path.name}")
+    try:
+        dest_path.parent.mkdir(parents=True, exist_ok=True)
+        ffmpeg_bin = find_binary("ffmpeg") or "ffmpeg"
+        vf = "scale='if(gte(iw,ih),-2,360)':'if(gte(iw,ih),360,-2)'"
+        cmds = [
+            [
+                ffmpeg_bin, "-y", "-i", str(src_path), "-vf", vf,
+                "-c:v", "h264_nvenc", "-preset", "p4", "-cq", "27",
+                "-c:a", "aac", "-b:a", "96k", "-movflags", "+faststart", str(tmp_path),
+            ],
+            [
+                ffmpeg_bin, "-y", "-i", str(src_path), "-vf", vf,
+                "-c:v", "libx264", "-preset", "veryfast", "-crf", "27",
+                "-c:a", "aac", "-b:a", "96k", "-movflags", "+faststart", str(tmp_path),
+            ],
+        ]
+        ok = False
+        last_err = ""
+        for cmd in cmds:
+            try:
+                proc = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=600)
+                if proc.returncode == 0 and tmp_path.exists() and tmp_path.stat().st_size > 1024:
+                    ok = True
+                    break
+                last_err = (proc.stderr or "")[-300:]
+            except Exception as exc:
+                last_err = str(exc)
+        if not ok:
+            if tmp_path.exists():
+                tmp_path.unlink(missing_ok=True)
+            with REVIEW_360_LOCK:
+                REVIEW_360_JOBS[job_key] = {"status": "error", "error": last_err or "FFmpeg 360p failed"}
+            return
+        tmp_path.replace(dest_path)
+        with REVIEW_360_LOCK:
+            REVIEW_360_JOBS[job_key] = {"status": "ready", "error": ""}
+    except Exception as exc:
+        if tmp_path.exists():
+            tmp_path.unlink(missing_ok=True)
+        with REVIEW_360_LOCK:
+            REVIEW_360_JOBS[job_key] = {"status": "error", "error": str(exc)}
+
+
 @app.get("/api/projects/outputs")
 def api_list_project_outputs(project_id: str = Query("all")):
     proj_bundle = pm_list_projects()
@@ -6901,6 +6955,8 @@ def api_list_project_outputs(project_id: str = Query("all")):
     active_id = proj_bundle.get("active_id") or ""
     target_pid = str(project_id or "all").strip()
     outputs: list[dict[str, Any]] = []
+    with REVIEW_360_LOCK:
+        jobs_snap = dict(REVIEW_360_JOBS)
     for pr in all_projs:
         pid = str(pr.get("id") or "")
         if not pid or (target_pid != "all" and pid != target_pid):
@@ -6926,6 +6982,21 @@ def api_list_project_outputs(project_id: str = Query("all")):
         for mp4 in mp4s:
             meta = probe_media(mp4)
             stat = mp4.stat()
+            r360 = _review_360_path(p_root, mp4.name)
+            j_key = f"{pid}::{mp4.name}"
+            j_info = jobs_snap.get(j_key) or {}
+            if r360.exists() and r360.is_file() and r360.stat().st_size > 1024:
+                r360_status = "ready"
+                r360_size = round(r360.stat().st_size / (1024 * 1024), 2)
+            elif j_info.get("status") == "running":
+                r360_status = "running"
+                r360_size = 0.0
+            elif j_info.get("status") == "error":
+                r360_status = "error"
+                r360_size = 0.0
+            else:
+                r360_status = "none"
+                r360_size = 0.0
             outputs.append(
                 {
                     "project_id": pid,
@@ -6940,6 +7011,10 @@ def api_list_project_outputs(project_id: str = Query("all")):
                     "height": meta.get("height", 1920),
                     "mtime": int(stat.st_mtime),
                     "render_meta": hist_map.get(mp4.name),
+                    "review_360_status": r360_status,
+                    "review_360_size_mb": r360_size,
+                    "review_360_rel_path": f"05_output/_review_360p/{r360.name}",
+                    "review_360_error": str(j_info.get("error") or ""),
                 }
             )
     outputs.sort(key=lambda x: x["mtime"], reverse=True)
@@ -6989,6 +7064,35 @@ def api_download_project_outputs_zip(project_id: str = Query(...)):
     )
 
 
+@app.post("/api/projects/outputs/prepare-360p")
+def api_prepare_project_output_360p(payload: dict[str, Any]):
+    pid = str(payload.get("project_id") or "").strip()
+    name = Path(str(payload.get("name") or "")).name
+    if not pid or not name or not name.lower().endswith(".mp4"):
+        raise HTTPException(status_code=400, detail="Thiếu project_id hoặc tên file mp4.")
+    p_root = get_project_root(pid).resolve()
+    src_fp = (p_root / "05_output" / name).resolve()
+    if not src_fp.is_relative_to(p_root) or not src_fp.exists() or not src_fp.is_file():
+        raise HTTPException(status_code=404, detail="Không tìm thấy video gốc.")
+    dest_fp = _review_360_path(p_root, name)
+    if dest_fp.exists() and dest_fp.is_file() and dest_fp.stat().st_size > 1024:
+        return {
+            "ok": True,
+            "status": "ready",
+            "size_mb": round(dest_fp.stat().st_size / (1024 * 1024), 2),
+            "rel_path": f"05_output/_review_360p/{dest_fp.name}",
+        }
+    j_key = f"{pid}::{name}"
+    with REVIEW_360_LOCK:
+        cur = REVIEW_360_JOBS.get(j_key) or {}
+        if cur.get("status") == "running":
+            return {"ok": True, "status": "running"}
+        REVIEW_360_JOBS[j_key] = {"status": "running", "error": ""}
+    t = threading.Thread(target=_run_review_360_transcode, args=(j_key, src_fp, dest_fp), daemon=True)
+    t.start()
+    return {"ok": True, "status": "running"}
+
+
 @app.post("/api/projects/outputs/delete")
 def api_delete_project_output(payload: dict[str, Any]):
     pid = str(payload.get("project_id") or "").strip()
@@ -7000,5 +7104,8 @@ def api_delete_project_output(payload: dict[str, Any]):
     if not fp.is_relative_to(p_root) or not fp.exists() or not fp.is_file():
         raise HTTPException(status_code=404, detail="Không tìm thấy file để xóa.")
     fp.unlink()
+    r360 = _review_360_path(p_root, name)
+    if r360.exists() and r360.is_file():
+        r360.unlink(missing_ok=True)
     _remove_render_history(p_root / "04_workspace", name)
     return {"ok": True, "deleted": name, "project_id": pid}

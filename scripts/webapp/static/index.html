@@ -5745,15 +5745,49 @@
                     <button type="button" onclick="showOutputRenderMeta('${encodeURIComponent(JSON.stringify(o.render_meta))}')" class="shrink-0 text-cyan-300 hover:text-cyan-200 font-semibold">📋 Cấu hình</button>
                   </div>` : ''}
                   <div class="grid grid-cols-2 gap-1.5">
-                    <button type="button" onclick="triggerFileDownload('${escapeHtml(o.rel_path)}', '${escapeHtml(o.project_id)}')" class="py-1.5 px-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold">⬇️ Tải MP4</button>
-                    <button type="button" onclick="shareOrSaveVideoMobile('${escapeHtml(o.rel_path)}', '${escapeHtml(o.name)}', '${escapeHtml(o.project_id)}')" class="py-1.5 px-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold">📲 Lưu iPhone</button>
-                    <button type="button" onclick="openProjectOutputInExplorer('${escapeHtml(o.project_id)}', '${escapeHtml(o.rel_path)}')" class="py-1.5 px-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200">📂 Thư mục</button>
-                    <button type="button" onclick="deleteGalleryVideo('${escapeHtml(o.project_id)}', '${escapeHtml(o.name)}')" class="py-1.5 px-2 rounded-lg bg-rose-500/15 hover:bg-rose-500/30 text-rose-300">🗑️ Xóa</button>
+                    <button type="button" onclick="triggerFileDownload('${escapeHtml(o.rel_path)}', '${escapeHtml(o.project_id)}')" class="py-1.5 px-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold truncate">⬇️ Tải MP4</button>
+                    <button type="button" onclick="shareOrSaveVideoMobile('${escapeHtml(o.rel_path)}', '${escapeHtml(o.name)}', '${escapeHtml(o.project_id)}')" class="py-1.5 px-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold truncate">📲 Lưu iPhone</button>
+                    ${o.review_360_status === 'ready'
+                      ? `<button type="button" onclick="triggerFileDownload('${escapeHtml(o.review_360_rel_path)}', '${escapeHtml(o.project_id)}')" class="py-1.5 px-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-semibold truncate">⬇️ 360p (${o.review_360_size_mb}MB)</button>
+                         <button type="button" onclick="shareOrSaveVideoMobile('${escapeHtml(o.review_360_rel_path)}', '${escapeHtml(o.name.replace(/\\.mp4$/i, '_360p.mp4'))}', '${escapeHtml(o.project_id)}')" class="py-1.5 px-2 rounded-lg bg-teal-600 hover:bg-teal-500 text-white font-semibold truncate">📲 Lưu 360p</button>`
+                      : (o.review_360_status === 'running'
+                        ? `<button type="button" disabled class="col-span-2 py-1.5 px-2 rounded-lg bg-amber-600/25 border border-amber-500/40 text-amber-200 font-semibold cursor-wait truncate">⏳ Đang nén 360p...</button>`
+                        : `<button type="button" onclick="prepareReview360('${escapeHtml(o.project_id)}', '${escapeHtml(o.name)}')" class="col-span-2 py-1.5 px-2 rounded-lg bg-cyan-500/15 hover:bg-cyan-500/30 border border-cyan-500/35 text-cyan-200 font-semibold truncate">⚙️ Tạo 360p (Review)</button>`)
+                    }
+                    <button type="button" onclick="openProjectOutputInExplorer('${escapeHtml(o.project_id)}', '${escapeHtml(o.rel_path)}')" class="py-1.5 px-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 truncate">📂 Thư mục</button>
+                    <button type="button" onclick="deleteGalleryVideo('${escapeHtml(o.project_id)}', '${escapeHtml(o.name)}')" class="py-1.5 px-2 rounded-lg bg-rose-500/15 hover:bg-rose-500/30 text-rose-300 truncate">🗑️ Xóa</button>
                   </div>
                 </div>
               </div>`).join('')
             : '<div class="col-span-full p-8 text-center text-xs text-zinc-500 border border-dashed border-zinc-800 rounded-xl">Chưa có video output nào trong Project này.</div>';
         }
+        if (state._r360PollTimer) {
+          clearTimeout(state._r360PollTimer);
+          state._r360PollTimer = null;
+        }
+        if (outputs.some((o) => o.review_360_status === 'running')) {
+          state._r360PollTimer = setTimeout(() => {
+            loadOutputGallery(state.galleryProjectId || 'all');
+          }, 3000);
+        }
+      } catch (e) {
+        toast(e.message, 'error');
+      }
+    }
+
+    async function prepareReview360(projectId, name) {
+      try {
+        const res = await api('/api/projects/outputs/prepare-360p', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ project_id: projectId, name }),
+        });
+        if (res.status === 'ready') {
+          toast(`Bản 360p đã sẵn sàng (${res.size_mb} MB)!`, 'success');
+        } else {
+          toast('Đang nén bản 360p bằng GPU RTX 4060, đợi vài giây rồi tải nhé...', 'success');
+        }
+        await loadOutputGallery(state.galleryProjectId || 'all');
       } catch (e) {
         toast(e.message, 'error');
       }
