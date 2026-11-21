@@ -1090,6 +1090,7 @@ class AgyWorkshopPlanReq(BaseModel):
     product_note: str = ""
     target_duration: float = 30.0
     preserve_clips: bool = True
+    short_content_mode: str = "brand_brief"
     model: str | None = None
     effort: str | None = Field(default=None, pattern="^(low|medium|high|xhigh|max)$")
 
@@ -1125,6 +1126,7 @@ class GeminiWorkshopPlanReq(BaseModel):
     target_duration: float = 30.0
     preserve_clips: bool = True
     transition_level: str = "balanced"
+    short_content_mode: str = "brand_brief"
     model: str | None = None
     effort: str | None = Field(default=None, pattern="^(low|medium|high)$")
 
@@ -1200,6 +1202,7 @@ class OneClickPipelineReq(BaseModel):
     disable_flash_shake: bool = True
     icon_density: str = "balanced"
     sticker_density: str = "normal"
+    sticker_style: str = "pill_minimal"
     mix_engines: bool = False
     creative_wildcard: bool = False
     tts_engine: str = "edge_tts"
@@ -1208,6 +1211,7 @@ class OneClickPipelineReq(BaseModel):
     sfx_level: str = "subtle"
     aspect_ratio: str = "9:16"
     content_vibe: str = "learned_dna"
+    short_content_mode: str = "brand_brief"
     pipeline_category: str = "short_tiktok"
     ordered_clips: list[str] = Field(default_factory=list)
     keep_clip_audio: bool = False
@@ -2950,6 +2954,7 @@ def _build_three_option_planner_prompt(
     frames_summary: str,
     target_dur: float,
     preserve_clips: bool,
+    short_content_mode: str = "brand_brief",
 ) -> str:
     target_words, min_words, target_sents = compute_target_word_budget(target_dur)
     clip_rule = (
@@ -2960,6 +2965,30 @@ def _build_three_option_planner_prompt(
             f"linh hoạt `speed` từ `0.88` (slow-mo cận cảnh) đến `1.28` (tua nhanh thao tác phụ), `source` PHẢI khớp danh sách video thô bên dưới, tổng ~{target_dur:.0f}s.\n"
         )
     )
+    if str(short_content_mode or "brand_brief").strip() == "story_note":
+        note_clean = product_note.strip() or "Tự cảm nhận từ khung hình video thô và kể lại một khoảnh khắc đời thường tự nhiên, chân thực."
+        return (
+            "Bạn là Đạo diễn Tiền Kỳ cho kênh TikTok Story / Đời sống / Vlog ngắn (KHÔNG BÁN HÀNG).\n"
+            "TUYỆT ĐỐI KHÔNG nhắc tên thương hiệu ảo, KHÔNG chèn lời kêu gọi mua hàng, giỏ hàng, chốt đơn, giá cả hay giảm giá.\n"
+            "Trả về DUY NHẤT một JSON hợp lệ gồm:\n"
+            "1. `script_options`: Mảng ĐÚNG 3 phương án kịch bản lồng tiếng Story ngắn tự nhiên, gần gũi, cảm xúc thật, áp dụng 3 góc kể chuyện ĐA DẠNG "
+            "(ví dụ: Nhật ký trải nghiệm cá nhân / Góc nhìn chậm rãi & cảm xúc / Chia sẻ khoảnh khắc đáng nhớ). Mỗi item gồm:\n"
+            "   - `id`: \"opt1\" / \"opt2\" / \"opt3\"\n"
+            "   - `title`: Tiêu đề ngắn mô tả góc tiếp cận\n"
+            "   - `angle`: Từ khóa góc (vd: \"Nhật ký\", \"Cảm xúc\", \"Khoảnh khắc\")\n"
+            "   - `hook_badge`: Tiêu đề Hook ngắn <= 38 ký tự để hiện 3s đầu video (không giật tít bán hàng)\n"
+            f"   - `script_display`: Kịch bản bản ĐẸP cho Phụ đề Karaoke, PHẢI ĐẠT {min_words}–{target_words + 8} âm tiết/từ "
+            f"(chia rõ {target_sents} câu bằng dấu `.`) để đọc thực tế đủ {target_dur:.0f} giây (tuyệt đối KHÔNG viết ngắn quá dưới {min_words} từ!).\n"
+            "   - `script_text`: Kịch bản phiên âm tiếng Việt thuần 100% tương ứng ĐÚNG TỪNG CÂU 1-1 với `script_display` để đọc bằng TTS (chỉ dùng `.` và `,`, không emoji/markdown).\n"
+            "2. `recommended_id`: \"opt1\" / \"opt2\" / \"opt3\"\n"
+            "3. `auto_critic_fixes`: Mảng 3-5 gạch đầu dòng những lỗi/điểm yếu bạn đã tự phát hiện và đã TỰ SỬA NGAY vào 3 kịch bản trên.\n"
+            f"4. `callouts`: Mảng 3-4 nhãn nổi bật về khoảnh khắc/địa điểm/cảm xúc (`text` <= 20 ký tự, `startTime`, `duration`: 2.2, `y`: 0.17) rải đều trong {target_dur:.0f}s.\n"
+            "5. `floral_badge`: Object `brand` (tên chủ đề ngắn), `product_line` (phụ đề mood ngắn), `category` (\"Story\").\n"
+            f"6. `edit_plan`: Object gồm `title` và `clips`.\n{clip_rule}\n"
+            f"=== MÔ TẢ VIDEO / STORY TỪ NGƯỜI DÙNG ===\n{note_clean}\n\n"
+            f"=== DANH SÁCH VIDEO THÔ HỢP LỆ ===\n{raw_meta_lines}\n\n"
+            f"=== TÓM TẮT KHUNG HÌNH ===\n{frames_summary[:2200]}\n"
+        )
     ch_ctx = load_channel_script_dna_context()
     sample_block = (
         f"=== LỜI THOẠI MẪU THỰC TẾ CỦA KÊNH (BẮT BUỘC HỌC NHỊP CÂU, CÁCH XƯNG HÔ '{ch_ctx['pronoun']}' & CÁCH CHỐT CTA) ===\n"
@@ -3030,6 +3059,7 @@ def api_workshop_plan_gemini(req: GeminiWorkshopPlanReq):
         frames_summary=frames_summary,
         target_dur=target_dur,
         preserve_clips=req.preserve_clips,
+        short_content_mode=str(getattr(req, "short_content_mode", "brand_brief") or "brand_brief"),
     )
 
     parts: list[dict[str, Any]] = [{"text": prompt_text}]
@@ -3113,6 +3143,7 @@ def api_workshop_plan_agy(req: AgyWorkshopPlanReq):
         frames_summary=frames_summary,
         target_dur=target_dur,
         preserve_clips=req.preserve_clips,
+        short_content_mode=str(getattr(req, "short_content_mode", "brand_brief") or "brand_brief"),
     )
     clip_save_note = (
         "4. KHÔNG ghi đè `04_workspace/edit_plan.json` vì người dùng đang khóa giữ Clips.\n"
@@ -3170,9 +3201,11 @@ def api_workshop_plan_agy(req: AgyWorkshopPlanReq):
 @app.post("/api/workshop/plan-auto")
 def api_workshop_plan_auto(req: GeminiWorkshopPlanReq):
     """Unified Pre-Production Plan + Self-Applying AI Critic + 3 Script Options (Gemini -> Agy -> Smart Brief)."""
-    brief_ready, brief_reason = is_brand_brief_ready()
-    if not brief_ready:
-        raise HTTPException(status_code=400, detail=brief_reason)
+    content_mode = str(getattr(req, "short_content_mode", "brand_brief") or "brand_brief").strip()
+    if content_mode != "story_note":
+        brief_ready, brief_reason = is_brand_brief_ready()
+        if not brief_ready:
+            raise HTTPException(status_code=400, detail=brief_reason)
     t_level = str(req.transition_level or "balanced")
     update_style_dna({"transition_level": t_level})
     pacing_hint = (
@@ -3203,6 +3236,7 @@ def api_workshop_plan_auto(req: GeminiWorkshopPlanReq):
                     product_note=req.product_note,
                     target_duration=req.target_duration,
                     preserve_clips=req.preserve_clips,
+                    short_content_mode=content_mode,
                 )
             )
         except Exception:
@@ -3211,7 +3245,12 @@ def api_workshop_plan_auto(req: GeminiWorkshopPlanReq):
     brief = load_brand_brief()
     target_dur = float(req.target_duration or brief.get("target_duration_sec") or 30.0)
     brief = save_brand_brief({"target_duration_sec": target_dur})
-    fb = generate_three_script_options_fallback(brief, target_dur, req.product_note)
+    fb = generate_three_script_options_fallback(
+        brief,
+        target_dur,
+        req.product_note,
+        content_vibe="daily_story" if content_mode == "story_note" else "learned_dna",
+    )
     fin = _finalize_workshop_plan(
         raw_parsed={
             "script_options": fb["options"],
@@ -5509,6 +5548,7 @@ def _execute_longform_vlog_pipeline(
             aspect_ratio=cur_ar,
             channel_name=ch_name,
             sticker_density=str(req.sticker_density or "normal"),
+            sticker_style=str(getattr(req, "sticker_style", "pill_minimal") or "pill_minimal"),
         )
         stk_rendered = sum(1 for ov in overlays if "sticker_" in str(ov.get("path") or ""))
         _update_pipeline(
@@ -5704,9 +5744,10 @@ def _run_single_project_pipeline(req: OneClickPipelineReq) -> None:
                 "disable_flash_shake": bool(req.disable_flash_shake),
             }
         )
+        is_story_mode = str(getattr(req, "short_content_mode", "brand_brief") or "brand_brief").strip() == "story_note"
         brief = save_brand_brief({"target_duration_sec": req.target_duration_sec})
         raw_b = str(brief.get("raw_brief") or "").strip()
-        if len(raw_b) >= 12 and not brief.get("brief_ai_extracted"):
+        if not is_story_mode and len(raw_b) >= 12 and not brief.get("brief_ai_extracted"):
             try:
                 _update_pipeline(
                     message="Bước 1/5 (Kế Hoạch AI): Đang tự động bóc tách Brief thô (Brand, USP, Phiên âm)...",
@@ -5742,7 +5783,11 @@ def _run_single_project_pipeline(req: OneClickPipelineReq) -> None:
             raise RuntimeError("Thư mục 02_video_tho đang trống. Hãy thêm ít nhất 1 video thô trước.")
         _ensure_raw_frames_extracted(raw_videos)
         _update_pipeline(
-            step_status=(1, "done", f"{brief.get('brand')} · {len(raw_videos)} video thô"),
+            step_status=(
+                1,
+                "done",
+                f"{'Story / Mô tả' if is_story_mode else brief.get('brand')} · {len(raw_videos)} video thô",
+            ),
             percent=20,
         )
 
@@ -5770,16 +5815,21 @@ def _run_single_project_pipeline(req: OneClickPipelineReq) -> None:
             req_aspect = "9:16"
         import style_dna as _sd
         vibe_meta = _sd.get_content_vibe_meta(req_vibe)
-        note = req.product_note.strip() or str(brief.get("usps") or "")
+        note = req.product_note.strip() if is_story_mode else (req.product_note.strip() or str(brief.get("usps") or ""))
         if vibe_meta.get("is_vlog") and vibe_meta.get("prompt_hint"):
             note = f"{note}\n[Phong cách nội dung: {vibe_meta['prompt_hint']}]".strip()
-        vibe_changed = bool(vibe_meta.get("is_vlog")) and str(bundle.get("content_vibe") or "learned_dna") != req_vibe
+        vibe_changed = bool(vibe_meta.get("is_vlog") or is_story_mode) and str(bundle.get("content_vibe") or "learned_dna") != (
+            "story_note" if is_story_mode and not vibe_meta.get("is_vlog") else req_vibe
+        )
         if req.regenerate_script or not cur_script_txt or cur_word_count < min_words or bundle_mismatch or vibe_changed:
-            if vibe_meta.get("is_vlog") and not (find_agy_executable() or str(load_config().get("gemini_api_key") or "").strip()):
+            if (vibe_meta.get("is_vlog") or is_story_mode) and not (find_agy_executable() or str(load_config().get("gemini_api_key") or "").strip()):
                 bundle = _sd.generate_three_script_options_fallback(
-                    brief, target_duration_sec=req.target_duration_sec, product_note=req.product_note.strip(), content_vibe=req_vibe
+                    brief,
+                    target_duration_sec=req.target_duration_sec,
+                    product_note=req.product_note.strip(),
+                    content_vibe=("daily_story" if is_story_mode and not vibe_meta.get("is_vlog") else req_vibe),
                 )
-                bundle["content_vibe"] = req_vibe
+                bundle["content_vibe"] = "story_note" if is_story_mode and not vibe_meta.get("is_vlog") else req_vibe
                 _sd.save_script_options(bundle)
             else:
                 plan_res = api_workshop_plan_auto(
@@ -5787,11 +5837,12 @@ def _run_single_project_pipeline(req: OneClickPipelineReq) -> None:
                         product_note=note,
                         target_duration=req.target_duration_sec,
                         preserve_clips=req.preserve_clips,
+                        short_content_mode="story_note" if is_story_mode else "brand_brief",
                     )
                 )
                 bundle = plan_res.get("script_options") or load_script_options()
-                if vibe_meta.get("is_vlog") and bundle:
-                    bundle["content_vibe"] = req_vibe
+                if (vibe_meta.get("is_vlog") or is_story_mode) and bundle:
+                    bundle["content_vibe"] = "story_note" if is_story_mode and not vibe_meta.get("is_vlog") else req_vibe
                     _sd.save_script_options(bundle)
             if req.selected_option_id and req.selected_option_id != bundle.get("selected_id"):
                 api_workshop_select_script(
@@ -5840,6 +5891,11 @@ def _run_single_project_pipeline(req: OneClickPipelineReq) -> None:
                 FILE_CRITIC_REPORT.write_text(critic_md, encoding="utf-8")
 
         final_words = len(re.findall(r"[^\W_]+", FILE_SCRIPT.read_text(encoding="utf-8-sig"), flags=re.UNICODE))
+        if is_story_mode:
+            try:
+                save_openreel_hook_md(cta_text="")
+            except Exception:
+                pass
         _update_pipeline(
             step_status=(2, "done", f"{final_words} từ · Auto-Critic OK"),
             percent=42,
@@ -5867,6 +5923,7 @@ def _run_single_project_pipeline(req: OneClickPipelineReq) -> None:
                         target_duration=req.target_duration_sec,
                         preserve_clips=req.preserve_clips,
                         transition_level=req.transition_level,
+                        short_content_mode="story_note" if is_story_mode else "brand_brief",
                     )
                 )
                 batch_bundle = plan_res.get("script_options") or load_script_options()
@@ -6374,7 +6431,7 @@ def _req_for_project(req: OneClickPipelineReq, pid: str, multi_projects: bool) -
             upd["ordered_clips"] = [str(x) for x in pc["ordered_clips"] if str(x).strip()]
         str_fields = (
             "vlog_title", "product_note", "quality_preset", "aspect_ratio", "content_vibe",
-            "voice_preset", "tts_engine", "edge_voice", "bgm_track", "sticker_density",
+            "short_content_mode", "voice_preset", "tts_engine", "edge_voice", "bgm_track", "sticker_density", "sticker_style",
             "render_engine", "innovation_preset", "sfx_level", "transition_level",
             "icon_density", "visual_theme",
         )
@@ -6477,13 +6534,26 @@ def api_pipeline_run_all(req: OneClickPipelineReq):
                     detail=f"Các Project chưa có video thô trong 02_video_tho/: {', '.join(not_ready)}",
                 )
         else:
-            not_ready = [pid for pid in target_pids if pid not in all_projs or not all_projs[pid].get("ready")]
+            cfgs = getattr(req, "project_configs", None) or {}
+            base_scm = str(getattr(req, "short_content_mode", "brand_brief") or "brand_brief").strip()
+            not_ready = []
+            for pid in target_pids:
+                p_obj = all_projs.get(pid)
+                if not p_obj:
+                    not_ready.append(pid)
+                    continue
+                p_scm = str((cfgs.get(pid) or {}).get("short_content_mode") or base_scm).strip()
+                if p_scm == "story_note":
+                    if int(p_obj.get("raw_video_count") or 0) <= 0:
+                        not_ready.append(pid)
+                elif not p_obj.get("ready"):
+                    not_ready.append(pid)
             if not_ready:
                 raise HTTPException(
                     status_code=400,
-                    detail=f"Các Project chưa đủ Brief hoặc Video thô: {', '.join(not_ready)}",
+                    detail=f"Các Project chưa đủ điều kiện (Video thô / Brief Nhãn Hàng): {', '.join(not_ready)}",
                 )
-    elif not is_long_mode:
+    elif not is_long_mode and str(getattr(req, "short_content_mode", "brand_brief") or "brand_brief").strip() != "story_note":
         brief_ready, brief_reason = is_brand_brief_ready()
         if not brief_ready:
             raise HTTPException(status_code=400, detail=brief_reason)

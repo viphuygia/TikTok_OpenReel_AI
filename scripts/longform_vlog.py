@@ -599,6 +599,10 @@ def generate_longform_chapter_script(
         '      "chapter_title": "TÊN CHƯƠNG NGẮN (<= 26 ký tự)",\n'
         '      "chapter_subtitle": "Mô tả nhanh 1 dòng (<= 45 ký tự)",\n'
         '      "sticker": {"emoji": "🏕️", "label": "DỰNG TRẠI BÊN HỒ", "sublabel": "Khởi đầu hành trình", "position": "top-right"},\n'
+        '      "visual_cues": [\n'
+        '        {"variant": "callout", "emoji": "🌊", "label": "Giải thích chi tiết cảnh quay", "sublabel": "Góc nhìn thực tế ngay trong khung hình", "position": "center-left", "offset_ratio": 0.36},\n'
+        '        {"variant": "lower_third", "emoji": "📍", "label": "Điểm nhấn khoảnh khắc", "sublabel": "Ghi chú bối cảnh / cảm xúc", "position": "bottom-left", "offset_ratio": 0.72}\n'
+        '      ],\n'
         '      "narration_blocks": [\n'
         '        {"offset_ratio": 0.14, "text": "Đoạn lời bình mở chương bám sát ảnh đầu chương (~20-26 từ)."},\n'
         '        {"offset_ratio": 0.58, "text": "Đoạn lời bình tiếp nối bám sát ảnh sau của chương (~20-26 từ)."}\n'
@@ -805,6 +809,39 @@ def generate_longform_chapter_script(
             "sublabel": str(raw_stk.get("sublabel") or def_ssub).strip()[:32],
             "position": stk_pos,
         }
+        raw_cues = ai_ch.get("visual_cues") if isinstance(ai_ch.get("visual_cues"), list) else []
+        clean_cues: list[dict[str, Any]] = []
+        valid_variants = {"callout", "lower_third", "floating_lottie", "pill"}
+        valid_positions = {"top-right", "top-left", "bottom-right", "bottom-left", "center-left", "center-right"}
+        fallback_variants = ["callout", "lower_third", "floating_lottie"]
+        fallback_positions = ["center-left", "bottom-left", "center-right", "top-right"]
+        for cue_i, rc in enumerate(raw_cues[:2]):
+            if not isinstance(rc, dict):
+                continue
+            cv = str(rc.get("variant") or fallback_variants[(ci + cue_i) % len(fallback_variants)]).strip()
+            if cv not in valid_variants:
+                cv = fallback_variants[(ci + cue_i) % len(fallback_variants)]
+            cp = str(rc.get("position") or fallback_positions[(ci + cue_i) % len(fallback_positions)]).strip()
+            if cp not in valid_positions:
+                cp = fallback_positions[(ci + cue_i) % len(fallback_positions)]
+            cl = str(rc.get("label") or clean_sticker["label"]).strip()[:34]
+            csub = str(rc.get("sublabel") or clean_sticker["sublabel"]).strip()[:52]
+            if not cl:
+                continue
+            try:
+                off_r = float(rc.get("offset_ratio") or (0.35 + cue_i * 0.35))
+            except Exception:
+                off_r = 0.35 + cue_i * 0.35
+            clean_cues.append(
+                {
+                    "variant": cv,
+                    "emoji": str(rc.get("emoji") or clean_sticker["emoji"]).strip()[:4] or clean_sticker["emoji"],
+                    "label": cl,
+                    "sublabel": csub,
+                    "position": cp,
+                    "offset_ratio": max(0.22, min(0.84, off_r)),
+                }
+            )
         raw_blocks = ai_ch.get("narration_blocks") if isinstance(ai_ch.get("narration_blocks"), list) else []
 
         clean_blocks: list[dict[str, Any]] = []
@@ -841,6 +878,7 @@ def generate_longform_chapter_script(
                 "chapter_title": c_title,
                 "chapter_subtitle": c_sub,
                 "sticker": clean_sticker,
+                "visual_cues": clean_cues,
                 "start_sec": float(ch_plan["start_sec"]),
                 "end_sec": float(ch_plan["end_sec"]),
                 "narration_blocks": clean_blocks,
@@ -1479,6 +1517,7 @@ def render_vlog_remotion_overlays(
     aspect_ratio: str = "16:9",
     channel_name: str = "VLOG JOURNAL",
     sticker_density: str = "normal",
+    sticker_style: str = "pill_minimal",
 ) -> list[dict[str, Any]]:
     """Render transparent Remotion WebM overlays for VlogIntro, VlogChapterCards, VlogStickers, and VlogOutro."""
     npx, browser_exe = _find_remotion_tools()
@@ -1610,28 +1649,103 @@ def render_vlog_remotion_overlays(
 
         # Render contextual animated sticker(s) inside EVERY chapter (4.5s each)
         stk = ch.get("sticker") if isinstance(ch.get("sticker"), dict) else None
-        if stk_mode != "off" and stk and (ch_end - ch_start) >= 10.0:
-            stk_ratios = [0.32, 0.70] if stk_mode == "rich" else [0.45]
-            for s_i, s_rat in enumerate(stk_ratios):
-                stk_t = max(place_t + 3.8 + s_i * 5.2, ch_start + (ch_end - ch_start) * s_rat)
-                if stk_t < min(ch_end - 1.5, total_dur - 5.5):
-                    _render_one(
-                        "VlogStickerOverlay",
+        stk_style = str(sticker_style or "pill_minimal").strip().lower()
+        if stk_style not in {"pill_minimal", "ai_director_rich", "hybrid"}:
+            stk_style = "pill_minimal"
+        if stk_mode != "off" and (stk or ch.get("visual_cues")) and (ch_end - ch_start) >= 10.0:
+            if stk_style == "pill_minimal":
+                stk_ratios = [0.32, 0.70] if stk_mode == "rich" else [0.45]
+                for s_i, s_rat in enumerate(stk_ratios):
+                    stk_t = max(place_t + 3.8 + s_i * 5.2, ch_start + (ch_end - ch_start) * s_rat)
+                    if stk_t < min(ch_end - 1.5, total_dur - 5.5) and stk:
+                        _render_one(
+                            "VlogStickerOverlay",
+                            {
+                                "emoji": str(stk.get("emoji") or "✨"),
+                                "label": str(stk.get("label") or ch.get("chapter_title") or "KHOẢNH KHẮC"),
+                                "sublabel": str(stk.get("sublabel") or ""),
+                                "position": str(stk.get("position") or ("top-right" if (c_idx + s_i) % 2 == 1 else "top-left")),
+                                "variant": "pill",
+                                "accentColor": accent_color,
+                                "durationSec": 4.5,
+                                "width": ov_w,
+                                "height": ov_h,
+                                "aspectRatio": aspect_ratio,
+                            },
+                            f"sticker_{c_idx:02d}_{s_i + 1}.webm",
+                            stk_t,
+                            4.5,
+                        )
+            else:
+                raw_cues = [c for c in (ch.get("visual_cues") or []) if isinstance(c, dict)]
+                if not raw_cues:
+                    fb_variants = ["callout", "lower_third", "floating_lottie"]
+                    fb_positions = ["center-left", "bottom-left", "center-right", "top-right"]
+                    n_blocks = ch.get("narration_blocks") or []
+                    b_snip = ""
+                    if n_blocks and isinstance(n_blocks[0], dict):
+                        b_words = str(n_blocks[0].get("text") or "").split()
+                        b_snip = " ".join(b_words[:8]) + ("..." if len(b_words) > 8 else "")
+                    raw_cues = [
                         {
+                            "variant": fb_variants[ci % len(fb_variants)],
+                            "emoji": str((stk or {}).get("emoji") or "✨"),
+                            "label": str((stk or {}).get("label") or ch.get("chapter_title") or "KHOẢNH KHẮC"),
+                            "sublabel": b_snip or str((stk or {}).get("sublabel") or ch.get("chapter_subtitle") or ""),
+                            "position": fb_positions[ci % len(fb_positions)],
+                            "offset_ratio": 0.44,
+                        },
+                        {
+                            "variant": fb_variants[(ci + 1) % len(fb_variants)],
+                            "emoji": str((stk or {}).get("emoji") or "🌿"),
+                            "label": str(ch.get("chapter_subtitle") or (stk or {}).get("sublabel") or "Điểm nhấn"),
+                            "sublabel": str((stk or {}).get("label") or ""),
+                            "position": fb_positions[(ci + 2) % len(fb_positions)],
+                            "offset_ratio": 0.74,
+                        },
+                    ]
+                cue_items: list[dict[str, Any]] = []
+                if stk_style == "hybrid" and stk:
+                    cue_items.append(
+                        {
+                            "variant": "pill",
                             "emoji": str(stk.get("emoji") or "✨"),
                             "label": str(stk.get("label") or ch.get("chapter_title") or "KHOẢNH KHẮC"),
                             "sublabel": str(stk.get("sublabel") or ""),
-                            "position": str(stk.get("position") or ("top-right" if (c_idx + s_i) % 2 == 1 else "top-left")),
-                            "accentColor": accent_color,
-                            "durationSec": 4.5,
-                            "width": ov_w,
-                            "height": ov_h,
-                            "aspectRatio": aspect_ratio,
-                        },
-                        f"sticker_{c_idx:02d}_{s_i + 1}.webm",
-                        stk_t,
-                        4.5,
+                            "position": str(stk.get("position") or ("top-right" if c_idx % 2 == 1 else "top-left")),
+                            "offset_ratio": 0.34,
+                        }
                     )
+                    if raw_cues:
+                        c0 = dict(raw_cues[0])
+                        c0["offset_ratio"] = max(0.62, float(c0.get("offset_ratio") or 0.68))
+                        cue_items.append(c0)
+                else:
+                    max_cues = 2 if stk_mode == "rich" else 1
+                    cue_items = raw_cues[:max_cues]
+
+                for s_i, cue in enumerate(cue_items):
+                    off_r = float(cue.get("offset_ratio") or (0.36 + s_i * 0.34))
+                    stk_t = max(place_t + 3.8 + s_i * 5.2, ch_start + (ch_end - ch_start) * off_r)
+                    if stk_t < min(ch_end - 1.5, total_dur - 5.5):
+                        _render_one(
+                            "VlogStickerOverlay",
+                            {
+                                "emoji": str(cue.get("emoji") or "✨"),
+                                "label": str(cue.get("label") or ch.get("chapter_title") or "KHOẢNH KHẮC"),
+                                "sublabel": str(cue.get("sublabel") or ""),
+                                "position": str(cue.get("position") or "center-left"),
+                                "variant": str(cue.get("variant") or "callout"),
+                                "accentColor": accent_color,
+                                "durationSec": 4.5,
+                                "width": ov_w,
+                                "height": ov_h,
+                                "aspectRatio": aspect_ratio,
+                            },
+                            f"sticker_{c_idx:02d}_{s_i + 1}.webm",
+                            stk_t,
+                            4.5,
+                        )
 
     # 3. Outro Card (6.0s at end of video)
     outro_dur = min(6.0, max(3.5, total_dur * 0.1))

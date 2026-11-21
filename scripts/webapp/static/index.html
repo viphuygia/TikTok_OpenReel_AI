@@ -338,6 +338,28 @@
           <div id="longform-multi-proj-box" class="hidden space-y-2.5"></div>
         </div>
 
+        <!-- Short-Form Content Source: Brand Brief (Shop) vs Video Description / Story -->
+        <div id="shortform-content-mode-box" class="rounded-xl bg-zinc-900/70 border border-zinc-800 p-3 space-y-2.5">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <div class="text-[11px] font-semibold uppercase tracking-wide text-zinc-400">0b. Nguồn Nội Dung Video Ngắn</div>
+            <div class="inline-flex rounded-lg bg-zinc-950 border border-zinc-800 p-0.5 text-[11px]">
+              <button type="button" id="btn-scm-brief" onclick="setShortContentMode('brand_brief')" class="px-2.5 py-1 rounded-md font-semibold bg-emerald-600 text-white transition">🛍️ Brief Nhãn Hàng</button>
+              <button type="button" id="btn-scm-story" onclick="setShortContentMode('story_note')" class="px-2.5 py-1 rounded-md font-medium text-zinc-300 hover:text-white transition">🌿 Mô tả Video / Story</button>
+            </div>
+          </div>
+          <div id="short-brief-panel" class="flex flex-wrap items-center justify-between gap-2 rounded-lg bg-zinc-950/70 border border-zinc-800 px-3 py-2">
+            <div class="text-[11px] text-zinc-300">
+              <span>Trạng thái Brief: </span>
+              <span id="modal-brand-brief-pill" class="font-semibold text-amber-300">Chưa thiết lập</span>
+            </div>
+            <button type="button" onclick="openBrandBriefModal()" class="px-3 py-1.5 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/45 text-amber-200 font-semibold text-[11px] transition">📋 Thiết lập / Sửa Brief Nhãn Hàng</button>
+          </div>
+          <div id="short-story-panel" class="hidden space-y-1.5">
+            <label class="block text-[11px] text-emerald-300 font-medium">📝 Mô tả ngắn nội dung / cảm xúc video (Không bán hàng, không chèn giỏ hàng)</label>
+            <textarea id="short-story-note" rows="2" placeholder="VD: Đi dạo biển cuối tuần, trời mát gió nhẹ, kể lại cảm giác thư giãn... (Có thể để trống để AI tự nhìn khung hình)" class="w-full rounded-lg bg-zinc-950 border border-zinc-700 px-2.5 py-1.5 text-xs text-zinc-100 placeholder-zinc-500"></textarea>
+          </div>
+        </div>
+
         <!-- 3 Engine Cards -->
         <div id="shortform-engine-box" class="space-y-1.5">
           <div class="text-[11px] font-semibold uppercase tracking-wide text-zinc-400">1. Chọn Engine Dựng Video</div>
@@ -473,6 +495,14 @@
                 <option value="off">🚫 Tắt Sticker Động</option>
                 <option value="normal" selected>⚖️ Vừa phải (4 Sticker)</option>
                 <option value="rich">🎉 Sôi động (7–8 Sticker)</option>
+              </select>
+            </div>
+            <div id="wrap-auto-sticker-style" class="hidden min-w-0">
+              <label class="block text-[11px] text-amber-300 font-medium mb-1 truncate">🎨 Kiểu Đồ Họa &amp; Chú Thích Vlog</label>
+              <select id="auto-sticker-style" class="w-full rounded-lg bg-zinc-950 border border-zinc-700 px-2.5 py-1.5 text-xs text-zinc-100">
+                <option value="pill_minimal" selected>🏷️ Nhãn Góc Tối Giản (Giữ nguyên)</option>
+                <option value="ai_director_rich">🎬 AI Đạo Diễn Đồ Họa (Chú thích + Sticker động)</option>
+                <option value="hybrid">✨ Kết hợp (Nhãn góc + Chú thích điểm nhấn)</option>
               </select>
             </div>
           </div>
@@ -803,11 +833,6 @@
             <button type="button" onclick="setTargetDurationPreset(25, true)" class="px-1.5 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 text-[10px] text-zinc-300">25s</button>
             <button type="button" onclick="setTargetDurationPreset(30, true)" class="px-1.5 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 text-[10px] text-zinc-300">30s</button>
           </div>
-          <button id="btn-open-brand-brief" type="button" onclick="openBrandBriefModal()" class="px-3 py-1.5 rounded-xl bg-amber-500/15 hover:bg-amber-500/25 border border-amber-500/40 text-amber-200 font-medium transition inline-flex items-center gap-1.5">
-            <span>📋 Brief:</span>
-            <span id="brand-brief-pill" class="font-semibold text-white">Chưa thiết lập</span>
-          </button>
-          <span id="brief-required-hint" class="text-[11px] text-amber-300/90">Cần điền Brief để mở khóa Tạo Video</span>
         </div>
         <span id="pipeline-status-text" class="text-[11px] text-zinc-400">Sẵn sàng</span>
       </div>
@@ -3954,17 +3979,16 @@
           : 'px-3 py-1.5 rounded-xl bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/50 text-amber-200 font-medium transition inline-flex items-center gap-1.5 animate-pulse';
       }
       const autoBtn = document.getElementById('btn-one-click-mp4');
-      const briefHint = document.getElementById('brief-required-hint');
-      if (briefHint) briefHint.classList.toggle('hidden', ready);
       if (autoBtn && !state.pipelineRunning) {
-        autoBtn.disabled = !ready;
-        if (ready) {
-          autoBtn.classList.remove('opacity-45', 'cursor-not-allowed', 'grayscale');
-          autoBtn.title = 'Mở bảng cấu hình & Tạo Video Auto';
-        } else {
-          autoBtn.classList.add('opacity-45', 'cursor-not-allowed', 'grayscale');
-          autoBtn.title = 'Vui lòng điền & Lưu Brief Nhãn Hàng trước khi Tạo Video Auto';
-        }
+        autoBtn.disabled = false;
+        autoBtn.classList.remove('opacity-45', 'cursor-not-allowed', 'grayscale');
+        autoBtn.title = 'Mở bảng cấu hình & Tạo Video Auto';
+      }
+      const modalPill = document.getElementById('modal-brand-brief-pill');
+      if (modalPill && brief) {
+        const label = [brief.brand, brief.product_line].filter(Boolean).join(' · ') || 'Chưa thiết lập';
+        modalPill.textContent = ready ? `✓ ${label}` : label;
+        modalPill.className = ready ? 'font-semibold text-emerald-300' : 'font-semibold text-amber-300';
       }
     }
 
@@ -4129,12 +4153,9 @@
       if (txt) txt.textContent = p.message || 'Sẵn sàng 1-Click';
       state.pipelineRunning = !!p.running;
       if (btn) {
-        const briefOk = isBrandBriefReadyClient();
-        btn.disabled = !!p.running || !briefOk;
+        btn.disabled = !!p.running;
         btn.textContent = p.running ? `⏳ Đang chạy (${p.percent || 0}%)...` : '🚀 Tạo Video Auto';
-        btn.classList.toggle('opacity-45', !p.running && !briefOk);
-        btn.classList.toggle('cursor-not-allowed', !p.running && !briefOk);
-        btn.classList.toggle('grayscale', !p.running && !briefOk);
+        btn.classList.remove('opacity-45', 'cursor-not-allowed', 'grayscale');
       }
       const projSel = document.getElementById('project-select');
       const newProjBtn = document.getElementById('btn-new-project');
@@ -4238,18 +4259,21 @@
         const list = data.projects || [];
         box.innerHTML = list.map((p) => {
           const rawCnt = Number(p.raw_video_count || 0);
-          const isReady = isLong ? rawCnt > 0 : !!p.ready;
+          const hasRaw = rawCnt > 0;
+          const isReady = isLong ? hasRaw : hasRaw;
           const isAct = p.id === data.active_id;
           const checked = isReady && isAct ? 'checked' : '';
           const disabled = isReady ? '' : 'disabled';
-          const statusTxt = isReady
-            ? `✅ ${rawCnt} thô · ${p.brand || p.name}`
-            : `⚠️ ${(p.missing_reasons || ['Chưa có video thô']).join(' + ')}`;
+          const statusTxt = !hasRaw
+            ? '⚠️ Chưa có video thô trong 02_video_tho'
+            : (p.ready
+                ? `✅ ${rawCnt} thô · ${p.brand || p.name}`
+                : (isLong ? `✅ ${rawCnt} thô · Sẵn sàng` : `🎬 ${rawCnt} thô · Chưa có Brief (Dùng Story hoặc điền Brief)`));
           return `<label class="flex items-center gap-2 rounded-lg border px-2.5 py-1.5 ${isReady ? 'border-zinc-700 bg-zinc-950/60 cursor-pointer' : 'border-zinc-800/70 bg-zinc-950/30 opacity-50 cursor-not-allowed'}">
-            <input type="checkbox" name="auto-proj-id" value="${escapeHtml(p.id)}" data-is-active="${isAct ? '1' : '0'}" data-raw-count="${rawCnt}" data-proj-name="${escapeHtml(p.name)}" onchange="onAutoProjectSelectionChange()" ${checked} ${disabled} class="rounded bg-zinc-800 border-emerald-500 text-emerald-500" />
+            <input type="checkbox" name="auto-proj-id" value="${escapeHtml(p.id)}" data-is-active="${isAct ? '1' : '0'}" data-raw-count="${rawCnt}" data-brief-ready="${p.ready ? '1' : '0'}" data-proj-name="${escapeHtml(p.name)}" onchange="onAutoProjectSelectionChange()" ${checked} ${disabled} class="rounded bg-zinc-800 border-emerald-500 text-emerald-500" />
             <div class="min-w-0 flex-1">
               <div class="font-semibold text-zinc-100 truncate">${escapeHtml(p.name)}${isAct ? ' <span class="text-[10px] text-emerald-400">(Đang mở)</span>' : ''}</div>
-              <div class="text-[10px] ${isReady ? 'text-emerald-300/90' : 'text-amber-300'} truncate">${escapeHtml(statusTxt)}</div>
+              <div class="text-[10px] ${hasRaw && (isLong || p.ready) ? 'text-emerald-300/90' : (hasRaw ? 'text-cyan-300/90' : 'text-amber-300')} truncate">${escapeHtml(statusTxt)}</div>
             </div>
           </label>`;
         }).join('');
@@ -4401,7 +4425,23 @@
 
       const projectIds = Array.from(document.querySelectorAll('input[name="auto-proj-id"]:checked')).map((el) => el.value);
       if (!projectIds.length) {
-        return toast('Vui lòng chọn ít nhất 1 Project sẵn sàng (đủ Brief & Video thô)!', 'warn');
+        return toast('Vui lòng chọn ít nhất 1 Project có video thô trong 02_video_tho!', 'warn');
+      }
+      if (state.pipelineCategory !== 'long_vlog') {
+        const missingBrief = [];
+        document.querySelectorAll('input[name="auto-proj-id"]:checked').forEach((el) => {
+          const pid = el.value;
+          const pc = state.projConfigMap[pid];
+          const scm = (pc && pc.short_content_mode) ? pc.short_content_mode : (state.shortContentMode || 'brand_brief');
+          const bReady = el.dataset.briefReady === '1' || (pid === state.activeProjectId && isBrandBriefReadyClient());
+          if (scm === 'brand_brief' && !bReady) {
+            missingBrief.push(el.dataset.projName || pid);
+          }
+        });
+        if (missingBrief.length) {
+          toast(`Các Project dùng Brief Nhãn Hàng nhưng chưa thiết lập Brief: ${missingBrief.join(', ')}. Hãy điền Brief hoặc chuyển sang "🌿 Mô tả Video / Story"!`, 'warn');
+          return;
+        }
       }
 
       closeAutoPipelineModal();
@@ -4409,10 +4449,32 @@
     }
 
     state.pipelineCategory = 'short_tiktok';
+    state.shortContentMode = 'brand_brief';
     state.longformClips = [];
     state.longformPerProject = {};
     state.projConfigMap = {};
     state.activeConfigProjId = '';
+
+    function setShortContentMode(mode) {
+      const m = mode === 'story_note' ? 'story_note' : 'brand_brief';
+      state.shortContentMode = m;
+      const bBrief = document.getElementById('btn-scm-brief');
+      const bStory = document.getElementById('btn-scm-story');
+      const pBrief = document.getElementById('short-brief-panel');
+      const pStory = document.getElementById('short-story-panel');
+      if (bBrief) {
+        bBrief.className = m === 'brand_brief'
+          ? 'px-2.5 py-1 rounded-md font-semibold bg-emerald-600 text-white transition'
+          : 'px-2.5 py-1 rounded-md font-medium text-zinc-300 hover:text-white transition';
+      }
+      if (bStory) {
+        bStory.className = m === 'story_note'
+          ? 'px-2.5 py-1 rounded-md font-semibold bg-emerald-600 text-white transition'
+          : 'px-2.5 py-1 rounded-md font-medium text-zinc-300 hover:text-white transition';
+      }
+      if (pBrief) pBrief.classList.toggle('hidden', m !== 'brand_brief');
+      if (pStory) pStory.classList.toggle('hidden', m !== 'story_note');
+    }
 
     function getCheckedAutoProjectIds() {
       return Array.from(document.querySelectorAll('input[name="auto-proj-id"]:checked')).map((el) => ({
@@ -4436,7 +4498,10 @@
         clips_full: state.longformClips || [],
         total_duration_sec: prev.total_duration_sec || 0,
         vlog_title: document.getElementById('longform-title')?.value?.trim() || '',
-        product_note: document.getElementById('longform-topic-note')?.value?.trim() || '',
+        short_content_mode: state.shortContentMode || 'brand_brief',
+        product_note: state.pipelineCategory === 'long_vlog'
+          ? (document.getElementById('longform-topic-note')?.value?.trim() || '')
+          : (document.getElementById('short-story-note')?.value?.trim() || ''),
         preserve_longform_script: !!document.getElementById('chk-longform-preserve-script')?.checked,
         longform_random_mode: !!document.getElementById('chk-longform-random')?.checked,
         longform_random_count: parseInt(document.getElementById('longform-random-count')?.value || '2', 10) || 2,
@@ -4452,6 +4517,7 @@
         transition_level: document.getElementById('auto-transition-level')?.value || 'gentle',
         icon_density: document.getElementById('auto-icon-density')?.value || 'balanced',
         sticker_density: document.getElementById('auto-sticker-density')?.value || 'normal',
+        sticker_style: document.getElementById('auto-sticker-style')?.value || 'pill_minimal',
         visual_theme: document.getElementById('auto-badge-theme')?.value || 'auto',
         bgm_track: document.getElementById('auto-bgm-track')?.value || 'bgm_upbeat_tiktok.wav',
         preserve_clips: !!document.getElementById('chk-preserve-clips')?.checked,
@@ -4475,6 +4541,8 @@
       setChk('chk-longform-keep-audio', cfg.keep_clip_audio);
       setVal('longform-title', cfg.vlog_title ?? '');
       setVal('longform-topic-note', cfg.product_note ?? '');
+      setVal('short-story-note', cfg.product_note ?? '');
+      setShortContentMode(cfg.short_content_mode || 'brand_brief');
       setChk('chk-longform-preserve-script', cfg.preserve_longform_script);
       setChk('chk-longform-random', cfg.longform_random_mode);
       setVal('longform-random-count', cfg.longform_random_count);
@@ -4503,6 +4571,7 @@
       setVal('auto-transition-level', cfg.transition_level);
       setVal('auto-icon-density', cfg.icon_density);
       setVal('auto-sticker-density', cfg.sticker_density);
+      setVal('auto-sticker-style', cfg.sticker_style || 'pill_minimal');
       setVal('auto-badge-theme', cfg.visual_theme);
       setVal('auto-bgm-track', cfg.bgm_track);
       setChk('chk-preserve-clips', cfg.preserve_clips);
@@ -4748,6 +4817,7 @@
           : 'text-left rounded-xl border border-zinc-700 bg-zinc-900/70 p-3 transition';
       }
       document.getElementById('longform-config-box')?.classList.toggle('hidden', !isLong);
+      document.getElementById('shortform-content-mode-box')?.classList.toggle('hidden', isLong);
       document.getElementById('shortform-engine-box')?.classList.toggle('hidden', isLong);
       document.getElementById('shortform-batch-box')?.classList.toggle('hidden', isLong);
       document.getElementById('wrap-preserve-clips')?.classList.toggle('hidden', isLong);
@@ -4756,6 +4826,7 @@
       document.getElementById('wrap-auto-transition')?.classList.toggle('hidden', isLong);
       document.getElementById('wrap-auto-icon-density')?.classList.toggle('hidden', isLong);
       document.getElementById('wrap-auto-badge-theme')?.classList.toggle('hidden', isLong);
+      document.getElementById('wrap-auto-sticker-style')?.classList.toggle('hidden', !isLong);
       document.getElementById('wrap-auto-flash-shake')?.classList.toggle('hidden', isLong);
       document.getElementById('opt-ar-both')?.classList.toggle('hidden', !isLong);
       if (!isLong) {
@@ -5034,9 +5105,9 @@
 
     async function runOneClickPipeline(batchAll = false, projectIds = []) {
       const isLongVlog = state.pipelineCategory === 'long_vlog';
-      if (!isLongVlog && !projectIds.length && !isBrandBriefReadyClient()) {
-        toast('Bước 1 bắt buộc: Vui lòng điền & Lưu Brief Nhãn Hàng trước khi chạy 1-Click!', 'warn');
-        switchTab('tab4');
+      const shortContentMode = isLongVlog ? 'brand_brief' : (state.shortContentMode || 'brand_brief');
+      if (!isLongVlog && !projectIds.length && shortContentMode !== 'story_note' && !isBrandBriefReadyClient()) {
+        toast('Vui lòng điền & Lưu Brief Nhãn Hàng hoặc chuyển sang "Mô tả Video / Story"!', 'warn');
         return openBrandBriefModal();
       }
       const target_duration_sec = isLongVlog
@@ -5047,7 +5118,9 @@
       const auto_fit_duration = isLongVlog ? !!document.getElementById('chk-longform-autofit')?.checked : false;
       const product_note = isLongVlog
         ? (document.getElementById('longform-topic-note')?.value?.trim() || document.getElementById('ws-product-note')?.value?.trim() || '')
-        : (document.getElementById('ws-product-note')?.value?.trim() || '');
+        : (shortContentMode === 'story_note'
+            ? (document.getElementById('short-story-note')?.value?.trim() || '')
+            : (document.getElementById('ws-product-note')?.value?.trim() || ''));
       const regenerate_script = !!document.getElementById('chk-pipeline-regen')?.checked;
       const preserve_clips = getPreserveClipsFlag();
       const selected_option_id = state.workshop?.script_options?.selected_id || '';
@@ -5064,6 +5137,7 @@
       const transition_level = document.getElementById('auto-transition-level')?.value || 'balanced';
       const icon_density = document.getElementById('auto-icon-density')?.value || 'balanced';
       const sticker_density = document.getElementById('auto-sticker-density')?.value || 'normal';
+      const sticker_style = document.getElementById('auto-sticker-style')?.value || 'pill_minimal';
       const disable_flash_shake = document.getElementById('chk-disable-flash-shake')?.checked !== false;
       const mix_engines = !!document.getElementById('chk-batch-mix-engines')?.checked;
       const rawTtsSel = document.getElementById('auto-tts-engine')?.value || 'random_neural';
@@ -5118,6 +5192,7 @@
             transition_level,
             icon_density,
             sticker_density,
+            sticker_style,
             mute_voice,
             hide_subtitles,
             disable_flash_shake,
@@ -5128,6 +5203,7 @@
             sfx_level,
             aspect_ratio,
             content_vibe,
+            short_content_mode: shortContentMode,
             pipeline_category: state.pipelineCategory || 'short_tiktok',
             ordered_clips,
             keep_clip_audio,

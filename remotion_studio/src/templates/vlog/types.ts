@@ -42,11 +42,14 @@ export type VlogOutroProps = {
   aspectRatio?: '16:9' | '9:16';
 };
 
+export type VlogStickerVariant = 'pill' | 'callout' | 'lower_third' | 'floating_lottie';
+
 export type VlogStickerProps = {
   emoji: string;
   label: string;
   sublabel?: string;
-  position?: 'top-right' | 'top-left' | 'bottom-right';
+  position?: 'top-right' | 'top-left' | 'bottom-right' | 'bottom-left' | 'center-left' | 'center-right';
+  variant?: VlogStickerVariant;
   accentColor?: string;
   durationSec?: number;
   width?: number;
