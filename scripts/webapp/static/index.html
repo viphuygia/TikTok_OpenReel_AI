@@ -246,6 +246,18 @@
           <div id="auto-project-checklist" class="grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-36 overflow-y-auto pr-1"></div>
         </div>
 
+        <!-- Multi-Project Pager & Inherit from Project #1 (for both Short & Long) -->
+        <div id="multi-proj-pager" class="hidden rounded-xl bg-indigo-950/25 border border-indigo-500/40 p-2.5 space-y-2">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <span class="text-[11px] font-semibold text-indigo-200">📑 Trang Cấu Hình Từng Project (Bấm chọn để chỉnh riêng):</span>
+            <div class="flex flex-wrap items-center gap-1.5">
+              <button type="button" id="btn-inherit-proj1" onclick="inheritFromProject1()" class="hidden px-2.5 py-1 rounded-lg bg-amber-600/85 hover:bg-amber-500 text-[11px] font-semibold text-white">📋 Kế thừa từ Dự án #1</button>
+              <button type="button" onclick="applyProject1ToAll()" class="px-2.5 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-[11px] font-semibold text-white">⚡ Áp dụng #1 cho TẤT CẢ</button>
+            </div>
+          </div>
+          <div id="multi-proj-tabs" class="flex flex-wrap gap-1.5"></div>
+        </div>
+
         <!-- Long-Form Vlog Timeline Config (visible only when long_vlog is active) -->
         <div id="longform-config-box" class="hidden rounded-xl bg-amber-950/20 border border-amber-500/40 p-3.5 space-y-3">
           <div class="flex flex-wrap items-center justify-between gap-2">
@@ -4343,6 +4355,11 @@
 
       updateAutoModalMixUi();
 
+      if (state.pipelineCategory === 'long_vlog') {
+        await syncLongformProjectsUi();
+      } else {
+        await syncMultiProjectPager();
+      }
       const m = document.getElementById('auto-pipeline-modal');
       if (m) {
         m.classList.remove('hidden');
@@ -4352,7 +4369,6 @@
 
     function closeAutoPipelineModal() {
       updateAutoModalMixUi();
-
       const m = document.getElementById('auto-pipeline-modal');
       if (m) {
         m.classList.add('hidden');
@@ -4361,6 +4377,9 @@
     }
 
     async function confirmRunOneClickPipeline() {
+      if (state.activeConfigProjId) {
+        captureCurrentModalConfig(state.activeConfigProjId);
+      }
       const engine = document.querySelector('input[name="auto-render-engine"]:checked')?.value || 'remotion_classic';
       const innoPreset = document.getElementById('auto-innovation-preset')?.value || 'kinetic_pop';
       const transLevel = document.getElementById('auto-transition-level')?.value || 'balanced';
@@ -4392,6 +4411,8 @@
     state.pipelineCategory = 'short_tiktok';
     state.longformClips = [];
     state.longformPerProject = {};
+    state.projConfigMap = {};
+    state.activeConfigProjId = '';
 
     function getCheckedAutoProjectIds() {
       return Array.from(document.querySelectorAll('input[name="auto-proj-id"]:checked')).map((el) => ({
@@ -4400,56 +4421,260 @@
       }));
     }
 
+    function captureCurrentModalConfig(pid) {
+      if (!pid) return null;
+      const prev = state.projConfigMap[pid] || {};
+      const batchMode = document.querySelector('input[name="auto-batch-mode"]:checked')?.value || 'single';
+      const engine = document.querySelector('input[name="auto-render-engine"]:checked')?.value || 'remotion_classic';
+      const cfg = {
+        ...prev,
+        target_duration_sec: parseFloat(document.getElementById('longform-duration-sec')?.value || '300') || 300.0,
+        quality_preset: document.getElementById('longform-quality')?.value || 'auto_source',
+        auto_fit_duration: !!document.getElementById('chk-longform-autofit')?.checked,
+        keep_clip_audio: !!document.getElementById('chk-longform-keep-audio')?.checked,
+        ordered_clips: (state.longformClips || []).map((c) => c.rel_path),
+        clips_full: state.longformClips || [],
+        total_duration_sec: prev.total_duration_sec || 0,
+        vlog_title: document.getElementById('longform-title')?.value?.trim() || '',
+        product_note: document.getElementById('longform-topic-note')?.value?.trim() || '',
+        preserve_longform_script: !!document.getElementById('chk-longform-preserve-script')?.checked,
+        longform_random_mode: !!document.getElementById('chk-longform-random')?.checked,
+        longform_random_count: parseInt(document.getElementById('longform-random-count')?.value || '2', 10) || 2,
+        render_engine: engine,
+        innovation_preset: document.getElementById('auto-innovation-preset')?.value || 'kinetic_pop',
+        batch_all_scripts: batchMode === 'batch3',
+        mix_variants: !!document.getElementById('chk-batch-mix')?.checked,
+        mix_engines: !!document.getElementById('chk-batch-mix-engines')?.checked,
+        aspect_ratio: document.getElementById('auto-aspect-ratio')?.value || '16:9',
+        content_vibe: document.getElementById('auto-content-vibe')?.value || 'outdoor_picnic',
+        voice_preset: document.getElementById('auto-tts-engine')?.value || 'f5_clone_default',
+        sfx_level: document.getElementById('auto-sfx-level')?.value || 'off',
+        transition_level: document.getElementById('auto-transition-level')?.value || 'gentle',
+        icon_density: document.getElementById('auto-icon-density')?.value || 'balanced',
+        sticker_density: document.getElementById('auto-sticker-density')?.value || 'normal',
+        visual_theme: document.getElementById('auto-badge-theme')?.value || 'auto',
+        bgm_track: document.getElementById('auto-bgm-track')?.value || 'bgm_upbeat_tiktok.wav',
+        preserve_clips: !!document.getElementById('chk-preserve-clips')?.checked,
+        regenerate_script: !!document.getElementById('chk-pipeline-regen')?.checked,
+        mute_voice: !!document.getElementById('chk-mute-voice')?.checked,
+        hide_subtitles: !!document.getElementById('chk-hide-subtitles')?.checked,
+        disable_flash_shake: document.getElementById('chk-disable-flash-shake')?.checked !== false,
+      };
+      state.projConfigMap[pid] = cfg;
+      return cfg;
+    }
+
+    function applyModalConfigToDom(cfg) {
+      if (!cfg) return;
+      const setVal = (id, v) => { const el = document.getElementById(id); if (el && v !== undefined && v !== null) el.value = String(v); };
+      const setChk = (id, v) => { const el = document.getElementById(id); if (el && v !== undefined) el.checked = !!v; };
+
+      setVal('longform-duration-sec', cfg.target_duration_sec ? Math.round(cfg.target_duration_sec) : undefined);
+      setVal('longform-quality', cfg.quality_preset);
+      setChk('chk-longform-autofit', cfg.auto_fit_duration);
+      setChk('chk-longform-keep-audio', cfg.keep_clip_audio);
+      setVal('longform-title', cfg.vlog_title ?? '');
+      setVal('longform-topic-note', cfg.product_note ?? '');
+      setChk('chk-longform-preserve-script', cfg.preserve_longform_script);
+      setChk('chk-longform-random', cfg.longform_random_mode);
+      setVal('longform-random-count', cfg.longform_random_count);
+      toggleLongformRandomUi();
+
+      if (Array.isArray(cfg.clips_full)) {
+        state.longformClips = cfg.clips_full;
+        const totEl = document.getElementById('longform-raw-total');
+        if (totEl) totEl.textContent = `${state.longformClips.length} clip · Tổng ${Math.round(cfg.total_duration_sec || 0)}s`;
+        renderLongformClipList();
+      }
+
+      if (cfg.render_engine && state.pipelineCategory !== 'long_vlog') selectAutoEngine(cfg.render_engine);
+      setVal('auto-innovation-preset', cfg.innovation_preset);
+      const bMode = cfg.batch_all_scripts ? 'batch3' : 'single';
+      const bRadio = document.querySelector(`input[name="auto-batch-mode"][value="${bMode}"]`);
+      if (bRadio) bRadio.checked = true;
+      setChk('chk-batch-mix', cfg.mix_variants);
+      setChk('chk-batch-mix-engines', cfg.mix_engines);
+      updateAutoModalMixUi();
+
+      setVal('auto-aspect-ratio', cfg.aspect_ratio);
+      setVal('auto-content-vibe', cfg.content_vibe);
+      setVal('auto-tts-engine', cfg.voice_preset);
+      setVal('auto-sfx-level', cfg.sfx_level);
+      setVal('auto-transition-level', cfg.transition_level);
+      setVal('auto-icon-density', cfg.icon_density);
+      setVal('auto-sticker-density', cfg.sticker_density);
+      setVal('auto-badge-theme', cfg.visual_theme);
+      setVal('auto-bgm-track', cfg.bgm_track);
+      setChk('chk-preserve-clips', cfg.preserve_clips);
+      setChk('chk-pipeline-regen', cfg.regenerate_script);
+      setChk('chk-mute-voice', cfg.mute_voice);
+      setChk('chk-hide-subtitles', cfg.hide_subtitles);
+      setChk('chk-disable-flash-shake', cfg.disable_flash_shake);
+    }
+
+    async function ensureProjectConfigLoaded(pid, name, templateCfg) {
+      if (state.projConfigMap[pid]) return state.projConfigMap[pid];
+      const base = templateCfg ? JSON.parse(JSON.stringify(templateCfg)) : {};
+      let clips = [];
+      let totalDur = 0;
+      let savedCfg = {};
+      try {
+        const [cRes, sRes] = await Promise.all([
+          api(`/api/longform/clips?project_id=${encodeURIComponent(pid)}`).catch(() => ({})),
+          api(`/api/longform/state?project_id=${encodeURIComponent(pid)}`).catch(() => ({})),
+        ]);
+        clips = cRes?.clips || [];
+        totalDur = cRes?.total_duration_sec || 0;
+        savedCfg = sRes?.config || {};
+      } catch (e) {}
+      state.projConfigMap[pid] = {
+        ...base,
+        name,
+        clips_full: clips,
+        ordered_clips: clips.map((c) => c.rel_path),
+        total_duration_sec: totalDur,
+        vlog_title: savedCfg.vlog_title || '',
+        product_note: savedCfg.product_note || '',
+        target_duration_sec: savedCfg.target_duration_sec || base.target_duration_sec || 300,
+        quality_preset: savedCfg.quality_preset || base.quality_preset || 'auto_source',
+        auto_fit_duration: savedCfg.auto_fit_duration !== undefined ? !!savedCfg.auto_fit_duration : !!base.auto_fit_duration,
+        keep_clip_audio: savedCfg.keep_clip_audio !== undefined ? !!savedCfg.keep_clip_audio : (base.keep_clip_audio !== undefined ? !!base.keep_clip_audio : true),
+      };
+      return state.projConfigMap[pid];
+    }
+
+    function renderMultiProjectPager(selected) {
+      const pager = document.getElementById('multi-proj-pager');
+      const tabs = document.getElementById('multi-proj-tabs');
+      const btnInh = document.getElementById('btn-inherit-proj1');
+      if (!pager || !tabs) return;
+      if (!selected || selected.length < 2) {
+        pager.classList.add('hidden');
+        return;
+      }
+      pager.classList.remove('hidden');
+      const firstId = selected[0].id;
+      if (btnInh) btnInh.classList.toggle('hidden', state.activeConfigProjId === firstId);
+      tabs.innerHTML = selected.map((item, idx) => {
+        const isAct = item.id === state.activeConfigProjId;
+        return `<button type="button" onclick="switchMultiProjectPage('${escapeHtml(item.id)}')" class="px-2.5 py-1.5 rounded-lg text-[11px] font-semibold transition ${isAct ? 'bg-amber-600 text-white shadow' : 'bg-zinc-900 border border-zinc-700 text-zinc-300 hover:bg-zinc-800'}">${idx + 1}. ${escapeHtml(item.name)}</button>`;
+      }).join('');
+    }
+
+    async function switchMultiProjectPage(pid) {
+      if (state.activeConfigProjId && state.activeConfigProjId !== pid) {
+        captureCurrentModalConfig(state.activeConfigProjId);
+      }
+      state.activeConfigProjId = pid;
+      const selected = getCheckedAutoProjectIds();
+      const firstCfg = selected.length ? state.projConfigMap[selected[0].id] : null;
+      const item = selected.find((x) => x.id === pid);
+      const cfg = await ensureProjectConfigLoaded(pid, item?.name || pid, firstCfg);
+      applyModalConfigToDom(cfg);
+      renderMultiProjectPager(selected);
+    }
+
+    function _copyTechFieldsFromProj1(targetCfg, p1Cfg) {
+      const keepFields = {
+        name: targetCfg.name,
+        clips_full: targetCfg.clips_full,
+        ordered_clips: targetCfg.ordered_clips,
+        total_duration_sec: targetCfg.total_duration_sec,
+        vlog_title: targetCfg.vlog_title,
+        product_note: targetCfg.product_note,
+      };
+      return { ...JSON.parse(JSON.stringify(p1Cfg)), ...keepFields };
+    }
+
+    function inheritFromProject1() {
+      const selected = getCheckedAutoProjectIds();
+      if (selected.length < 2 || !state.activeConfigProjId) return;
+      const p1Id = selected[0].id;
+      if (state.activeConfigProjId === p1Id) return;
+      captureCurrentModalConfig(state.activeConfigProjId);
+      const p1Cfg = state.projConfigMap[p1Id];
+      if (!p1Cfg) return;
+      state.projConfigMap[state.activeConfigProjId] = _copyTechFieldsFromProj1(state.projConfigMap[state.activeConfigProjId] || {}, p1Cfg);
+      applyModalConfigToDom(state.projConfigMap[state.activeConfigProjId]);
+      toast('Đã kế thừa toàn bộ cấu hình từ Dự án #1 (giữ nguyên clip & brief riêng)!', 'success');
+    }
+
+    async function applyProject1ToAll() {
+      const selected = getCheckedAutoProjectIds();
+      if (selected.length < 2) return;
+      if (state.activeConfigProjId) captureCurrentModalConfig(state.activeConfigProjId);
+      const p1Id = selected[0].id;
+      const p1Cfg = state.projConfigMap[p1Id];
+      if (!p1Cfg) return;
+      for (const item of selected.slice(1)) {
+        const cur = await ensureProjectConfigLoaded(item.id, item.name, p1Cfg);
+        state.projConfigMap[item.id] = _copyTechFieldsFromProj1(cur, p1Cfg);
+      }
+      if (state.activeConfigProjId && state.projConfigMap[state.activeConfigProjId]) {
+        applyModalConfigToDom(state.projConfigMap[state.activeConfigProjId]);
+      }
+      toast(`Đã áp dụng cấu hình Dự án #1 cho cả ${selected.length} dự án (giữ nguyên clip & brief riêng)!`, 'success');
+    }
+
+    async function syncMultiProjectPager() {
+      if (state.activeConfigProjId) captureCurrentModalConfig(state.activeConfigProjId);
+      const selected = getCheckedAutoProjectIds();
+      if (selected.length <= 1) {
+        const onlyId = selected.length === 1 ? selected[0].id : '';
+        state.activeConfigProjId = onlyId;
+        renderMultiProjectPager(selected);
+        return;
+      }
+      if (!state.activeConfigProjId || !selected.some((x) => x.id === state.activeConfigProjId)) {
+        state.activeConfigProjId = selected[0].id;
+      }
+      const firstCfg = captureCurrentModalConfig(selected[0].id);
+      for (const item of selected) {
+        await ensureProjectConfigLoaded(item.id, item.name, firstCfg);
+      }
+      applyModalConfigToDom(state.projConfigMap[state.activeConfigProjId]);
+      renderMultiProjectPager(selected);
+    }
+
     async function onAutoProjectSelectionChange() {
-      if (state.pipelineCategory !== 'long_vlog') return;
-      await syncLongformProjectsUi();
+      if (state.pipelineCategory === 'long_vlog') {
+        await syncLongformProjectsUi();
+      } else {
+        await syncMultiProjectPager();
+      }
     }
 
     async function syncLongformProjectsUi() {
+      if (state.activeConfigProjId) captureCurrentModalConfig(state.activeConfigProjId);
       const selected = getCheckedAutoProjectIds();
       const singleBox = document.getElementById('longform-single-proj-box');
       const multiBox = document.getElementById('longform-multi-proj-box');
-      const totEl = document.getElementById('longform-raw-total');
+      if (singleBox) singleBox.classList.remove('hidden');
+      if (multiBox) multiBox.classList.add('hidden');
 
       if (selected.length <= 1) {
-        if (singleBox) singleBox.classList.remove('hidden');
-        if (multiBox) multiBox.classList.add('hidden');
         const pid = selected.length === 1 ? selected[0].id : '';
+        state.activeConfigProjId = pid;
+        renderMultiProjectPager(selected);
         await loadLongformClips(pid);
+        if (pid) captureCurrentModalConfig(pid);
         return;
       }
 
-      if (singleBox) singleBox.classList.add('hidden');
-      if (multiBox) multiBox.classList.remove('hidden');
-      if (totEl) totEl.textContent = `${selected.length} Project (Chạy tuần tự)`;
-
-      for (const item of selected) {
-        if (!state.longformPerProject[item.id]) {
-          try {
-            const [res, stRes] = await Promise.all([
-              api(`/api/longform/clips?project_id=${encodeURIComponent(item.id)}`),
-              api(`/api/longform/state?project_id=${encodeURIComponent(item.id)}`).catch(() => ({})),
-            ]);
-            const savedCfg = stRes?.config || {};
-            state.longformPerProject[item.id] = {
-              name: item.name,
-              clips: res.clips || [],
-              total_duration_sec: res.total_duration_sec || 0,
-              vlog_title: savedCfg.vlog_title || '',
-              product_note: savedCfg.product_note || '',
-            };
-          } catch (e) {
-            state.longformPerProject[item.id] = {
-              name: item.name,
-              clips: [],
-              total_duration_sec: 0,
-              vlog_title: '',
-              product_note: '',
-            };
-          }
-        }
+      if (!state.activeConfigProjId || !selected.some((x) => x.id === state.activeConfigProjId)) {
+        state.activeConfigProjId = selected[0].id;
       }
-      renderLongformMultiProjectConfigs(selected);
+      const p1Id = selected[0].id;
+      if (!state.projConfigMap[p1Id]) {
+        await loadLongformClips(p1Id);
+        captureCurrentModalConfig(p1Id);
+      }
+      const p1Cfg = state.projConfigMap[p1Id];
+      for (const item of selected) {
+        await ensureProjectConfigLoaded(item.id, item.name, p1Cfg);
+      }
+      applyModalConfigToDom(state.projConfigMap[state.activeConfigProjId]);
+      renderMultiProjectPager(selected);
     }
 
     function renderLongformMultiProjectConfigs(selectedList) {
@@ -4573,6 +4798,7 @@
         await syncLongformProjectsUi();
       } else {
         await renderAutoProjectChecklist();
+        await syncMultiProjectPager();
       }
     }
 
@@ -4855,25 +5081,15 @@
       const mute_voice = !!document.getElementById('chk-mute-voice')?.checked;
       const hide_subtitles = !!document.getElementById('chk-hide-subtitles')?.checked;
       const project_configs = {};
-      if (isLongVlog) {
-        const pidList = (projectIds && projectIds.length) ? projectIds : getCheckedAutoProjectIds().map((x) => x.id);
-        if (pidList.length >= 2) {
-          for (const pid of pidList) {
-            const pc = state.longformPerProject[pid];
-            if (pc) {
-              project_configs[pid] = {
-                ordered_clips: (pc.clips || []).map((c) => c.rel_path),
-                vlog_title: (pc.vlog_title || '').trim(),
-                product_note: (pc.product_note || '').trim(),
-              };
-            }
-          }
-        } else if (pidList.length === 1) {
-          project_configs[pidList[0]] = {
-            ordered_clips,
-            vlog_title,
-            product_note,
-          };
+      const pidList = (projectIds && projectIds.length) ? projectIds : getCheckedAutoProjectIds().map((x) => x.id);
+      for (const pid of pidList) {
+        const pc = state.projConfigMap[pid];
+        if (pc) {
+          const cloned = { ...pc };
+          delete cloned.clips_full;
+          delete cloned.name;
+          delete cloned.total_duration_sec;
+          project_configs[pid] = cloned;
         }
       }
       _lastAutoTab = null;

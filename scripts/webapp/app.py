@@ -6372,10 +6372,28 @@ def _req_for_project(req: OneClickPipelineReq, pid: str, multi_projects: bool) -
         upd: dict[str, Any] = {}
         if isinstance(pc.get("ordered_clips"), list):
             upd["ordered_clips"] = [str(x) for x in pc["ordered_clips"] if str(x).strip()]
-        if "vlog_title" in pc:
-            upd["vlog_title"] = str(pc.get("vlog_title") or "").strip()
-        if "product_note" in pc:
-            upd["product_note"] = str(pc.get("product_note") or "").strip()
+        str_fields = (
+            "vlog_title", "product_note", "quality_preset", "aspect_ratio", "content_vibe",
+            "voice_preset", "tts_engine", "edge_voice", "bgm_track", "sticker_density",
+            "render_engine", "innovation_preset", "sfx_level", "transition_level",
+            "icon_density", "visual_theme",
+        )
+        for sf_k in str_fields:
+            if sf_k in pc and pc[sf_k] is not None:
+                upd[sf_k] = str(pc[sf_k]).strip()
+        bool_fields = (
+            "auto_fit_duration", "keep_clip_audio", "preserve_longform_script",
+            "longform_random_mode", "mute_voice", "hide_subtitles",
+            "batch_all_scripts", "mix_variants", "mix_engines",
+            "preserve_clips", "regenerate_script", "force_tts", "disable_flash_shake",
+        )
+        for bf_k in bool_fields:
+            if bf_k in pc:
+                upd[bf_k] = bool(pc[bf_k])
+        if "target_duration_sec" in pc and pc["target_duration_sec"]:
+            upd["target_duration_sec"] = float(pc["target_duration_sec"])
+        if "longform_random_count" in pc and pc["longform_random_count"]:
+            upd["longform_random_count"] = max(1, min(5, int(pc["longform_random_count"])))
         if upd:
             return req.model_copy(update=upd)
     if multi_projects and is_long:
