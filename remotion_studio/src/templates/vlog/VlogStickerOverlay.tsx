@@ -12,6 +12,8 @@ export const VlogStickerOverlay: React.FC<VlogStickerProps> = ({
   sublabel = '',
   position = 'top-right',
   variant = 'pill',
+  targetX = 56,
+  targetY = 58,
   accentColor = '#F59E0B',
 }) => {
   const frame = useCurrentFrame();
@@ -46,6 +48,95 @@ export const VlogStickerOverlay: React.FC<VlogStickerProps> = ({
 
   const isLeft = position.includes('left');
   const slideFromX = isLeft ? -48 : 48;
+
+  if (variant === 'pointer') {
+    const tx = Math.max(12, Math.min(88, Number(targetX ?? 56)));
+    const ty = Math.max(16, Math.min(82, Number(targetY ?? 58)));
+    const px = (tx / 100) * width;
+    const py = (ty / 100) * height;
+    const cardOnLeft = tx > 54;
+    const cardAbove = ty > 54;
+    const dx = cardOnLeft ? (isLandscape ? -195 : -135) : (isLandscape ? 195 : 135);
+    const dy = cardAbove ? (isLandscape ? -145 : -140) : (isLandscape ? 125 : 120);
+    const cx = Math.max(isLandscape ? 230 : 175, Math.min(width - (isLandscape ? 230 : 175), px + dx));
+    const cy = Math.max(isLandscape ? 110 : 150, Math.min(height - (isLandscape ? 170 : 280), py + dy));
+    const elbowX = px + (cx - px) * 0.42;
+    const lineProg = interpolate(enter, [0, 1], [0, 1]);
+
+    return (
+      <AbsoluteFill style={{ backgroundColor: 'transparent', pointerEvents: 'none', opacity: exit }}>
+        <svg width={width} height={height} style={{ position: 'absolute', inset: 0, overflow: 'visible' }}>
+          <polyline
+            points={`${px},${py} ${elbowX},${cy} ${cx},${cy}`}
+            fill="none"
+            stroke={accentColor}
+            strokeWidth={isLandscape ? 4 : 3.5}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeDasharray={600}
+            strokeDashoffset={600 * (1 - lineProg)}
+            style={{ filter: `drop-shadow(0 0 8px ${accentColor})` }}
+          />
+          <circle
+            cx={px}
+            cy={py}
+            r={(isLandscape ? 26 : 22) * ringPulse}
+            fill={`${accentColor}22`}
+            stroke={accentColor}
+            strokeWidth={2.5}
+            opacity={enter}
+          />
+          <circle cx={px} cy={py} r={isLandscape ? 9 : 8} fill={accentColor} opacity={enter} />
+        </svg>
+        <div
+          style={{
+            position: 'absolute',
+            left: cx,
+            top: cy,
+            transform: `translate(-50%, -50%) scale(${interpolate(enter, [0, 1], [0.78, 1])})`,
+            opacity: enter,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 12,
+            padding: isLandscape ? '11px 20px 11px 14px' : '9px 16px 9px 11px',
+            borderRadius: 16,
+            background: 'linear-gradient(135deg, rgba(15, 23, 42, 0.90), rgba(30, 41, 59, 0.85))',
+            border: `2px solid ${accentColor}`,
+            boxShadow: `0 16px 36px rgba(0,0,0,0.55), 0 0 20px ${accentColor}40`,
+            maxWidth: isLandscape ? 420 : 340,
+          }}
+        >
+          <SharedLottieSticker stem={lottieStem} size={isLandscape ? 58 : 50} startFrame={0} />
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            <span
+              style={{
+                fontFamily: "'Be Vietnam Pro', 'Baloo 2', sans-serif",
+                fontWeight: 800,
+                fontSize: isLandscape ? 20 : 18,
+                color: '#FFFFFF',
+                lineHeight: 1.18,
+              }}
+            >
+              {label}
+            </span>
+            {sublabel ? (
+              <span
+                style={{
+                  fontFamily: "'Quicksand', 'Nunito', sans-serif",
+                  fontWeight: 700,
+                  fontSize: isLandscape ? 14 : 13,
+                  color: accentColor,
+                  lineHeight: 1.2,
+                }}
+              >
+                {sublabel}
+              </span>
+            ) : null}
+          </div>
+        </div>
+      </AbsoluteFill>
+    );
+  }
 
   if (variant === 'callout') {
     const lineScale = interpolate(enter, [0, 1], [0.1, 1]);

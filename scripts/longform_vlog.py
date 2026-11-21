@@ -600,7 +600,7 @@ def generate_longform_chapter_script(
         '      "chapter_subtitle": "Mô tả nhanh 1 dòng (<= 45 ký tự)",\n'
         '      "sticker": {"emoji": "🏕️", "label": "DỰNG TRẠI BÊN HỒ", "sublabel": "Khởi đầu hành trình", "position": "top-right"},\n'
         '      "visual_cues": [\n'
-        '        {"variant": "callout", "emoji": "🌊", "label": "Giải thích chi tiết cảnh quay", "sublabel": "Góc nhìn thực tế ngay trong khung hình", "position": "center-left", "offset_ratio": 0.36},\n'
+        '        {"variant": "pointer", "target_x": 58, "target_y": 62, "emoji": "🦀", "label": "Gọi đúng tên vật thể trên hình", "sublabel": "Mô tả ngắn điểm thú vị của vật thể", "position": "center-left", "offset_ratio": 0.36},\n'
         '        {"variant": "lower_third", "emoji": "📍", "label": "Điểm nhấn khoảnh khắc", "sublabel": "Ghi chú bối cảnh / cảm xúc", "position": "bottom-left", "offset_ratio": 0.72}\n'
         '      ],\n'
         '      "narration_blocks": [\n'
@@ -811,7 +811,7 @@ def generate_longform_chapter_script(
         }
         raw_cues = ai_ch.get("visual_cues") if isinstance(ai_ch.get("visual_cues"), list) else []
         clean_cues: list[dict[str, Any]] = []
-        valid_variants = {"callout", "lower_third", "floating_lottie", "pill"}
+        valid_variants = {"callout", "lower_third", "floating_lottie", "pill", "pointer"}
         valid_positions = {"top-right", "top-left", "bottom-right", "bottom-left", "center-left", "center-right"}
         fallback_variants = ["callout", "lower_third", "floating_lottie"]
         fallback_positions = ["center-left", "bottom-left", "center-right", "top-right"]
@@ -832,6 +832,14 @@ def generate_longform_chapter_script(
                 off_r = float(rc.get("offset_ratio") or (0.35 + cue_i * 0.35))
             except Exception:
                 off_r = 0.35 + cue_i * 0.35
+            try:
+                tx = float(rc.get("target_x") if rc.get("target_x") is not None else 56)
+            except Exception:
+                tx = 56.0
+            try:
+                ty = float(rc.get("target_y") if rc.get("target_y") is not None else 58)
+            except Exception:
+                ty = 58.0
             clean_cues.append(
                 {
                     "variant": cv,
@@ -839,6 +847,8 @@ def generate_longform_chapter_script(
                     "label": cl,
                     "sublabel": csub,
                     "position": cp,
+                    "target_x": max(12.0, min(88.0, tx)),
+                    "target_y": max(16.0, min(82.0, ty)),
                     "offset_ratio": max(0.22, min(0.84, off_r)),
                 }
             )
@@ -1650,7 +1660,7 @@ def render_vlog_remotion_overlays(
         # Render contextual animated sticker(s) inside EVERY chapter (4.5s each)
         stk = ch.get("sticker") if isinstance(ch.get("sticker"), dict) else None
         stk_style = str(sticker_style or "pill_minimal").strip().lower()
-        if stk_style not in {"pill_minimal", "ai_director_rich", "hybrid"}:
+        if stk_style not in {"pill_minimal", "ai_director_rich", "hybrid", "ai_vision_pointer"}:
             stk_style = "pill_minimal"
         if stk_mode != "off" and (stk or ch.get("visual_cues")) and (ch_end - ch_start) >= 10.0:
             if stk_style == "pill_minimal":
@@ -1723,6 +1733,18 @@ def render_vlog_remotion_overlays(
                 else:
                     max_cues = 2 if stk_mode == "rich" else 1
                     cue_items = raw_cues[:max_cues]
+                    if stk_style == "ai_vision_pointer" and cue_items:
+                        ptr_presets = [(58.0, 62.0), (42.0, 56.0), (64.0, 52.0), (46.0, 64.0)]
+                        norm_items: list[dict[str, Any]] = []
+                        for qi, q in enumerate(cue_items):
+                            qd = dict(q)
+                            if qi == 0 or qd.get("variant") == "pointer":
+                                qd["variant"] = "pointer"
+                            px_d, py_d = ptr_presets[(ci + qi) % len(ptr_presets)]
+                            qd["target_x"] = float(qd.get("target_x") or px_d)
+                            qd["target_y"] = float(qd.get("target_y") or py_d)
+                            norm_items.append(qd)
+                        cue_items = norm_items
 
                 for s_i, cue in enumerate(cue_items):
                     off_r = float(cue.get("offset_ratio") or (0.36 + s_i * 0.34))
@@ -1736,6 +1758,8 @@ def render_vlog_remotion_overlays(
                                 "sublabel": str(cue.get("sublabel") or ""),
                                 "position": str(cue.get("position") or "center-left"),
                                 "variant": str(cue.get("variant") or "callout"),
+                                "targetX": float(cue.get("target_x") or 56.0),
+                                "targetY": float(cue.get("target_y") or 58.0),
                                 "accentColor": accent_color,
                                 "durationSec": 4.5,
                                 "width": ov_w,

@@ -500,9 +500,10 @@
             <div id="wrap-auto-sticker-style" class="hidden min-w-0">
               <label class="block text-[11px] text-amber-300 font-medium mb-1 truncate">🎨 Kiểu Đồ Họa &amp; Chú Thích Vlog</label>
               <select id="auto-sticker-style" class="w-full rounded-lg bg-zinc-950 border border-zinc-700 px-2.5 py-1.5 text-xs text-zinc-100">
-                <option value="pill_minimal" selected>🏷️ Nhãn Góc Tối Giản (Giữ nguyên)</option>
-                <option value="ai_director_rich">🎬 AI Đạo Diễn Đồ Họa (Chú thích + Sticker động)</option>
+                <option value="pill_minimal" selected>🏷️ Nhãn Góc Tối Giản (Classic)</option>
+                <option value="ai_director_rich">🎬 AI Đạo Diễn Đồ Họa (Classic+)</option>
                 <option value="hybrid">✨ Kết hợp (Nhãn góc + Chú thích điểm nhấn)</option>
+                <option value="ai_vision_pointer">🎯 AI Chỉ Điểm Vật Thể (Mũi tên + Sticker theo hình)</option>
               </select>
             </div>
           </div>
@@ -3162,6 +3163,9 @@
       if (!fileList || !fileList.length) return;
       const fd = new FormData();
       fd.append('target_dir', targetDir);
+      if (state.uploadTargetProjectId) {
+        fd.append('project_id', state.uploadTargetProjectId);
+      }
       for (const file of fileList) {
         fd.append('files', file);
       }
@@ -4159,8 +4163,14 @@
       }
       const projSel = document.getElementById('project-select');
       const newProjBtn = document.getElementById('btn-new-project');
-      if (projSel) projSel.disabled = !!p.running;
-      if (newProjBtn) newProjBtn.disabled = !!p.running;
+      if (projSel) {
+        projSel.disabled = false;
+        projSel.title = p.running ? 'Đang chạy render: Chọn Project đích để upload video thô song song' : 'Chọn Project đang làm việc';
+      }
+      if (newProjBtn) newProjBtn.disabled = false;
+      if (!p.running && state.uploadTargetProjectId) {
+        state.uploadTargetProjectId = '';
+      }
       if (btnBatch) {
         btnBatch.disabled = !!p.running;
       }
@@ -5234,7 +5244,11 @@
         const counts = ` (${p.raw_video_count} thô / ${p.output_count} mp4)`;
         return `<option class="bg-zinc-900 text-white" value="${escapeHtml(p.id)}" ${p.id === data.active_id ? 'selected' : ''}>${escapeHtml(p.name)}${escapeHtml(extra)}${escapeHtml(counts)}</option>`;
       }).join('');
-      if (data.active_id) sel.value = data.active_id;
+      if (state.pipelineRunning && state.uploadTargetProjectId) {
+        sel.value = state.uploadTargetProjectId;
+      } else if (data.active_id) {
+        sel.value = data.active_id;
+      }
       if (data.active_root) sel.title = `Thư mục Project: ${data.active_root}`;
     }
 
@@ -5257,6 +5271,12 @@
     }
 
     async function switchProject(projectId) {
+      if (state.pipelineRunning) {
+        state.uploadTargetProjectId = projectId;
+        toast(`Đang render: Đã chọn [${projectId}] làm đích Upload video thô (không ảnh hưởng render đang chạy)!`, 'success');
+        return;
+      }
+      state.uploadTargetProjectId = '';
       try {
         const data = await api('/api/projects/select', {
           method: 'POST',
@@ -5299,15 +5319,23 @@
       const target_duration_sec = parseFloat(document.getElementById('np-duration')?.value || '25') || 25.0;
       if (!name) return toast('Vui lòng nhập tên Project!', 'warn');
       try {
+        const isRunning = !!state.pipelineRunning;
         const data = await api('/api/projects/create', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name, raw_brief, target_duration_sec, switch_to: true }),
+          body: JSON.stringify({ name, raw_brief, target_duration_sec, switch_to: !isRunning }),
         });
         closeNewProjectModal();
-        renderProjectSelect(data);
-        await _reloadAllProjectViews();
-        toast(`Đã tạo & chuyển sang Project mới: ${data.active_id}`, 'success');
+        if (isRunning && data.created_id) {
+          state.uploadTargetProjectId = data.created_id;
+          renderProjectSelect(data);
+          toast(`Đã tạo Project [${data.created_id}] & đặt làm đích Upload (render hiện tại vẫn chạy an toàn)!`, 'success');
+        } else {
+          state.uploadTargetProjectId = '';
+          renderProjectSelect(data);
+          await _reloadAllProjectViews();
+          toast(`Đã tạo & chuyển sang Project mới: ${data.active_id}`, 'success');
+        }
       } catch (e) {
         toast(e.message, 'error');
       }

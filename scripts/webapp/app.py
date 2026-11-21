@@ -1742,9 +1742,25 @@ def api_list_files(dir: str = Query(default="02_video_tho")):
 @app.post("/api/files/upload")
 async def api_upload_files(
     target_dir: str = Form("02_video_tho"),
+    project_id: str = Form(""),
     files: list[UploadFile] = File(...),
 ):
-    dest_dir = resolve_safe_path(target_dir)
+    pid = str(project_id or "").strip()
+    if pid:
+        proj_root = get_project_root(pid)
+        if not proj_root.exists():
+            raise HTTPException(status_code=404, detail=f"Không tìm thấy Project `{pid}`.")
+        pm_ensure_project_dirs(proj_root)
+        rel_norm = Path(str(target_dir or "02_video_tho").strip().replace("\\", "/")).as_posix().lstrip("/")
+        top_seg = rel_norm.split("/", 1)[0] if rel_norm else "02_video_tho"
+        if top_seg in PROJECT_SCOPED_ROOTS:
+            dest_dir = (proj_root / rel_norm).resolve()
+            if proj_root.resolve() not in dest_dir.parents and dest_dir != proj_root.resolve():
+                raise HTTPException(status_code=400, detail="Đường dẫn upload không hợp lệ.")
+        else:
+            dest_dir = resolve_safe_path(target_dir)
+    else:
+        dest_dir = resolve_safe_path(target_dir)
     assert_mutable_path(dest_dir)
     dest_dir.mkdir(parents=True, exist_ok=True)
 
@@ -4877,20 +4893,34 @@ def api_projects_list():
 @app.post("/api/projects/create")
 def api_projects_create(req: CreateProjectReq):
     with PIPELINE_LOCK:
-        if PIPELINE_STATE["running"]:
-            raise HTTPException(status_code=409, detail="Không thể tạo/đổi Project khi Pipeline đang chạy.")
+        is_running = bool(PIPELINE_STATE["running"])
+    eff_switch = bool(req.switch_to) and not is_running
     try:
         res = pm_create_project(
             req.name,
-            switch_to=req.switch_to,
+            switch_to=eff_switch,
             raw_brief=req.raw_brief,
             target_duration_sec=req.target_duration_sec,
         )
-        refresh_app_project_paths()
-        if str(req.raw_brief or "").strip():
-            save_brand_brief({"raw_brief": req.raw_brief.strip(), "target_duration_sec": req.target_duration_sec, "brief_ai_extracted": False})
+        created_id = str((res.get("project") or {}).get("id") or res.get("created_id") or "")
+        if eff_switch:
+            refresh_app_project_paths()
+            if str(req.raw_brief or "").strip():
+                save_brand_brief({"raw_brief": req.raw_brief.strip(), "target_duration_sec": req.target_duration_sec, "brief_ai_extracted": False})
+                res = pm_list_projects()
+        elif str(req.raw_brief or "").strip() and created_id:
+            p_root = get_project_root(created_id)
+            pm_ensure_project_dirs(p_root)
+            bb_path = p_root / "04_workspace" / "brand_brief.json"
+            cur_bb = json.loads(bb_path.read_text(encoding="utf-8-sig")) if bb_path.exists() else {}
+            cur_bb.update({
+                "raw_brief": req.raw_brief.strip(),
+                "target_duration_sec": float(req.target_duration_sec or 25.0),
+                "brief_ai_extracted": False,
+            })
+            bb_path.write_text(json.dumps(cur_bb, ensure_ascii=False, indent=2), encoding="utf-8")
             res = pm_list_projects()
-        return {"ok": True, **res}
+        return {"ok": True, "created_id": created_id, "switched": eff_switch, **res}
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
