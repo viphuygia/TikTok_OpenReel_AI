@@ -454,9 +454,11 @@
           <div class="min-w-0">
             <label class="block text-[11px] text-cyan-300 font-medium mb-1 truncate">🎙️ Giọng Đọc AI <span class="hidden sm:inline">(F5-TTS Giọng Mẫu &amp; Edge Chuẩn)</span></label>
             <select id="auto-tts-engine" class="w-full rounded-lg bg-zinc-950 border border-zinc-700 px-2.5 py-2 text-xs text-zinc-100">
+              <option value="f5_namminh_local">🎙️ Nam Minh Local (F5-TTS GPU · 100% Offline)</option>
+              <option value="f5_hoaimy_local">🎙️ Hoài My Local (F5-TTS GPU · 100% Offline)</option>
               <option value="f5_clone_default" selected>🎙️ F5-TTS · Clone Giọng Mẫu Chuẩn (Tự nhiên nhất)</option>
-              <option value="edge_hoaimy_koc">✨ Nữ Hoài My · Chuẩn Tự Nhiên (+0Hz)</option>
-              <option value="edge_namminh_review">✨ Nam Minh · Chuẩn Tự Nhiên (+0Hz)</option>
+              <option value="edge_hoaimy_koc">✨ Nữ Hoài My · Chuẩn Tự Nhiên (Online)</option>
+              <option value="edge_namminh_review">✨ Nam Minh · Chuẩn Tự Nhiên (Online)</option>
               <option value="random_neural">🎲 Random: Edge Neural Chuẩn (Nam/Nữ)</option>
               <option value="random_all">🎲 Random: Mix F5-TTS + Edge Chuẩn</option>
               <option value="piper_vais1000">🎙️ Piper · VAIS1000 (Offline dự phòng)</option>
@@ -4870,7 +4872,7 @@
         const tr = document.getElementById('auto-transition-level');
         if (ar) ar.value = '16:9';
         if (vibe && vibe.value === 'learned_dna') vibe.value = 'outdoor_picnic';
-        if (tts && (tts.value || '').startsWith('random_')) tts.value = 'edge_hoaimy_koc';
+        if (tts && (tts.value || '').startsWith('random_')) tts.value = 'f5_hoaimy_local';
         if (sfx) sfx.value = 'off';
         if (tr) tr.value = 'gentle';
         await renderAutoProjectChecklist();

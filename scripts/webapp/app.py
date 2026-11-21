@@ -5531,6 +5531,14 @@ def _execute_longform_vlog_pipeline(
         vp = str(getattr(req, "voice_preset", "") or "edge_hoaimy_koc").strip()
         if vp.startswith("random_"):
             vp = _ve.pick_random_voice_presets(vp, count=1)[0]["id"]
+        def _lf_voice_progress(done_i: int, total_n: int, msg_lbl: str) -> None:
+            pct = 50 + int((done_i / max(1, total_n)) * 15)
+            _update_pipeline(
+                percent=min(65, pct),
+                message=f"Bước 3/5 (Giọng Đọc): Đang tạo {msg_lbl}...",
+                step_status=(3, "running", msg_lbl),
+            )
+
         voice_res = _lf.build_longform_voice_and_srt(
             chapter_script=ch_script,
             plan=plan,
@@ -5540,6 +5548,7 @@ def _execute_longform_vlog_pipeline(
             sentence_pause_sec=float(prev_lf_cfg.get("sentence_pause_sec") or 0.85),
             voice_rate_override=str(prev_lf_cfg.get("voice_rate_offset") or ""),
             phonetic_overrides=prev_lf_cfg.get("phonetic_overrides") or "",
+            progress_cb=_lf_voice_progress,
         )
         _update_pipeline(
             step_status=(3, "done", f"{voice_res['placed_blocks']} đoạn · {voice_res['srt_lines']} dòng SRT"),

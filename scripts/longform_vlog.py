@@ -971,7 +971,7 @@ def _synth_edge_tts_wav(text: str, out_wav: Path, voice: str, rate: str, pitch: 
 
         async def _run() -> None:
             comm = edge_tts.Communicate(text=text, voice=voice, rate=rate, pitch=pitch)
-            await comm.save(str(mp3_p))
+            await asyncio.wait_for(comm.save(str(mp3_p)), timeout=15.0)
 
         asyncio.run(_run())
         ffmpeg_bin = find_binary("ffmpeg")
@@ -1093,6 +1093,7 @@ def build_longform_voice_and_srt(
     sentence_pause_sec: float = 0.85,
     voice_rate_override: str = "",
     phonetic_overrides: str | dict[str, str] | None = None,
+    progress_cb: Any = None,
 ) -> dict[str, Any]:
     """Synthesize calm sentence-spaced vlog narration distributed evenly across the entire video."""
     preset = _ve.resolve_voice_preset(voice_preset)
@@ -1147,14 +1148,7 @@ def build_longform_voice_and_srt(
             if f5_ref_text and f5_ref_text[-1] not in ".!?":
                 f5_ref_text += "."
 
-            if not _ve.DEFAULT_MODEL_CKPT.exists() or not _ve.DEFAULT_VOCAB_FILE.exists():
-                raise FileNotFoundError("Thiếu model F5-TTS-Vietnamese.")
-            f5_model = F5TTS(
-                model="F5TTS_Base",
-                ckpt_file=str(_ve.DEFAULT_MODEL_CKPT),
-                vocab_file=str(_ve.DEFAULT_VOCAB_FILE),
-                device=_ve.select_device(),
-            )
+            f5_model = _ve.get_cached_f5_model()
         except Exception as exc:
             print(f"[LongForm F5-TTS Init WARN] {exc} -> fallback Edge-TTS")
             f5_model = None
@@ -1257,18 +1251,26 @@ def build_longform_voice_and_srt(
                     return True
             except Exception:
                 pass
-        for _edge_try, _wait_s in enumerate((2.0, 4.0, 7.0, 11.0, 16.0), start=1):
-            if _synth_edge_tts_wav(
-                sent_txt,
-                out_w,
-                str(preset.get("edge_voice") or "vi-VN-HoaiMyNeural"),
-                vlog_edge_rate,
-                str(preset.get("edge_pitch") or "+0Hz"),
-            ):
-                time.sleep(0.28)
-                return True
-            print(f"[LongForm Edge-TTS Retry {_edge_try}/5] Đợi {_wait_s:.0f}s rồi thử lại để giữ đúng 1 giọng...")
-            time.sleep(_wait_s)
+        if edge_circuit_open:
+            pass
+        else:
+            for _edge_try, _wait_s in enumerate((1.5, 3.5), start=1):
+                if _synth_edge_tts_wav(
+                    sent_txt,
+                    out_w,
+                    str(preset.get("edge_voice") or "vi-VN-HoaiMyNeural"),
+                    vlog_edge_rate,
+                    str(preset.get("edge_pitch") or "+0Hz"),
+                ):
+                    edge_consecutive_fails = 0
+                    time.sleep(0.22)
+                    return True
+                print(f"[LongForm Edge-TTS Retry {_edge_try}/2] Đợi {_wait_s:.1f}s rồi thử lại...")
+                time.sleep(_wait_s)
+            edge_consecutive_fails += 1
+            if edge_consecutive_fails >= 2:
+                edge_circuit_open = True
+                print("[LongForm Edge-TTS] Mạng/API Edge-TTS bị giới hạn liên tiếp -> chuyển sang giọng Local cho các câu tiếp theo.")
         if _ensure_piper_fallback():
             try:
                 tmp_raw = out_w.with_name(f"{out_w.stem}_pfb.wav")
@@ -1287,12 +1289,23 @@ def build_longform_voice_and_srt(
         return False
 
     # Pass 1: Synthesize all blocks sentence-by-sentence with 0.85s natural breathing pauses
+    edge_consecutive_fails = 0
+    edge_circuit_open = False
+    chapters_all = chapter_script.get("chapters") or []
+    total_blocks = sum(len(ch.get("narration_blocks") or []) for ch in chapters_all)
+    done_blocks = 0
     synthesized_blocks: list[dict[str, Any]] = []
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp_p = Path(tmpdir)
-        for ch_pos, ch in enumerate(chapter_script.get("chapters") or [], start=1):
+        for ch_pos, ch in enumerate(chapters_all, start=1):
             ch_idx = int(ch.get("index") or ch_pos)
             for bi, blk in enumerate(ch.get("narration_blocks") or [], start=1):
+                done_blocks += 1
+                if callable(progress_cb):
+                    try:
+                        progress_cb(done_blocks, max(1, total_blocks), f"Chương {ch_idx} · Đoạn {done_blocks}/{max(1, total_blocks)}")
+                    except Exception:
+                        pass
                 disp_txt = str(blk.get("text") or "").strip()
                 if not disp_txt:
                     continue
@@ -1340,14 +1353,13 @@ def build_longform_voice_and_srt(
                 )
 
     if f5_model is not None:
-        del f5_model
         try:
-            import gc, torch
+            import torch
 
-            gc.collect()
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
         except Exception:
+            pass
             pass
     if f5_tmp_dir_obj is not None:
         try:

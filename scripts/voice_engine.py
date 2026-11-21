@@ -77,6 +77,27 @@ VOCAL_EQ_FILTERS: dict[str, str] = {
 }
 
 FREE_VOICE_CATALOG: list[dict[str, Any]] = [
+    # 2 Giọng Local Chuẩn cố định (Nam Minh & Hoài My — chạy 100% Offline trên F5-TTS GPU, không gọi internet)
+    {
+        "id": "f5_namminh_local",
+        "label": "🎙️ Nam Minh Local (F5-TTS GPU · 100% Offline)",
+        "group": "Giọng Chuẩn Local Offline (0đ · Không Giới Hạn)",
+        "tts_engine": "f5_tts",
+        "ref_audio": "03_voice_clone/voices/nam_minh_local_ref.wav",
+        "speed": 1.02,
+        "vocal_eq": "warm",
+        "gender": "male",
+    },
+    {
+        "id": "f5_hoaimy_local",
+        "label": "🎙️ Hoài My Local (F5-TTS GPU · 100% Offline)",
+        "group": "Giọng Chuẩn Local Offline (0đ · Không Giới Hạn)",
+        "tts_engine": "f5_tts",
+        "ref_audio": "03_voice_clone/voices/hoai_my_local_ref.wav",
+        "speed": 1.02,
+        "vocal_eq": "neutral",
+        "gender": "female",
+    },
     # F5-TTS Local GPU Clone presets (0đ, Local GPU — tự nhiên nhất từ giọng mẫu thật)
     {
         "id": "f5_clone_default",
@@ -430,6 +451,29 @@ def patch_torchaudio_load() -> None:
             return tensor, sr
 
     torchaudio.load = safe_load
+
+
+_CACHED_F5_MODEL: Any = None
+
+
+def get_cached_f5_model() -> Any:
+    """Lazy-load and cache F5TTS_Base in memory across sequential videos."""
+    global _CACHED_F5_MODEL
+    if _CACHED_F5_MODEL is not None:
+        return _CACHED_F5_MODEL
+    if not DEFAULT_MODEL_CKPT.exists() or not DEFAULT_VOCAB_FILE.exists():
+        raise FileNotFoundError("Thiếu model F5-TTS-Vietnamese (model_last.pt / vocab.txt).")
+    configure_runtime_paths()
+    patch_torchaudio_load()
+    from f5_tts.api import F5TTS
+
+    _CACHED_F5_MODEL = F5TTS(
+        model="F5TTS_Base",
+        ckpt_file=str(DEFAULT_MODEL_CKPT),
+        vocab_file=str(DEFAULT_VOCAB_FILE),
+        device=select_device(),
+    )
+    return _CACHED_F5_MODEL
 
 
 def find_ref_audio(explicit_path: str | None) -> Path:
