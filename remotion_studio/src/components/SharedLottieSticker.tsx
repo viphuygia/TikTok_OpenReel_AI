@@ -22,20 +22,49 @@ function loadSharedLottieLib(): Promise<any> {
 
 export function resolveLottieStem(emoji?: string, label?: string): string {
   const txt = `${emoji || ''} ${label || ''}`.toLowerCase();
+  if (/🐱|🐈|mèo|meo/.test(txt)) return '1f431';
+  if (/🦀|cua|ghẹ|hải sản/.test(txt)) return '1f980';
+  if (/🐟|🐠|cá |ao cá|bắt cá/.test(txt)) return '1f41f';
+  if (/🎂|bánh kem|sinh nhật/.test(txt)) return '1f382';
+  if (/🎁|quà|tặng/.test(txt)) return '1f381';
+  if (/🥳|tiệc|party/.test(txt)) return '1f973';
+  if (/☕|cà phê|cafe|coffee/.test(txt)) return '2615';
+  if (/🧋|trà sữa/.test(txt)) return '1f9cb';
+  if (/🍻|bia|cụng ly|nhậu/.test(txt)) return '1f37b';
+  if (/🍜|phở|bún|mì|lẩu/.test(txt)) return '1f35c';
+  if (/🍔|burger/.test(txt)) return '1f354';
+  if (/🍕|pizza/.test(txt)) return '1f355';
+  if (/🍽|bữa ăn|món ngon|cơm/.test(txt)) return '1f37d_fe0f';
+  if (/🚗|xe |lái xe|ô tô/.test(txt)) return '1f697';
+  if (/📸|chụp ảnh|máy ảnh|check-in/.test(txt)) return '1f4f8';
+  if (/🌊|sóng|biển|bãi biển/.test(txt)) return '1f30a';
+  if (/🏕|cắm trại|lều/.test(txt)) return '1f3d5_fe0f';
+  if (/👀|nhìn|xem kìa|soi/.test(txt)) return '1f440';
+  if (/😂|🤣|cười|hài/.test(txt)) return '1f602';
+  if (/😍|🥰|mê|yêu quá/.test(txt)) return '1f60d';
+  if (/🤩|đỉnh|xuất sắc|xịn/.test(txt)) return '1f929';
+  if (/😮|😲|wow|bất ngờ|trời ơi/.test(txt)) return '1f62e';
   if (/🔥|lửa|nướng|bếp|cháy|hot|deal/.test(txt)) return '1f525';
-  if (/🌈|cầu vồng|biển|đảo|mùa hè/.test(txt)) return '1f308';
+  if (/🌈|cầu vồng|đảo|mùa hè/.test(txt)) return '1f308';
   if (/☀️|🌞|nắng|sáng|bình minh|hoàng hôn|🌅/.test(txt)) return '1f31e';
   if (/🌙|đêm|khuya|ngủ|sao đêm/.test(txt)) return '1f31b';
   if (/🌸|hoa|cảnh|vườn|đẹp/.test(txt)) return '1f338';
-  if (/🍀|🌿|🍃|rừng|cây|cỏ|thiên nhiên|trại|🏕/.test(txt)) return '1f340';
-  if (/🎉|🎊|chúc mừng|vui|lễ|tiệc/.test(txt)) return '1f389';
-  if (/🚀|đi|xe|đường|hành trình|du lịch|🚗|✈/.test(txt)) return '1f680';
-  if (/❤️|💖|tim|yêu|thích|chill|☕/.test(txt)) return '2764_fe0f';
+  if (/🍀|🌿|🍃|rừng|cây|cỏ|thiên nhiên/.test(txt)) return '1f340';
+  if (/🎉|🎊|chúc mừng|vui|lễ/.test(txt)) return '1f389';
+  if (/🚀|đi|đường|hành trình|du lịch|✈/.test(txt)) return '1f680';
+  if (/❤️|💖|tim|yêu|thích|chill/.test(txt)) return '2764_fe0f';
   if (/⚡|năng lượng|nhanh|sốc/.test(txt)) return '26a1';
   if (/✅|chuẩn|ok|xong/.test(txt)) return '2705';
   if (/👍|hay|tốt/.test(txt)) return '1f44d';
   if (/💡|mẹo|ý tưởng/.test(txt)) return '1f4a1';
-  if (/🌟|⭐|kỷ niệm|đỉnh/.test(txt)) return '1f31f';
+  if (/🌟|⭐|kỷ niệm/.test(txt)) return '1f31f';
+  const em = (emoji || '').trim();
+  if (em) {
+    const cps = Array.from(em)
+      .map((ch) => ch.codePointAt(0)?.toString(16))
+      .filter((x): x is string => Boolean(x) && x !== 'fe0f');
+    if (cps.length === 1) return cps[0];
+  }
   return '2728';
 }
 
@@ -58,7 +87,10 @@ export const SharedLottieSticker: React.FC<{
         if (!lottieLib) throw new Error('lottie.min.js unavailable');
         let animData = sharedLottieCache.get(stem);
         if (!animData) {
-          const resp = await fetch(staticFile(`assets/lottie_stickers/${stem}.json`));
+          let resp = await fetch(staticFile(`assets/lottie_stickers/${stem}.json`));
+          if (!resp.ok && stem !== '2728') {
+            resp = await fetch(staticFile('assets/lottie_stickers/2728.json'));
+          }
           if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
           animData = await resp.json();
           sharedLottieCache.set(stem, animData);

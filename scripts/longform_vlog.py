@@ -605,8 +605,8 @@ def generate_longform_chapter_script(
         '      "chapter_subtitle": "Mô tả nhanh 1 dòng (<= 45 ký tự)",\n'
         '      "sticker": {"emoji": "🏕️", "label": "DỰNG TRẠI BÊN HỒ", "sublabel": "Khởi đầu hành trình", "position": "top-right"},\n'
         '      "visual_cues": [\n'
-        '        {"frame_id": "F01", "variant": "pointer", "target_x": 58, "target_y": 62, "emoji": "🦀", "label": "Gọi đúng tên vật thể nhìn thấy trong frame_id đó", "sublabel": "Mô tả ngắn đúng chi tiết trên ảnh", "position": "center-left", "offset_ratio": 0.36},\n'
-        '        {"frame_id": "F02", "variant": "lower_third", "emoji": "📍", "label": "Điểm nhấn đúng khung hình frame_id", "sublabel": "Ghi chú bối cảnh thực tế trong ảnh", "position": "bottom-left", "offset_ratio": 0.72}\n'
+        '        {"frame_id": "F01", "variant": "pointer | free_pop", "target_x": 58, "target_y": 62, "show_arrow": true, "emoji": "🦀", "label": "Gọi đúng tên vật thể nhìn thấy trong frame_id đó", "sublabel": "Mô tả ngắn đúng chi tiết trên ảnh", "position": "center-left", "offset_ratio": 0.36},\n'
+        '        {"frame_id": "F02", "variant": "lower_third | free_pop", "show_arrow": false, "emoji": "🐱", "label": "Điểm nhấn hoặc từ khóa khớp lời thoại frame_id", "sublabel": "Ghi chú bối cảnh thực tế trong ảnh", "position": "bottom-left", "offset_ratio": 0.72}\n'
         '      ],\n'
         '      "narration_blocks": [\n'
         '        {"offset_ratio": 0.14, "text": "Đoạn lời bình mở chương bám sát ảnh đầu chương (~20-26 từ)."},\n'
@@ -823,7 +823,7 @@ def generate_longform_chapter_script(
         }
         raw_cues = ai_ch.get("visual_cues") if isinstance(ai_ch.get("visual_cues"), list) else []
         clean_cues: list[dict[str, Any]] = []
-        valid_variants = {"callout", "lower_third", "floating_lottie", "pill", "pointer"}
+        valid_variants = {"callout", "lower_third", "floating_lottie", "pill", "pointer", "free_pop"}
         valid_positions = {"top-right", "top-left", "bottom-right", "bottom-left", "center-left", "center-right"}
         fallback_variants = ["callout", "lower_third", "floating_lottie"]
         fallback_positions = ["center-left", "bottom-left", "center-right", "top-right"]
@@ -867,6 +867,7 @@ def generate_longform_chapter_script(
                 "position": cp,
                 "target_x": max(12.0, min(88.0, tx)),
                 "target_y": max(16.0, min(82.0, ty)),
+                "show_arrow": bool(rc.get("show_arrow")) if "show_arrow" in rc else (cv in {"pointer", "free_pop"}),
                 "offset_ratio": max(0.22, min(0.84, off_r)),
             }
             if matched_spec and matched_spec.get("tl_start") is not None and matched_spec.get("tl_end") is not None:
@@ -1696,7 +1697,7 @@ def render_vlog_remotion_overlays(
         # Render contextual animated sticker(s) inside EVERY chapter (4.5s each)
         stk = ch.get("sticker") if isinstance(ch.get("sticker"), dict) else None
         stk_style = str(sticker_style or "pill_minimal").strip().lower()
-        if stk_style not in {"pill_minimal", "ai_director_rich", "hybrid", "ai_vision_pointer"}:
+        if stk_style not in {"pill_minimal", "ai_director_rich", "hybrid", "ai_vision_pointer", "ai_pop_sticker"}:
             stk_style = "pill_minimal"
         if stk_mode != "off" and (stk or ch.get("visual_cues")) and (ch_end - ch_start) >= 10.0:
             if stk_style == "pill_minimal":
@@ -1781,6 +1782,28 @@ def render_vlog_remotion_overlays(
                             qd["target_y"] = float(qd.get("target_y") or py_d)
                             norm_items.append(qd)
                         cue_items = norm_items
+                    elif stk_style == "ai_pop_sticker" and cue_items:
+                        kw_emojis = [
+                            (r"mèo", "🐱"), (r"cua|ghẹ|hải sản", "🦀"), (r"cá |ao cá", "🐟"),
+                            (r"bánh kem|sinh nhật", "🎂"), (r"quà", "🎁"), (r"tiệc", "🥳"),
+                            (r"cà phê|cafe", "☕"), (r"trà sữa", "🧋"), (r"bia|nhậu", "🍻"),
+                            (r"phở|bún|mì|lẩu|món|ăn", "🍜"), (r"biển|sóng", "🌊"), (r"xe|lái", "🚗"),
+                            (r"hoa|vườn|cây", "🌸"), (r"nắng|sáng", "☀️"), (r"vui|cười", "😂"),
+                        ]
+                        ch_text_all = " ".join(str(b.get("text") or "") for b in (ch.get("narration_blocks") or [])).lower()
+                        pop_items: list[dict[str, Any]] = []
+                        for qi, q in enumerate(cue_items):
+                            qd = dict(q)
+                            qd["variant"] = "free_pop"
+                            if "show_arrow" not in qd:
+                                qd["show_arrow"] = (qi == 0)
+                            if str(qd.get("emoji") or "") in ("", "✨") and ch_text_all:
+                                for pat, em_k in kw_emojis:
+                                    if re.search(pat, f"{qd.get('label', '')} {ch_text_all}".lower()):
+                                        qd["emoji"] = em_k
+                                        break
+                            pop_items.append(qd)
+                        cue_items = pop_items
 
                 for s_i, cue in enumerate(cue_items):
                     off_r = float(cue.get("offset_ratio") or (0.36 + s_i * 0.34))
@@ -1806,6 +1829,7 @@ def render_vlog_remotion_overlays(
                                 "variant": str(cue.get("variant") or "callout"),
                                 "targetX": float(cue.get("target_x") or 56.0),
                                 "targetY": float(cue.get("target_y") or 58.0),
+                                "showArrow": bool(cue.get("show_arrow", True)),
                                 "accentColor": accent_color,
                                 "durationSec": cue_dur,
                                 "width": ov_w,

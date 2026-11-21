@@ -14,6 +14,7 @@ export const VlogStickerOverlay: React.FC<VlogStickerProps> = ({
   variant = 'pill',
   targetX = 56,
   targetY = 58,
+  showArrow = true,
   accentColor = '#F59E0B',
 }) => {
   const frame = useCurrentFrame();
@@ -48,6 +49,91 @@ export const VlogStickerOverlay: React.FC<VlogStickerProps> = ({
 
   const isLeft = position.includes('left');
   const slideFromX = isLeft ? -48 : 48;
+
+  if (variant === 'free_pop') {
+    const popSize = isLandscape ? 142 : 118;
+    const wiggle = Math.sin(frame * 0.16) * 5.5;
+    const tx = Math.max(12, Math.min(88, Number(targetX ?? 56)));
+    const ty = Math.max(16, Math.min(82, Number(targetY ?? 58)));
+    const px = (tx / 100) * width;
+    const py = (ty / 100) * height;
+    const hasPtr = Boolean(showArrow);
+    const sx = hasPtr
+      ? Math.max(130, Math.min(width - 130, px + (tx > 52 ? (isLandscape ? -175 : -125) : (isLandscape ? 175 : 125))))
+      : (isLeft ? (isLandscape ? 145 : 110) : width - (isLandscape ? 145 : 110));
+    const sy = hasPtr
+      ? Math.max(120, Math.min(height - 160, py + (ty > 52 ? (isLandscape ? -135 : -130) : (isLandscape ? 115 : 110))))
+      : (position.includes('bottom') ? height - (isLandscape ? 210 : 320) : (isLandscape ? 145 : 195));
+
+    return (
+      <AbsoluteFill style={{ backgroundColor: 'transparent', pointerEvents: 'none', opacity: exit }}>
+        {hasPtr ? (
+          <svg width={width} height={height} style={{ position: 'absolute', inset: 0, overflow: 'visible' }}>
+            <defs>
+              <marker id="vlogFreeArrow" markerWidth="10" markerHeight="10" refX="7" refY="3.5" orient="auto">
+                <polygon points="0 0, 8 3.5, 0 7" fill={accentColor} />
+              </marker>
+            </defs>
+            <path
+              d={`M ${sx} ${sy + 18} Q ${(sx + px) / 2} ${sy - 20} ${px} ${py}`}
+              fill="none"
+              stroke={accentColor}
+              strokeWidth={isLandscape ? 4.5 : 3.8}
+              strokeLinecap="round"
+              markerEnd="url(#vlogFreeArrow)"
+              opacity={enter}
+              style={{ filter: `drop-shadow(0 0 8px ${accentColor})` }}
+            />
+            <circle
+              cx={px}
+              cy={py}
+              r={(isLandscape ? 22 : 18) * ringPulse}
+              fill={`${accentColor}26`}
+              stroke={accentColor}
+              strokeWidth={2}
+              opacity={enter}
+            />
+          </svg>
+        ) : null}
+        <div
+          style={{
+            position: 'absolute',
+            left: sx,
+            top: sy,
+            transform: `translate(-50%, -50%) translateY(${bobY * 1.3}px) rotate(${wiggle}deg) scale(${interpolate(enter, [0, 1], [0.35, 1])})`,
+            opacity: enter,
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: 4,
+          }}
+        >
+          <div
+            style={{
+              filter: `drop-shadow(0 14px 26px rgba(0,0,0,0.52)) drop-shadow(0 0 18px ${accentColor}66)`,
+            }}
+          >
+            <SharedLottieSticker stem={lottieStem} size={popSize} startFrame={0} />
+          </div>
+          {label ? (
+            <span
+              style={{
+                fontFamily: "'Be Vietnam Pro', 'Baloo 2', sans-serif",
+                fontWeight: 900,
+                fontSize: isLandscape ? 21 : 19,
+                color: '#FFFFFF',
+                textShadow: `0 2px 10px rgba(0,0,0,0.95), 0 0 14px ${accentColor}99`,
+                letterSpacing: 0.3,
+                whiteSpace: 'nowrap',
+              }}
+            >
+              {label}
+            </span>
+          ) : null}
+        </div>
+      </AbsoluteFill>
+    );
+  }
 
   if (variant === 'pointer') {
     const tx = Math.max(12, Math.min(88, Number(targetX ?? 56)));

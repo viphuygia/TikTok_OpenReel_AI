@@ -298,9 +298,12 @@
           </div>
           <div id="longform-single-proj-box" class="space-y-2.5">
             <div class="space-y-1.5">
-              <div class="flex items-center justify-between">
+              <div class="flex flex-wrap items-center justify-between gap-2">
                 <span class="text-[11px] font-medium text-zinc-300">📋 Thứ tự Timeline (Giữ đúng trình tự 1 → N, bấm ⬆️/⬇️ để đổi):</span>
-                <button type="button" onclick="loadLongformClips()" class="text-[11px] text-amber-300 hover:text-amber-200">Làm mới</button>
+                <div class="flex items-center gap-2">
+                  <button type="button" id="btn-lf-sort-name" onclick="sortLongformClipsByName()" class="px-2 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-[11px] text-cyan-300 font-medium">🔤 Tên A→Z</button>
+                  <button type="button" onclick="loadLongformClips()" class="text-[11px] text-amber-300 hover:text-amber-200">Làm mới</button>
+                </div>
               </div>
               <div id="longform-clip-list" class="max-h-40 overflow-y-auto space-y-1 pr-1"></div>
             </div>
@@ -506,6 +509,7 @@
                 <option value="ai_director_rich">🎬 AI Đạo Diễn Đồ Họa (Classic+)</option>
                 <option value="hybrid">✨ Kết hợp (Nhãn góc + Chú thích điểm nhấn)</option>
                 <option value="ai_vision_pointer">🎯 AI Chỉ Điểm Vật Thể (Mũi tên + Sticker theo hình)</option>
+                <option value="ai_pop_sticker">🎭 Sticker Tự Do Năng Động (Pop-up + Mũi tên)</option>
               </select>
             </div>
           </div>
@@ -4881,6 +4885,7 @@
         await renderAutoProjectChecklist();
         await syncMultiProjectPager();
       }
+      toggleLongformRandomUi();
     }
 
     function switchScriptSubTab(mode) {
@@ -5668,14 +5673,60 @@
     // Tab 6: Output Gallery per Project
     state.galleryProjectId = 'all';
 
+    state._lfSortAsc = true;
+    function sortLongformClipsByName() {
+      if (!Array.isArray(state.longformClips) || !state.longformClips.length) return;
+      const asc = state._lfSortAsc !== false;
+      state.longformClips.sort((a, b) => {
+        const na = String(a.rel_path || '').split('/').pop() || '';
+        const nb = String(b.rel_path || '').split('/').pop() || '';
+        return asc
+          ? na.localeCompare(nb, undefined, { numeric: true, sensitivity: 'base' })
+          : nb.localeCompare(na, undefined, { numeric: true, sensitivity: 'base' });
+      });
+      state._lfSortAsc = !asc;
+      const btn = document.getElementById('btn-lf-sort-name');
+      if (btn) btn.textContent = state._lfSortAsc ? '🔤 Tên A→Z' : '🔤 Tên Z→A';
+      renderLongformClipList();
+      if (state.activeConfigProjId) captureCurrentModalConfig(state.activeConfigProjId);
+      toast(`Đã sắp xếp clip theo tên (${asc ? 'A → Z' : 'Z → A'})!`, 'success');
+    }
+
     function toggleLongformRandomUi() {
-      const on = !!document.getElementById('chk-longform-random')?.checked;
+      const isLong = state.pipelineCategory === 'long_vlog';
+      const on = isLong && !!document.getElementById('chk-longform-random')?.checked;
       document.getElementById('wrap-longform-random-count')?.classList.toggle('hidden', !on);
       document.getElementById('wrap-longform-preserve-script')?.classList.toggle('hidden', on);
       if (on) {
         const ps = document.getElementById('chk-longform-preserve-script');
         if (ps) ps.checked = false;
       }
+      const overriddenIds = [
+        'longform-title',
+        'auto-content-vibe',
+        'auto-sticker-density',
+        'auto-bgm-track',
+      ];
+      overriddenIds.forEach((id) => {
+        const el = document.getElementById(id);
+        if (!el) return;
+        el.disabled = on;
+        el.classList.toggle('opacity-45', on);
+        el.classList.toggle('cursor-not-allowed', on);
+        const wrap = el.closest('div');
+        if (wrap) {
+          let badge = wrap.querySelector('.rand-override-badge');
+          if (on && !badge) {
+            badge = document.createElement('span');
+            badge.className = 'rand-override-badge ml-1.5 text-[10px] px-1.5 py-0.5 rounded bg-purple-500/25 text-purple-200 border border-purple-400/40';
+            badge.textContent = '🎲 Auto Random';
+            const lbl = wrap.querySelector('label');
+            if (lbl) lbl.appendChild(badge);
+          } else if (!on && badge) {
+            badge.remove();
+          }
+        }
+      });
     }
 
     function showOutputRenderMeta(encJson) {

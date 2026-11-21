@@ -42,7 +42,7 @@ export type VlogOutroProps = {
   aspectRatio?: '16:9' | '9:16';
 };
 
-export type VlogStickerVariant = 'pill' | 'callout' | 'lower_third' | 'floating_lottie' | 'pointer';
+export type VlogStickerVariant = 'pill' | 'callout' | 'lower_third' | 'floating_lottie' | 'pointer' | 'free_pop';
 
 export type VlogStickerProps = {
   emoji: string;
@@ -52,6 +52,7 @@ export type VlogStickerProps = {
   variant?: VlogStickerVariant;
   targetX?: number;
   targetY?: number;
+  showArrow?: boolean;
   accentColor?: string;
   durationSec?: number;
   width?: number;
