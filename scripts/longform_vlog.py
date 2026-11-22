@@ -1395,6 +1395,7 @@ def build_longform_voice_and_srt(
     hybrid_f5_ref = "03_voice_clone/voices/nam_minh_local_ref.wav" if is_male_preset else "03_voice_clone/voices/hoai_my_local_ref.wav"
 
     def _synth_one_sentence(sent_txt: str, out_w: Path) -> bool:
+        nonlocal edge_consecutive_fails, edge_circuit_open
         if engine == "f5_tts" and f5_model is not None and f5_ref_wav is not None:
             if _run_f5_infer(sent_txt, out_w):
                 return True
