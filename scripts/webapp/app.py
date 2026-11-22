@@ -1943,11 +1943,12 @@ def api_open_explorer(req: OpenExplorerReq):
         si.wShowWindow = 1  # SW_SHOWNORMAL
 
         if req.select_file and target.is_file():
-            subprocess.Popen(["explorer.exe", f"/select,{norm_target}"], startupinfo=si)
+            # Pass unquoted /select, with quoted path only so explorer.exe parses spaces & Unicode accurately
+            subprocess.Popen(f'explorer.exe /select,"{norm_target}"', startupinfo=si)
             focus_name = target.parent.name
         else:
             open_dir = norm_target if target.is_dir() else os.path.normpath(str(target.parent))
-            subprocess.Popen(["explorer.exe", open_dir], startupinfo=si)
+            os.startfile(open_dir)
             focus_name = Path(open_dir).name
 
         threading.Thread(target=_bring_explorer_to_front, args=(focus_name,), daemon=True).start()
@@ -5336,6 +5337,187 @@ def _record_render_history(ws_dir: Path, filename: str, meta: dict[str, Any]) ->
         pass
 
 
+def _thumb_path(p_root: Path, mp4_name: str) -> Path:
+    return p_root / "05_output" / "_thumbnails" / f"{Path(mp4_name).stem}.jpg"
+
+
+def _generate_social_seo_pack(
+    *,
+    title_hint: str,
+    script_text: str,
+    mode: str,
+    aspect_ratio: str,
+    brand_brief: dict[str, Any] | None = None,
+    product_note: str = "",
+    chapters: list[str] | None = None,
+) -> tuple[str, str]:
+    """Generate a ready-to-paste Social Title & Description + Hashtags for TikTok/YouTube/Reels."""
+    clean_title = str(title_hint or "").strip()
+    is_short_shop = mode.startswith("short") and brand_brief and str(brand_brief.get("brand") or "").strip() and "story" not in mode.lower()
+    cfg = load_config()
+    api_key = str(cfg.get("gemini_api_key") or "").strip()
+    if api_key:
+        try:
+            import urllib.request
+
+            chap_str = " | ".join(chapters[:6]) if chapters else ""
+            brand_str = ""
+            if is_short_shop and brand_brief:
+                brand_str = f"Sản phẩm: {brand_brief.get('brand')} {brand_brief.get('product_line', '')}. USP: {brand_brief.get('usps', '')}. CTA: {brand_brief.get('offer_cta', '')}."
+            prompt = (
+                "Viết Tiêu đề và Mô tả chuẩn SEO để đăng video lên YouTube, TikTok và Facebook Reels.\n"
+                f"Định dạng: {aspect_ratio} ({mode}). Tiêu đề gốc: {clean_title or 'Video mới'}.\n"
+                f"{brand_str}\nGhi chú: {product_note[:300]}\n"
+                f"Các chương: {chap_str}\n"
+                f"Trích đoạn lời thoại: {script_text[:700]}\n\n"
+                "Trả về DUY NHẤT JSON: {\"social_title\": \"<= 70 ký tự hấp dẫn\", \"social_description\": \"2-4 dòng mô tả tự nhiên kèm 5-7 #hashtag tiếng Việt/Anh phù hợp\"}."
+            )
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
+            req_http = urllib.request.Request(
+                url,
+                data=json.dumps({"contents": [{"parts": [{"text": prompt}]}]}).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(req_http, timeout=25) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+                cands = data.get("candidates") or []
+                if cands:
+                    raw = " ".join(str(p.get("text") or "") for p in ((cands[0].get("content") or {}).get("parts") or []))
+                    m = re.search(r"\{[\s\S]*\}", raw)
+                    if m:
+                        obj = json.loads(m.group(0))
+                        st = str(obj.get("social_title") or "").strip()[:90]
+                        sd = str(obj.get("social_description") or "").strip()[:900]
+                        if st and sd:
+                            return st, sd
+        except Exception:
+            pass
+
+    # Heuristic fallback
+    if not clean_title:
+        clean_title = (
+            f"{brand_brief.get('brand', '')} {brand_brief.get('product_line', '')}".strip()
+            if is_short_shop and brand_brief
+            else (product_note.splitlines()[0][:55].strip() if product_note.strip() else "Khoảnh khắc đáng nhớ hôm nay")
+        )
+    s_title = clean_title[:75]
+    snippet = " ".join(script_text.split()[:38]).strip()
+    if is_short_shop and brand_brief:
+        cta = str(brand_brief.get("offer_cta") or "Bấm ngay giỏ hàng góc trái để săn ưu đãi!").strip()
+        s_desc = f"{s_title}\n{snippet}...\n👉 {cta}\n\n#tiktokshop #review #xuhuong #muasam"
+    else:
+        chap_line = ("\n📑 Nội dung: " + " · ".join(c.split(":", 1)[-1].strip() for c in (chapters or [])[:4])) if chapters else ""
+        s_desc = f"{s_title}{chap_line}\n{snippet}...\n\n💬 Bạn thích khoảnh khắc nào nhất? Nhớ Follow & Like ủng hộ mình nhé!\n#vlog #dulich #doisong #review #xuhuong"
+    return s_title, s_desc
+
+
+def _generate_video_thumbnail(
+    mp4_path: Path,
+    dest_jpg: Path,
+    *,
+    title_text: str,
+    subtitle_text: str = "",
+    badge_text: str = "HIGHLIGHT",
+    accent_color: str = "#F59E0B",
+    aspect_ratio: str = "16:9",
+) -> bool:
+    if not mp4_path.exists() or not mp4_path.is_file():
+        return False
+    dest_jpg.parent.mkdir(parents=True, exist_ok=True)
+    ffmpeg_bin = find_binary("ffmpeg") or "ffmpeg"
+    dur = float(probe_media(mp4_path).get("duration_sec") or 10.0)
+    seek_t = max(1.0, min(dur * 0.28, max(1.0, dur - 2.0)))
+    with tempfile.TemporaryDirectory() as tmpd:
+        raw_frame = Path(tmpd) / "frame.jpg"
+        try:
+            subprocess.run(
+                [ffmpeg_bin, "-y", "-hide_banner", "-loglevel", "error", "-ss", f"{seek_t:.2f}", "-i", str(mp4_path), "-vframes", "1", "-q:v", "2", str(raw_frame)],
+                check=True,
+                timeout=30,
+            )
+        except Exception:
+            return False
+        if not raw_frame.exists() or raw_frame.stat().st_size < 1024:
+            return False
+        try:
+            import base64
+
+            b64_frame = base64.b64encode(raw_frame.read_bytes()).decode("ascii")
+            npx, browser_exe = _lf._find_remotion_tools()
+            if npx and (DIR_REMOTION / "src" / "Root.tsx").exists():
+                props_p = Path(tmpd) / "thumb_props.json"
+                ar_clean = "9:16" if str(aspect_ratio or "").strip() == "9:16" else "16:9"
+                w_out, h_out = (1080, 1920) if ar_clean == "9:16" else (1280, 720)
+                props_p.write_text(
+                    json.dumps(
+                        {
+                            "title": (title_text or "KHOẢNH KHẮC ĐÁNG NHỚ")[:48].upper(),
+                            "subtitle": (subtitle_text or "")[:68],
+                            "badgeText": (badge_text or "HIGHLIGHT")[:20],
+                            "bgImageDataUrl": f"data:image/jpeg;base64,{b64_frame}",
+                            "accentColor": accent_color or "#F59E0B",
+                            "width": w_out,
+                            "height": h_out,
+                            "aspectRatio": ar_clean,
+                        },
+                        ensure_ascii=False,
+                    ),
+                    encoding="utf-8",
+                )
+                cmd = [
+                    npx, "remotion", "still", "src/index.ts", "VideoThumbnail", str(dest_jpg),
+                    "--props", str(props_p), "--image-format=jpeg", "--jpeg-quality=90", "--concurrency=1",
+                ]
+                if browser_exe:
+                    cmd.extend(["--browser-executable", browser_exe])
+                proc = subprocess.run(cmd, cwd=str(DIR_REMOTION), capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=90)
+                if proc.returncode == 0 and dest_jpg.exists() and dest_jpg.stat().st_size > 2048:
+                    return True
+        except Exception:
+            pass
+        shutil.copy2(raw_frame, dest_jpg)
+        return dest_jpg.exists() and dest_jpg.stat().st_size > 1024
+
+
+def _attach_output_assets(
+    proj_root: Path,
+    mp4_path: Path,
+    meta: dict[str, Any],
+    *,
+    script_text: str = "",
+    brand_brief: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    out_meta = dict(meta)
+    mode = str(out_meta.get("mode") or "")
+    ar = str(out_meta.get("aspect_ratio") or "16:9")
+    title_hint = str(out_meta.get("title") or "").strip()
+    if not out_meta.get("social_title") or not out_meta.get("social_description"):
+        st, sd = _generate_social_seo_pack(
+            title_hint=title_hint,
+            script_text=script_text,
+            mode=mode,
+            aspect_ratio=ar,
+            brand_brief=brand_brief,
+            product_note=str(out_meta.get("product_note") or ""),
+            chapters=out_meta.get("chapters_summary") if isinstance(out_meta.get("chapters_summary"), list) else None,
+        )
+        out_meta["social_title"] = st
+        out_meta["social_description"] = sd
+    t_dest = _thumb_path(proj_root, mp4_path.name)
+    if not t_dest.exists():
+        _generate_video_thumbnail(
+            mp4_path,
+            t_dest,
+            title_text=str(out_meta.get("social_title") or title_hint or mp4_path.stem),
+            subtitle_text=str(out_meta.get("product_note") or "").splitlines()[0][:55] if str(out_meta.get("product_note") or "").strip() else "",
+            badge_text="VLOG 4K" if "long" in mode else "TIKTOK",
+            accent_color=str(out_meta.get("accent_color") or "#F59E0B"),
+            aspect_ratio=ar,
+        )
+    return out_meta
+
+
 def _remove_render_history(ws_dir: Path, filename: str) -> None:
     try:
         hist_p = ws_dir / "render_history.json"
@@ -5613,9 +5795,9 @@ def _execute_longform_vlog_pipeline(
             color_preset=eff_color_preset,
             keep_clip_audio=bool(getattr(req, "keep_clip_audio", False)),
         )
-        _record_render_history(
-            DIR_WORKSPACE,
-            out_mp4.name,
+        lf_meta = _attach_output_assets(
+            ACTIVE_PROJECT_ROOT,
+            out_mp4,
             {
                 "mode": "long_random" if variant_tag else "long_vlog",
                 "variant": variant_tag or "standard",
@@ -5641,7 +5823,13 @@ def _execute_longform_vlog_pipeline(
                     f"C{c.get('index')}: {c.get('chapter_title')}" for c in (ch_script.get("chapters") or [])
                 ],
             },
+            script_text=" ".join(
+                str(b.get("text") or "")
+                for c in (ch_script.get("chapters") or [])
+                for b in (c.get("narration_blocks") or [])
+            ),
         )
+        _record_render_history(DIR_WORKSPACE, out_mp4.name, lf_meta)
         exported_list.append({"filename": out_mp4.name, "aspect_ratio": cur_ar, "duration_sec": render_res.get("duration_sec")})
         last_out_mp4 = out_mp4
         last_render_res = render_res
@@ -5687,16 +5875,17 @@ def _run_single_project_pipeline(req: OneClickPipelineReq) -> None:
                 vlog_bgms = [
                     b["id"]
                     for b in all_bgms
-                    if any(tag in b["label"] for tag in ("[Vlog]", "[Du Lịch]", "[Piano]", "[Lo-Fi]", "[Lifestyle]", "[Jazz]", "[Ambient]", "Chill", "Acoustic"))
+                    if any(tag in b["label"] for tag in ("[Vlog]", "[Du Lịch]", "[Piano]", "[Lo-Fi]", "[Lifestyle]", "[Jazz]", "[Ambient]", "Chill", "Acoustic", "[TikTok]", "Retro", "Future"))
                 ] or [b["id"] for b in all_bgms]
                 _rnd.shuffle(vlog_bgms)
                 angles = [
-                    "Kể chuyện nhật ký trải nghiệm chân thực",
-                    "Góc nhìn thư giãn, chậm rãi & cảm xúc",
-                    "Khám phá chi tiết từng khoảnh khắc đáng nhớ",
-                    "Phong cách điện ảnh nhẹ nhàng & sâu lắng",
-                    "Hành trình cuối tuần đầy năng lượng tích cực",
+                    "🕵️ Thám tử điều tra: soi từng chi tiết như tìm manh mối, đặt câu hỏi bí ẩn & kích thích tò mò",
+                    "😂 POV Hài hước dí dỏm: bình luận bất ngờ, duyên dáng, tạo tiếng cười tự nhiên",
+                    "🎙️ Phóng sự hiện trường kịch tính: nhịp câu dứt khoát, mở đầu gây tò mò như phim tài liệu",
+                    "🌿 Kể chuyện nhật ký trải nghiệm chân thực, gần gũi",
+                    "🎬 Phong cách điện ảnh sâu lắng & giàu cảm xúc",
                 ]
+                _rnd.shuffle(angles)
                 style_combos = [
                     ("campfire_warm", "warm_vlog_gold", "#F59E0B"),
                     ("adventure_bold", "mint_nature", "#38BDF8"),
@@ -6219,11 +6408,12 @@ def _run_single_project_pipeline(req: OneClickPipelineReq) -> None:
                         }
                     )
                     r_res = _render_by_engine(slot_engine)
-                    _record_render_history(
-                        DIR_WORKSPACE,
-                        str(r_res.get("output_filename") or ""),
+                    b_out_name = str(r_res.get("output_filename") or "")
+                    b_meta = _attach_output_assets(
+                        ACTIVE_PROJECT_ROOT,
+                        DIR_OUTPUT / b_out_name,
                         {
-                            "mode": "short_batch",
+                            "mode": "short_story" if is_story_mode else "short_batch",
                             "engine": slot_engine,
                             "aspect_ratio": req_aspect,
                             "duration_sec": r_res.get("duration_sec"),
@@ -6237,7 +6427,10 @@ def _run_single_project_pipeline(req: OneClickPipelineReq) -> None:
                             "hide_subtitles": bool(getattr(req, "hide_subtitles", False)),
                             "product_note": str(req.product_note or "")[:240],
                         },
+                        script_text=str(b_opt.get("script_display") or b_opt.get("script_text") or ""),
+                        brand_brief=None if is_story_mode else brief,
                     )
+                    _record_render_history(DIR_WORKSPACE, b_out_name, b_meta)
                     rendered_batch.append(
                         {
                             "option_id": opt_id,
@@ -6424,11 +6617,11 @@ def _run_single_project_pipeline(req: OneClickPipelineReq) -> None:
         render_res = _render_by_engine(req.render_engine or "remotion_classic")
         out_fname = str(render_res.get("output_filename") or "final_tiktok.mp4")
         sel_meta = render_res.get("selected_script") or {}
-        _record_render_history(
-            DIR_WORKSPACE,
-            out_fname,
+        s_meta = _attach_output_assets(
+            ACTIVE_PROJECT_ROOT,
+            DIR_OUTPUT / out_fname,
             {
-                "mode": "short_tiktok",
+                "mode": "short_story" if is_story_mode else "short_tiktok",
                 "engine": single_engine,
                 "aspect_ratio": req_aspect,
                 "duration_sec": render_res.get("duration_sec"),
@@ -6442,7 +6635,10 @@ def _run_single_project_pipeline(req: OneClickPipelineReq) -> None:
                 "hide_subtitles": bool(getattr(req, "hide_subtitles", False)),
                 "product_note": str(req.product_note or "")[:240],
             },
+            script_text=(FILE_SCRIPT.read_text(encoding="utf-8-sig") if FILE_SCRIPT.exists() else ""),
+            brand_brief=None if is_story_mode else brief,
         )
+        _record_render_history(DIR_WORKSPACE, out_fname, s_meta)
         frames = _collect_remotion_preview_frames()
         _update_pipeline(
             running=False,
@@ -7006,6 +7202,8 @@ def api_list_project_outputs(project_id: str = Query("all")):
             else:
                 r360_status = "none"
                 r360_size = 0.0
+            t_file = _thumb_path(p_root, mp4.name)
+            t_ready = t_file.exists() and t_file.is_file() and t_file.stat().st_size > 1024
             outputs.append(
                 {
                     "project_id": pid,
@@ -7020,6 +7218,10 @@ def api_list_project_outputs(project_id: str = Query("all")):
                     "height": meta.get("height", 1920),
                     "mtime": int(stat.st_mtime),
                     "render_meta": hist_map.get(mp4.name),
+                    "thumbnail_ready": t_ready,
+                    "thumbnail_url": f"/api/projects/outputs/thumbnail?project_id={pid}&name={mp4.name}&t={int(t_file.stat().st_mtime)}" if t_ready else "",
+                    "thumbnail_rel_path": f"05_output/_thumbnails/{t_file.name}",
+                    "thumbnail_name": t_file.name,
                     "review_360_status": r360_status,
                     "review_360_size_mb": r360_size,
                     "review_360_rel_path": f"05_output/_review_360p/{r360.name}",
@@ -7102,6 +7304,64 @@ def api_prepare_project_output_360p(payload: dict[str, Any]):
     return {"ok": True, "status": "running"}
 
 
+@app.get("/api/projects/outputs/thumbnail")
+def api_get_project_output_thumbnail(project_id: str = Query(...), name: str = Query(...)):
+    safe_name = Path(name).name
+    if not safe_name or ".." in name:
+        raise HTTPException(status_code=400, detail="Tên file không hợp lệ.")
+    p_root = get_project_root(project_id).resolve()
+    t_fp = _thumb_path(p_root, safe_name).resolve()
+    if not t_fp.is_relative_to(p_root) or not t_fp.exists() or not t_fp.is_file():
+        raise HTTPException(status_code=404, detail="Chưa có thumbnail cho video này.")
+    return FileResponse(path=str(t_fp), media_type="image/jpeg")
+
+
+@app.post("/api/projects/outputs/generate-meta")
+def api_generate_project_output_meta(payload: dict[str, Any]):
+    pid = str(payload.get("project_id") or "").strip()
+    name = Path(str(payload.get("name") or "")).name
+    if not pid or not name or not name.lower().endswith(".mp4"):
+        raise HTTPException(status_code=400, detail="Thiếu project_id hoặc tên file mp4.")
+    p_root = get_project_root(pid).resolve()
+    mp4_fp = (p_root / "05_output" / name).resolve()
+    if not mp4_fp.is_relative_to(p_root) or not mp4_fp.exists() or not mp4_fp.is_file():
+        raise HTTPException(status_code=404, detail="Không tìm thấy video gốc.")
+    ws_dir = p_root / "04_workspace"
+    hist_p = ws_dir / "render_history.json"
+    cur_hist: dict[str, Any] = {}
+    if hist_p.exists():
+        try:
+            cur_hist = json.loads(hist_p.read_text(encoding="utf-8-sig"))
+        except Exception:
+            cur_hist = {}
+    existing = dict(cur_hist.get(name) or {})
+    probe = probe_media(mp4_fp)
+    w, h = int(probe.get("width") or 1080), int(probe.get("height") or 1920)
+    ar = "16:9" if w > h else "9:16"
+    existing.setdefault("aspect_ratio", ar)
+    existing.setdefault("mode", "long_vlog" if "_16x9" in name or "VLOG_" in name else "short_tiktok")
+    bb_p = ws_dir / "brand_brief.json"
+    bb = json.loads(bb_p.read_text(encoding="utf-8-sig")) if bb_p.exists() else {}
+    sc_p = ws_dir / "kich_ban_hien_thi.md"
+    sc_txt = sc_p.read_text(encoding="utf-8-sig") if sc_p.exists() else ""
+    if bool(payload.get("force")):
+        existing.pop("social_title", None)
+        existing.pop("social_description", None)
+        t_old = _thumb_path(p_root, name)
+        if t_old.exists():
+            t_old.unlink(missing_ok=True)
+    updated_meta = _attach_output_assets(p_root, mp4_fp, existing, script_text=sc_txt, brand_brief=bb)
+    _record_render_history(ws_dir, name, updated_meta)
+    t_fp = _thumb_path(p_root, name)
+    return {
+        "ok": True,
+        "render_meta": updated_meta,
+        "thumbnail_ready": t_fp.exists(),
+        "thumbnail_url": f"/api/projects/outputs/thumbnail?project_id={pid}&name={name}&t={int(time.time())}" if t_fp.exists() else "",
+        "thumbnail_rel_path": f"05_output/_thumbnails/{t_fp.name}",
+    }
+
+
 @app.post("/api/projects/outputs/delete")
 def api_delete_project_output(payload: dict[str, Any]):
     pid = str(payload.get("project_id") or "").strip()
@@ -7116,5 +7376,8 @@ def api_delete_project_output(payload: dict[str, Any]):
     r360 = _review_360_path(p_root, name)
     if r360.exists() and r360.is_file():
         r360.unlink(missing_ok=True)
+    t_fp = _thumb_path(p_root, name)
+    if t_fp.exists() and t_fp.is_file():
+        t_fp.unlink(missing_ok=True)
     _remove_render_history(p_root / "04_workspace", name)
     return {"ok": True, "deleted": name, "project_id": pid}

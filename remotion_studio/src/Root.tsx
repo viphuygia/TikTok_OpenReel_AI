@@ -6,6 +6,7 @@ import { VlogIntro } from './templates/vlog/VlogIntro';
 import { VlogChapterCard } from './templates/vlog/VlogChapterCard';
 import { VlogOutro } from './templates/vlog/VlogOutro';
 import { VlogStickerOverlay } from './templates/vlog/VlogStickerOverlay';
+import { VideoThumbnail, VideoThumbnailProps } from './templates/vlog/VideoThumbnail';
 import { VlogIntroProps, VlogChapterProps, VlogOutroProps, VlogStickerProps } from './templates/vlog/types';
 import { TikTokVideoProps } from './types';
 
@@ -46,6 +47,15 @@ const defaultProps: TikTokVideoProps = {
   bgmVolume: 0.14,
   sfxVolume: 0.55,
   sfxEvents: [],
+};
+
+const defaultVideoThumbnail: VideoThumbnailProps = {
+  title: 'KHÁM PHÁ HÀNH TRÌNH',
+  subtitle: 'Những khoảnh khắc chân thực nhất',
+  badgeText: 'HIGHLIGHT',
+  bgImageDataUrl: '',
+  accentColor: '#F59E0B',
+  aspectRatio: '16:9',
 };
 
 export const RemotionRoot: React.FC = () => {
@@ -174,6 +184,16 @@ export const RemotionRoot: React.FC = () => {
         width={1920}
         height={1080}
         defaultProps={defaultVlogSticker}
+        calculateMetadata={calcVlogMeta}
+      />
+      <Composition
+        id="VideoThumbnail"
+        component={VideoThumbnail}
+        durationInFrames={1}
+        fps={30}
+        width={1280}
+        height={720}
+        defaultProps={defaultVideoThumbnail}
         calculateMetadata={calcVlogMeta}
       />
     </>

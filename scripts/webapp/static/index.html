@@ -633,6 +633,63 @@
     </div>
   </div>
 
+  <!-- Output Meta, Thumbnail & Social Copy Modal -->
+  <div id="output-meta-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/80 backdrop-blur-sm p-3 sm:p-4" onclick="closeOutputMetaModal()">
+    <div class="w-full max-w-2xl rounded-2xl border border-cyan-500/40 bg-studio-card shadow-2xl overflow-hidden flex flex-col max-h-[92vh]" onclick="event.stopPropagation()">
+      <div class="px-4 sm:px-5 py-3.5 border-b border-zinc-800 flex items-center justify-between gap-2 bg-studio-panel">
+        <div class="min-w-0">
+          <h3 class="text-sm font-semibold text-white truncate">📋 Cấu Hình, Thumbnail &amp; Đăng Bài</h3>
+          <p id="om-filename" class="text-[11px] text-zinc-400 truncate mono"></p>
+        </div>
+        <button type="button" onclick="closeOutputMetaModal()" class="px-2.5 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-xs text-zinc-300 shrink-0">Đóng</button>
+      </div>
+      <div class="p-4 sm:p-5 space-y-3.5 overflow-y-auto text-xs">
+        <!-- Thumbnail Preview & Download -->
+        <div class="rounded-xl bg-zinc-950/70 border border-zinc-800 p-3 space-y-2.5">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <span class="font-semibold text-amber-300">🖼️ Thumbnail Video (<span id="om-ar-badge">16:9</span>)</span>
+            <button type="button" id="btn-om-regen" onclick="regenerateOutputMetaAndThumb()" class="px-2.5 py-1 rounded-lg bg-amber-600/80 hover:bg-amber-500 text-[11px] font-semibold text-white">✨ Tạo / Làm mới Thumb &amp; Mô tả</button>
+          </div>
+          <div id="om-thumb-wrap" class="flex justify-center bg-black/60 rounded-lg overflow-hidden border border-zinc-800 min-h-[120px] items-center">
+            <img id="om-thumb-img" src="" alt="Thumbnail" class="hidden max-h-56 w-auto object-contain" />
+            <span id="om-thumb-empty" class="text-[11px] text-zinc-500 p-4">Chưa có Thumbnail. Bấm "✨ Tạo / Làm mới" ở trên để tạo ngay!</span>
+          </div>
+          <div id="om-thumb-actions" class="hidden grid grid-cols-2 gap-2">
+            <button type="button" onclick="downloadModalThumbnail()" class="py-1.5 px-3 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold truncate">⬇️ Tải Thumbnail (.jpg)</button>
+            <button type="button" onclick="saveModalThumbnailIphone()" class="py-1.5 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold truncate">📲 Lưu Thumbnail iPhone</button>
+          </div>
+        </div>
+
+        <!-- Social Title -->
+        <div class="space-y-1">
+          <div class="flex items-center justify-between gap-2">
+            <label class="font-semibold text-cyan-300">🏷️ Tiêu đề đăng bài (YouTube / TikTok / Reels)</label>
+            <button type="button" onclick="copyOutputSocialField('title')" class="px-2.5 py-1 rounded-lg bg-cyan-600/80 hover:bg-cyan-500 text-[11px] font-semibold text-white">📋 Copy Tiêu đề</button>
+          </div>
+          <input id="om-social-title" type="text" readonly class="w-full rounded-lg bg-zinc-950 border border-zinc-700 px-3 py-2 text-xs text-white font-medium" />
+        </div>
+
+        <!-- Social Description -->
+        <div class="space-y-1">
+          <div class="flex items-center justify-between gap-2">
+            <label class="font-semibold text-cyan-300">📝 Mô tả &amp; Hashtag</label>
+            <div class="flex items-center gap-1.5">
+              <button type="button" onclick="copyOutputSocialField('desc')" class="px-2.5 py-1 rounded-lg bg-cyan-600/80 hover:bg-cyan-500 text-[11px] font-semibold text-white">📋 Copy Mô tả</button>
+              <button type="button" onclick="copyOutputSocialField('both')" class="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-[11px] font-semibold text-white">⚡ Copy Cả 2</button>
+            </div>
+          </div>
+          <textarea id="om-social-desc" rows="5" readonly class="w-full rounded-lg bg-zinc-950 border border-zinc-700 px-3 py-2 text-xs text-zinc-200 leading-relaxed"></textarea>
+        </div>
+
+        <!-- Technical Config Log -->
+        <div class="space-y-1">
+          <div class="font-semibold text-zinc-400">⚙️ Chi tiết cấu hình đã render</div>
+          <pre id="om-tech-details" class="rounded-lg bg-zinc-950 border border-zinc-800 p-3 text-[11px] text-zinc-300 whitespace-pre-wrap leading-relaxed mono"></pre>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Global Banned Words Modal -->
   <div id="banned-words-modal" class="fixed inset-0 z-50 hidden items-center justify-center bg-black/75 backdrop-blur-sm p-4">
     <div class="w-full max-w-2xl rounded-2xl border border-rose-500/40 bg-studio-card shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
@@ -5729,22 +5786,101 @@
       });
     }
 
-    function showOutputRenderMeta(encJson) {
+    state._galleryOutputsMap = {};
+    state._activeMetaItem = null;
+
+    function openOutputMetaModal(pid, name) {
+      const o = state._galleryOutputsMap[`${pid}::${name}`];
+      if (!o) return;
+      state._activeMetaItem = o;
+      const m = o.render_meta || {};
+      document.getElementById('om-filename').textContent = `${o.project_name || pid} / ${name}`;
+      document.getElementById('om-ar-badge').textContent = m.aspect_ratio || (o.width > o.height ? '16:9' : '9:16');
+
+      const img = document.getElementById('om-thumb-img');
+      const empty = document.getElementById('om-thumb-empty');
+      const acts = document.getElementById('om-thumb-actions');
+      if (o.thumbnail_ready && o.thumbnail_url) {
+        img.src = o.thumbnail_url;
+        img.classList.remove('hidden');
+        empty.classList.add('hidden');
+        acts.classList.remove('hidden');
+      } else {
+        img.src = '';
+        img.classList.add('hidden');
+        empty.classList.remove('hidden');
+        acts.classList.add('hidden');
+      }
+
+      document.getElementById('om-social-title').value = m.social_title || m.title || name;
+      document.getElementById('om-social-desc').value = m.social_description || m.product_note || '';
+      const lines = [
+        `📅 Tạo lúc: ${m.created_at || ''}`,
+        `🎬 Chế độ: ${m.mode || ''} (${m.aspect_ratio || ''} · ${m.quality || m.engine || ''})`,
+        `🎙️ Giọng đọc: ${m.voice_preset || ''}${m.mute_voice ? ' (Đã tắt)' : ''}`,
+        `🎵 Nhạc nền: ${m.bgm_track || 'Mặc định'}`,
+        `🎨 Style: ${m.title_style || m.visual_theme || ''} · Phụ đề: ${m.subtitle_style || (m.hide_subtitles ? 'Đã ẩn' : 'Mặc định')}`,
+        m.sticker_density ? `✨ Sticker: ${m.sticker_density}` : '',
+        m.title ? `🏷️ Tiêu đề gốc: ${m.title}` : '',
+        Array.isArray(m.chapters_summary) && m.chapters_summary.length ? `📑 Chương:\n  - ${m.chapters_summary.join('\n  - ')}` : '',
+        m.product_note ? `📝 Brief: ${m.product_note}` : '',
+      ].filter(Boolean).join('\n');
+      document.getElementById('om-tech-details').textContent = lines || 'Chưa có log chi tiết.';
+
+      const modal = document.getElementById('output-meta-modal');
+      if (modal) {
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+      }
+    }
+
+    function closeOutputMetaModal() {
+      const modal = document.getElementById('output-meta-modal');
+      if (modal) {
+        modal.classList.add('hidden');
+        modal.classList.remove('flex');
+      }
+    }
+
+    function copyOutputSocialField(which) {
+      const t = document.getElementById('om-social-title')?.value || '';
+      const d = document.getElementById('om-social-desc')?.value || '';
+      if (which === 'title') return copyTextValue(t, 'Đã copy Tiêu đề!');
+      if (which === 'desc') return copyTextValue(d, 'Đã copy Mô tả & Hashtag!');
+      return copyTextValue(`${t}\n\n${d}`.trim(), 'Đã copy cả Tiêu đề + Mô tả!');
+    }
+
+    function downloadModalThumbnail() {
+      const o = state._activeMetaItem;
+      if (!o || !o.thumbnail_rel_path) return;
+      triggerFileDownload(o.thumbnail_rel_path, o.project_id);
+    }
+
+    function saveModalThumbnailIphone() {
+      const o = state._activeMetaItem;
+      if (!o || !o.thumbnail_rel_path) return;
+      shareOrSaveVideoMobile(o.thumbnail_rel_path, o.thumbnail_name || 'thumbnail.jpg', o.project_id);
+    }
+
+    async function regenerateOutputMetaAndThumb() {
+      const o = state._activeMetaItem;
+      if (!o) return;
+      const btn = document.getElementById('btn-om-regen');
+      if (btn) { btn.disabled = true; btn.textContent = '⏳ Đang tạo...'; }
       try {
-        const m = JSON.parse(decodeURIComponent(encJson));
-        const lines = [
-          `📅 Tạo lúc: ${m.created_at || ''}`,
-          `🎬 Chế độ: ${m.mode || ''} (${m.aspect_ratio || ''} · ${m.quality || m.engine || ''})`,
-          `🎙️ Giọng đọc: ${m.voice_preset || ''}${m.mute_voice ? ' (Đã tắt)' : ''}`,
-          `🎵 Nhạc nền: ${m.bgm_track || 'Mặc định'}`,
-          `🎨 Style: ${m.title_style || m.visual_theme || ''} · Phụ đề: ${m.subtitle_style || (m.hide_subtitles ? 'Đã ẩn' : 'Mặc định')}`,
-          m.sticker_density ? `✨ Sticker: ${m.sticker_density}` : '',
-          m.title ? `🏷️ Tiêu đề: ${m.title}` : '',
-          Array.isArray(m.chapters_summary) && m.chapters_summary.length ? `📑 Chương:\n  - ${m.chapters_summary.join('\n  - ')}` : '',
-          m.product_note ? `📝 Brief: ${m.product_note}` : '',
-        ].filter(Boolean).join('\n');
-        alert(lines);
-      } catch (e) {}
+        await api('/api/projects/outputs/generate-meta', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ project_id: o.project_id, name: o.name, force: true }),
+        });
+        await loadOutputGallery(state.galleryProjectId || 'all');
+        openOutputMetaModal(o.project_id, o.name);
+        toast('Đã tạo mới Thumbnail & Tiêu đề/Mô tả!', 'success');
+      } catch (e) {
+        toast(e.message, 'error');
+      } finally {
+        if (btn) { btn.disabled = false; btn.textContent = '✨ Tạo / Làm mới Thumb & Mô tả'; }
+      }
     }
 
     async function loadOutputGallery(projectId = state.galleryProjectId || 'all') {
@@ -5782,21 +5918,26 @@
         }
 
         const grid = document.getElementById('gallery-output-grid');
+        state._galleryOutputsMap = {};
+        outputs.forEach((o) => { state._galleryOutputsMap[`${o.project_id}::${o.name}`] = o; });
         if (grid) {
           grid.innerHTML = outputs.length
             ? outputs.map((o) => `
               <div class="rounded-xl bg-zinc-900 border border-zinc-800 overflow-hidden flex flex-col">
-                <video src="${o.stream_url}" controls playsinline preload="none" class="w-full h-60 bg-black object-contain"></video>
+                <video src="${o.stream_url}" ${o.thumbnail_url ? `poster="${escapeHtml(o.thumbnail_url)}"` : ''} controls playsinline preload="none" class="w-full h-60 bg-black object-contain"></video>
                 <div class="p-3 space-y-2 text-xs">
                   <div class="flex items-center justify-between gap-2">
                     <span class="px-2 py-0.5 rounded-md bg-indigo-500/20 border border-indigo-500/35 text-indigo-200 text-[10px] font-semibold truncate">${escapeHtml(o.project_name)}</span>
                     <span class="mono text-[11px] text-zinc-400 shrink-0">${o.duration_sec}s · ${o.size_mb} MB</span>
                   </div>
                   <div class="font-medium text-zinc-100 truncate" title="${escapeHtml(o.name)}">${escapeHtml(o.name)}</div>
-                  ${o.render_meta ? `<div class="flex items-center justify-between gap-1.5 text-[10px] text-zinc-400 bg-zinc-950/80 border border-zinc-800 rounded-lg px-2 py-1">
-                    <span class="truncate">🎙️ ${escapeHtml(o.render_meta.voice_preset || '')} · 🎵 ${escapeHtml((o.render_meta.bgm_track || '').replace('bgm_', '').replace('.wav', ''))}</span>
-                    <button type="button" onclick="showOutputRenderMeta('${encodeURIComponent(JSON.stringify(o.render_meta))}')" class="shrink-0 text-cyan-300 hover:text-cyan-200 font-semibold">📋 Cấu hình</button>
-                  </div>` : ''}
+                  <div class="flex items-center justify-between gap-1.5 text-[10px] text-zinc-400 bg-zinc-950/80 border border-zinc-800 rounded-lg px-2 py-1">
+                    <span class="truncate">${o.render_meta ? `🎙️ ${escapeHtml(o.render_meta.voice_preset || '')} · 🎵 ${escapeHtml((o.render_meta.bgm_track || '').replace('bgm_', '').replace('.wav', ''))}` : 'Chưa có SEO & Thumbnail'}</span>
+                    <div class="flex items-center gap-2 shrink-0">
+                      ${o.thumbnail_ready ? `<button type="button" onclick="triggerFileDownload('${escapeHtml(o.thumbnail_rel_path)}', '${escapeHtml(o.project_id)}')" class="text-amber-300 hover:text-amber-200 font-semibold">🖼️ Thumb</button>` : ''}
+                      <button type="button" onclick="openOutputMetaModal('${escapeHtml(o.project_id)}', '${escapeHtml(o.name)}')" class="text-cyan-300 hover:text-cyan-200 font-semibold">📋 Cấu hình &amp; Copy</button>
+                    </div>
+                  </div>
                   <div class="grid grid-cols-2 gap-1.5">
                     <button type="button" onclick="triggerFileDownload('${escapeHtml(o.rel_path)}', '${escapeHtml(o.project_id)}')" class="py-1.5 px-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold truncate">⬇️ Tải MP4</button>
                     <button type="button" onclick="shareOrSaveVideoMobile('${escapeHtml(o.rel_path)}', '${escapeHtml(o.name)}', '${escapeHtml(o.project_id)}')" class="py-1.5 px-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold truncate">📲 Lưu iPhone</button>
