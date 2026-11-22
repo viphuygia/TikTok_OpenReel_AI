@@ -6017,6 +6017,21 @@
       } catch (e) {}
     }
 
+    async function ensureBackendRestartedOn404(pid = '') {
+      await api('/api/system/update', { method: 'POST' });
+      const checkUrl = pid
+        ? `/api/face-privacy/state?project_id=${encodeURIComponent(pid)}`
+        : '/api/face-privacy/state';
+      for (let i = 0; i < 20; i++) {
+        await new Promise((r) => setTimeout(r, 1500));
+        try {
+          const ping = await fetch(checkUrl, { cache: 'no-store' });
+          if (ping.ok) return true;
+        } catch {}
+      }
+      throw new Error('Server đã khởi động lại nhưng chưa kịp phản hồi, vui lòng tải lại trang (F5) rồi thử lại.');
+    }
+
     async function scanProjectFaces(force = true) {
       const pid = getActiveModalProjectId();
       if (!pid) return toast('Chưa xác định Project để quét gương mặt.', 'warn');
@@ -6029,11 +6044,27 @@
       if (statusEl) statusEl.textContent = 'AI đang lấy mẫu & gom nhóm các khuôn mặt...';
       try {
         await saveFacePrivacyConfig(pid);
-        const res = await api('/api/face-privacy/scan', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ project_id: pid, force }),
-        });
+        let res;
+        try {
+          res = await api('/api/face-privacy/scan', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ project_id: pid, force }),
+          });
+        } catch (firstErr) {
+          const msg = String(firstErr?.message || '');
+          if (!/not found|404/i.test(msg)) throw firstErr;
+          if (statusEl) statusEl.textContent = '🔄 Server đang chạy bản cũ trên RAM — đang tự động khởi động lại Server bản mới (5–10s)...';
+          toast('Server đang chạy bản cũ trên RAM — đang tự khởi động lại bản mới (5–10s)...', 'info');
+          await ensureBackendRestartedOn404(pid);
+          if (statusEl) statusEl.textContent = '✅ Server mới đã sẵn sàng! Đang quét lại gương mặt...';
+          await saveFacePrivacyConfig(pid);
+          res = await api('/api/face-privacy/scan', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ project_id: pid, force }),
+          });
+        }
         state.facePrivacyMap[pid] = res;
         const validSet = new Set((res.faces || []).map((f) => f.id));
         state.currentFaceBlurIds = (state.currentFaceBlurIds || []).filter((id) => validSet.has(id));

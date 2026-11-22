@@ -7099,12 +7099,20 @@ def _git_output(args: list[str], timeout: int = 15) -> tuple[int, str]:
         return 1, str(exc)
 
 
+def _current_boot_commit() -> str:
+    rc, out = _git_output(["rev-parse", "--short", "HEAD"], timeout=8)
+    return out.splitlines()[0].strip() if rc == 0 and out else ""
+
+
+BOOT_GIT_COMMIT = _current_boot_commit()
+
+
 @app.get("/api/system/check-update")
 def api_system_check_update():
     if not shutil.which("git"):
         return {"ok": False, "has_update": False, "message": "Chưa cài Git trong PATH."}
     if not (PROJECT_ROOT / ".git").exists():
-        return {"ok": True, "has_update": True, "current_commit": "", "remote_commit": "", "behind_count": 1, "message": "Thư mục ZIP chưa gắn Git — bấm Update để đồng bộ bản mới."}
+        return {"ok": True, "has_update": True, "current_commit": "", "remote_commit": "", "boot_commit": BOOT_GIT_COMMIT, "needs_restart": False, "behind_count": 1, "message": "Thư mục ZIP chưa gắn Git — bấm Update để đồng bộ bản mới."}
     rc_f, out_f = _git_output(["fetch", "origin", "main", "--prune"], timeout=20)
     if rc_f != 0:
         return {"ok": False, "has_update": False, "message": f"Không kiểm tra được GitHub: {out_f[:160]}"}
@@ -7119,12 +7127,15 @@ def api_system_check_update():
             behind = int(cnt_s.strip())
     elif not cur_commit and rem_commit:
         behind = 1
-    has_upd = bool(rem_commit and (not cur_commit or cur_commit != rem_commit))
+    needs_restart = bool(BOOT_GIT_COMMIT and cur_commit and BOOT_GIT_COMMIT != cur_commit)
+    has_upd = bool((rem_commit and (not cur_commit or cur_commit != rem_commit)) or needs_restart)
     return {
         "ok": True,
         "has_update": has_upd,
         "current_commit": cur_commit,
         "remote_commit": rem_commit,
+        "boot_commit": BOOT_GIT_COMMIT,
+        "needs_restart": needs_restart,
         "behind_count": behind,
     }
 
@@ -7147,6 +7158,7 @@ def api_system_update(request: Request):
     proc = subprocess.run(
         ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(updater_ps1)],
         cwd=str(PROJECT_ROOT),
+        env={**os.environ, "OPENREEL_WEB_UPDATER": "1"},
         capture_output=True,
         text=True,
         encoding="utf-8",

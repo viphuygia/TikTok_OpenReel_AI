@@ -156,7 +156,38 @@ try {
 
     Write-Host ""
     Write-Ok "CAP NHAT HOAN TAT! Du lieu projects/ & giong mau cua ban duoc giu nguyen 100%."
-    Write-Host "Hay chay start_web.bat de mo lai giao dien." -ForegroundColor Cyan
+
+    # 8. If run manually (not via Webapp /api/system/update), restart stale port-8000 uvicorn process
+    if ($env:OPENREEL_WEB_UPDATER -ne "1" -and (Test-Path -LiteralPath $VenvPy)) {
+        try {
+            $conns = Get-NetTCPConnection -LocalPort 8000 -State Listen -ErrorAction SilentlyContinue
+            if ($conns) {
+                $portPids = $conns | Select-Object -ExpandProperty OwningProcess -Unique
+                $stoppedAny = $false
+                foreach ($opid in $portPids) {
+                    $proc = Get-Process -Id $opid -ErrorAction SilentlyContinue
+                    if ($proc -and $proc.ProcessName -like "python*") {
+                        Write-Info "Phat hien Server Webapp cu dang chay (PID $opid) -> Dang khoi dong lai ban moi..."
+                        Stop-Process -Id $opid -Force -ErrorAction SilentlyContinue
+                        $stoppedAny = $true
+                    }
+                }
+                if ($stoppedAny) {
+                    Start-Sleep -Seconds 4
+                    $alive = Get-NetTCPConnection -LocalPort 8000 -State Listen -ErrorAction SilentlyContinue
+                    if (-not $alive) {
+                        Start-Process -FilePath $VenvPy -ArgumentList @("-m", "uvicorn", "scripts.webapp.app:app", "--host", "0.0.0.0", "--port", "8000") -WorkingDirectory $Root | Out-Null
+                        Write-Ok "Da tu dong khoi dong lai Webapp Server ban moi tai http://localhost:8000"
+                    } else {
+                        Write-Ok "Server 24/7 da tu dong nap lai phien ban moi."
+                    }
+                }
+            }
+        } catch {
+            Write-Warn "Khong the tu dong restart port 8000: $_"
+        }
+    }
+    Write-Host "Hay chay start_dashboard.bat de mo giao dien (neu chua mo)." -ForegroundColor Cyan
 } finally {
     Pop-Location
 }
