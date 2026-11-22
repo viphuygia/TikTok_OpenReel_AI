@@ -5416,68 +5416,38 @@ def _generate_video_thumbnail(
     mp4_path: Path,
     dest_jpg: Path,
     *,
-    title_text: str,
+    title_text: str = "",
     subtitle_text: str = "",
     badge_text: str = "HIGHLIGHT",
     accent_color: str = "#F59E0B",
     aspect_ratio: str = "16:9",
+    seek_sec: float = 2.0,
 ) -> bool:
+    """Extract crisp thumbnail directly from the video's Intro/Hook frame (~2.0s) via FFmpeg."""
     if not mp4_path.exists() or not mp4_path.is_file():
         return False
     dest_jpg.parent.mkdir(parents=True, exist_ok=True)
     ffmpeg_bin = find_binary("ffmpeg") or "ffmpeg"
-    dur = float(probe_media(mp4_path).get("duration_sec") or 10.0)
-    seek_t = max(1.0, min(dur * 0.28, max(1.0, dur - 2.0)))
-    with tempfile.TemporaryDirectory() as tmpd:
-        raw_frame = Path(tmpd) / "frame.jpg"
-        try:
-            subprocess.run(
-                [ffmpeg_bin, "-y", "-hide_banner", "-loglevel", "error", "-ss", f"{seek_t:.2f}", "-i", str(mp4_path), "-vframes", "1", "-q:v", "2", str(raw_frame)],
-                check=True,
-                timeout=30,
-            )
-        except Exception:
-            return False
-        if not raw_frame.exists() or raw_frame.stat().st_size < 1024:
-            return False
-        try:
-            import base64
-
-            b64_frame = base64.b64encode(raw_frame.read_bytes()).decode("ascii")
-            npx, browser_exe = _lf._find_remotion_tools()
-            if npx and (DIR_REMOTION / "src" / "Root.tsx").exists():
-                props_p = Path(tmpd) / "thumb_props.json"
-                ar_clean = "9:16" if str(aspect_ratio or "").strip() == "9:16" else "16:9"
-                w_out, h_out = (1080, 1920) if ar_clean == "9:16" else (1280, 720)
-                props_p.write_text(
-                    json.dumps(
-                        {
-                            "title": (title_text or "KHOẢNH KHẮC ĐÁNG NHỚ")[:48].upper(),
-                            "subtitle": (subtitle_text or "")[:68],
-                            "badgeText": (badge_text or "HIGHLIGHT")[:20],
-                            "bgImageDataUrl": f"data:image/jpeg;base64,{b64_frame}",
-                            "accentColor": accent_color or "#F59E0B",
-                            "width": w_out,
-                            "height": h_out,
-                            "aspectRatio": ar_clean,
-                        },
-                        ensure_ascii=False,
-                    ),
-                    encoding="utf-8",
-                )
-                cmd = [
-                    npx, "remotion", "still", "src/index.ts", "VideoThumbnail", str(dest_jpg),
-                    "--props", str(props_p), "--image-format=jpeg", "--jpeg-quality=90", "--concurrency=1",
-                ]
-                if browser_exe:
-                    cmd.extend(["--browser-executable", browser_exe])
-                proc = subprocess.run(cmd, cwd=str(DIR_REMOTION), capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=90)
-                if proc.returncode == 0 and dest_jpg.exists() and dest_jpg.stat().st_size > 2048:
-                    return True
-        except Exception:
-            pass
-        shutil.copy2(raw_frame, dest_jpg)
+    probe = probe_media(mp4_path)
+    dur = float(probe.get("duration_sec") or 10.0)
+    w_src = int(probe.get("width") or 1920)
+    h_src = int(probe.get("height") or 1080)
+    ar_clean = "9:16" if (str(aspect_ratio or "").strip() == "9:16" or h_src > w_src) else "16:9"
+    scale_vf = "scale=1080:1920:force_original_aspect_ratio=decrease" if ar_clean == "9:16" else "scale=1280:720:force_original_aspect_ratio=decrease"
+    t_seek = max(0.3, min(float(seek_sec or 2.0), max(0.3, dur - 0.5)))
+    try:
+        subprocess.run(
+            [
+                ffmpeg_bin, "-y", "-hide_banner", "-loglevel", "error",
+                "-ss", f"{t_seek:.2f}", "-i", str(mp4_path),
+                "-vf", scale_vf, "-vframes", "1", "-q:v", "2", str(dest_jpg),
+            ],
+            check=True,
+            timeout=30,
+        )
         return dest_jpg.exists() and dest_jpg.stat().st_size > 1024
+    except Exception:
+        return False
 
 
 def _attach_output_assets(

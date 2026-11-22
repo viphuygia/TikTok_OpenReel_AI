@@ -648,11 +648,11 @@
         <div class="rounded-xl bg-zinc-950/70 border border-zinc-800 p-3 space-y-2.5">
           <div class="flex flex-wrap items-center justify-between gap-2">
             <span class="font-semibold text-amber-300">🖼️ Thumbnail Video (<span id="om-ar-badge">16:9</span>)</span>
-            <button type="button" id="btn-om-regen" onclick="regenerateOutputMetaAndThumb()" class="px-2.5 py-1 rounded-lg bg-amber-600/80 hover:bg-amber-500 text-[11px] font-semibold text-white">✨ Tạo / Làm mới Thumb &amp; Mô tả</button>
+            <button type="button" id="btn-om-regen" onclick="regenerateOutputMetaAndThumb()" class="px-2.5 py-1 rounded-lg bg-amber-600/80 hover:bg-amber-500 text-[11px] font-semibold text-white">🎞️ Lấy từ Intro đầu video (2s)</button>
           </div>
           <div id="om-thumb-wrap" class="flex justify-center bg-black/60 rounded-lg overflow-hidden border border-zinc-800 min-h-[120px] items-center">
             <img id="om-thumb-img" src="" alt="Thumbnail" class="hidden max-h-56 w-auto object-contain" />
-            <span id="om-thumb-empty" class="text-[11px] text-zinc-500 p-4">Chưa có Thumbnail. Bấm "✨ Tạo / Làm mới" ở trên để tạo ngay!</span>
+            <span id="om-thumb-empty" class="text-[11px] text-zinc-500 p-4">Chưa có Thumbnail. Bấm "🎞️ Lấy từ Intro đầu video (2s)" ở trên để tạo ngay!</span>
           </div>
           <div id="om-thumb-actions" class="hidden grid grid-cols-2 gap-2">
             <button type="button" onclick="downloadModalThumbnail()" class="py-1.5 px-3 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold truncate">⬇️ Tải Thumbnail (.jpg)</button>
@@ -5875,11 +5875,11 @@
         });
         await loadOutputGallery(state.galleryProjectId || 'all');
         openOutputMetaModal(o.project_id, o.name);
-        toast('Đã tạo mới Thumbnail & Tiêu đề/Mô tả!', 'success');
+        toast('Đã lấy Thumbnail Intro (2s) & tạo Tiêu đề/Mô tả!', 'success');
       } catch (e) {
         toast(e.message, 'error');
       } finally {
-        if (btn) { btn.disabled = false; btn.textContent = '✨ Tạo / Làm mới Thumb & Mô tả'; }
+        if (btn) { btn.disabled = false; btn.textContent = '🎞️ Lấy từ Intro đầu video (2s)'; }
       }
     }
 
