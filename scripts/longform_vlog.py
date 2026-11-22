@@ -2287,15 +2287,14 @@ def render_longform_ffmpeg_vlog(
             fade_part = ",fade=t=in:st=0:d=0.35" if (seg.get("is_chapter_start") and idx > 1) else (",fade=t=in:st=0:d=0.14" if (use_flash and idx > 1) else "")
             color_filter = COLOR_PRESET_FILTERS.get(str(color_preset or "natural"), COLOR_PRESET_FILTERS["natural"])
             zoom_expr = (
-                f",crop='iw*(1-0.065*min(1,t/{dur:.3f}))':'ih*(1-0.065*min(1,t/{dur:.3f}))':(iw-ow)/2:(ih-oh)/2"
+                f",zoompan=z='min(1.07,1+0.065*it/{dur:.3f})':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:s={target_w}x{target_h}:fps=30"
                 if (use_zoom and idx % 2 == 1)
                 else ""
             )
             vig_expr = ",vignette=PI/4.8" if use_vignette else ""
             vf = (
-                f"crop='min(iw,ih*{target_w}/{target_h})':'min(ih,iw*{target_h}/{target_w})'"
-                f"{zoom_expr},"
-                f"scale={target_w}:{target_h}:flags=lanczos,unsharp=3:3:0.35:3:3:0.0,"
+                f"crop='min(iw,ih*{target_w}/{target_h})':'min(ih,iw*{target_h}/{target_w})',"
+                f"scale={target_w}:{target_h}:flags=lanczos{zoom_expr},unsharp=3:3:0.35:3:3:0.0,"
                 f"{color_filter}{vig_expr},setsar=1,fps=30,format=yuv420p{fade_part}"
             )
             color_tags = ["-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709"]
