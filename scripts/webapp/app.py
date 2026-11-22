@@ -5716,6 +5716,15 @@ def _execute_longform_vlog_pipeline(
         )
 
     bgm_name = str(req.bgm_track or "bgm_upbeat_tiktok.wav").strip()
+    if bgm_name == "bgm_upbeat_tiktok.wav" and vp_prof.get("force_vfx"):
+        if req_vibe in ("detective_mystery", "field_report"):
+            cand_bgm = PROJECT_ROOT / "06_assets_audio" / "bgm" / "bgm_tiktok_retro_synth.wav"
+        elif req_vibe in ("pov_comedy", "creative_internet"):
+            cand_bgm = PROJECT_ROOT / "06_assets_audio" / "bgm" / "bgm_tiktok_dance_bounce.wav"
+        else:
+            cand_bgm = PROJECT_ROOT / "06_assets_audio" / "bgm" / "bgm_piano_midnight_letters.wav"
+        if cand_bgm.exists():
+            bgm_name = cand_bgm.name
     bgm_file = PROJECT_ROOT / "06_assets_audio" / "bgm" / Path(bgm_name).name
     if not bgm_file.exists():
         bgm_cand = sorted((PROJECT_ROOT / "06_assets_audio" / "bgm").glob("*.wav"))
@@ -5770,6 +5779,7 @@ def _execute_longform_vlog_pipeline(
             subtitle_style=str(vd.get("subtitle_style") or "editorial_clean"),
             accent_color=str(vd.get("accent_color") or "#F59E0B"),
             color_preset=eff_color_preset,
+            content_vibe=req_vibe,
             keep_clip_audio=bool(getattr(req, "keep_clip_audio", False)),
         )
         lf_meta = _attach_output_assets(

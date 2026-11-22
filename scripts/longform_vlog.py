@@ -203,47 +203,63 @@ def resolve_target_resolution(
 VIBE_EDITING_PROFILES: dict[str, dict[str, Any]] = {
     "detective_mystery": {
         "shot_sec": 3.4,
-        "sentence_pause_sec": 0.38,
-        "voice_rate_offset": "+3%",
-        "word_multiplier": 1.32,
+        "sentence_pause_sec": 0.35,
+        "voice_rate_offset": "+4%",
+        "word_multiplier": 1.65,
         "color_preset": "cinema_contrast",
         "title_style": "detective_noir",
         "subtitle_style": "highlight_bold",
         "accent_color": "#EF4444",
         "force_vfx": True,
+        "motion_zoom": True,
+        "vignette": True,
+        "flash_cut": True,
+        "chapter_sfx": True,
     },
     "field_report": {
         "shot_sec": 3.6,
-        "sentence_pause_sec": 0.40,
-        "voice_rate_offset": "+3%",
-        "word_multiplier": 1.28,
+        "sentence_pause_sec": 0.38,
+        "voice_rate_offset": "+4%",
+        "word_multiplier": 1.60,
         "color_preset": "cinema_contrast",
         "title_style": "detective_noir",
         "subtitle_style": "highlight_bold",
         "accent_color": "#F59E0B",
         "force_vfx": True,
+        "motion_zoom": True,
+        "vignette": True,
+        "flash_cut": True,
+        "chapter_sfx": True,
     },
     "pov_comedy": {
         "shot_sec": 3.8,
-        "sentence_pause_sec": 0.35,
-        "voice_rate_offset": "+4%",
-        "word_multiplier": 1.22,
+        "sentence_pause_sec": 0.32,
+        "voice_rate_offset": "+5%",
+        "word_multiplier": 1.48,
         "color_preset": "fresh_cool",
         "title_style": "comic_pop",
         "subtitle_style": "highlight_bold",
         "accent_color": "#FACC15",
         "force_vfx": True,
+        "motion_zoom": True,
+        "vignette": False,
+        "flash_cut": True,
+        "chapter_sfx": True,
     },
     "creative_internet": {
         "shot_sec": 4.0,
-        "sentence_pause_sec": 0.42,
-        "voice_rate_offset": "+3%",
-        "word_multiplier": 1.18,
+        "sentence_pause_sec": 0.38,
+        "voice_rate_offset": "+4%",
+        "word_multiplier": 1.40,
         "color_preset": "fresh_cool",
         "title_style": "comic_pop",
         "subtitle_style": "highlight_bold",
         "accent_color": "#38BDF8",
         "force_vfx": True,
+        "motion_zoom": True,
+        "vignette": False,
+        "flash_cut": True,
+        "chapter_sfx": False,
     },
     "cinematic_deep": {
         "shot_sec": 6.4,
@@ -608,8 +624,9 @@ def generate_longform_chapter_script(
     total_dur = float(plan.get("target_duration_sec") or 300.0)
     # Scale narration density by Vibe Editing Profile (e.g. +30% for Detective/Field Report, calm for Camping)
     word_mult = float(vp_prof.get("word_multiplier") or 1.0)
-    target_total_words = max(120, min(1450, int(round(total_dur * 1.05 * word_mult))))
+    target_total_words = max(120, min(1850, int(round(total_dur * 1.05 * word_mult))))
     words_per_chap = max(38, int(round(target_total_words / max(1, n_chap))))
+    blocks_per_chap = 4 if word_mult >= 1.35 else 2
 
     segments_plan = plan.get("segments") or []
     clip_summary = ", ".join(
@@ -700,7 +717,7 @@ def generate_longform_chapter_script(
         "YÊU CẦU CỰC KỲ QUAN TRỌNG:\n"
         "- ĐÚNG NGỮ CẢNH TỪNG CHƯƠNG: Lời bình của Chương nào CHỈ được mô tả đúng hình ảnh thực tế của Chương đó (dựa trên các khung hình được gắn nhãn [Chương X]). TUYỆT ĐỐI không kể trước sự việc của Chương sau (ví dụ chưa đốt lửa thì không được nói lửa tắt).\n"
         "- PHONG CÁCH ĐẠO DIỄN: Nếu Chủ đề/Ghi chú có chỉ định vai diễn đột phá (như Thám tử điều tra, POV Hài hước, Phóng sự kịch tính...), hãy nhập vai TRIỆT ĐỂ giọng điệu đó (đặt câu hỏi bí ẩn, châm biếm duyên dáng hoặc dẫn dắt hồi hộp); nếu không chỉ định thì giữ giọng kể chuyện tự nhiên.\n"
-        f"- Tổng lời thoại toàn video CHỈ khoảng {target_total_words} từ (~{words_per_chap} từ mỗi chương, chia thành 2 đoạn ngắn 20-26 từ/đoạn) để chừa khoảng thở hợp lý cho B-roll và âm thanh hiện trường.\n"
+        f"- Tổng lời thoại toàn video khoảng {target_total_words} từ (~{words_per_chap} từ mỗi chương, chia thành {blocks_per_chap} đoạn ngắn 22-30 từ/đoạn rải đều trong chương).\n"
         "- Viết dàn trải đều cho TẤT CẢ các chương từ đầu tới cuối video, không dồn chữ vào đầu video.\n"
         "- TUYỆT ĐỐI KHÔNG lặp lại câu văn hoặc ý diễn đạt giữa các chương.\n"
         "- TUYỆT ĐỐI KHÔNG nhắc giỏ hàng, chốt đơn, freeship hay bán hàng.\n"
@@ -1009,7 +1026,7 @@ def generate_longform_chapter_script(
         if ci == n_chap - 1 and n_chap > 2:
             phase_key = "closing"
 
-        for bi, blk in enumerate(raw_blocks[:3]):
+        for bi, blk in enumerate(raw_blocks[:4]):
             if not isinstance(blk, dict):
                 continue
             deduped = _deduplicate_sentences(str(blk.get("text") or ""), seen_norms)
@@ -1930,6 +1947,32 @@ def render_vlog_remotion_overlays(
                             pop_items.append(qd)
                         cue_items = pop_items
 
+                # Sprinkle extra random corner sticker / label cues across longer chapters so video never feels static
+                ch_len = ch_end - ch_start
+                target_extra = (2 if stk_mode == "rich" else 1) if ch_len >= 22.0 else 0
+                if target_extra > 0:
+                    ambient_pool = [
+                        ("👀", "CHÚ Ý CHI TIẾT", "Xem kỹ khoảnh khắc này", "top-left", "pill"),
+                        ("💡", "ĐIỂM NHẤN", "Góc quay thực tế", "top-right", "floating_lottie"),
+                        ("🔥", "ĐOẠN HAY", "Đừng bỏ lỡ chi tiết này", "bottom-left", "lower_third"),
+                        ("✨", "KHOẢNH KHẮC", "Nhịp sống chân thực", "center-right", "free_pop"),
+                        ("🎯", "TIÊU ĐIỂM", "Đang vào cao trào", "top-left", "callout"),
+                    ]
+                    extra_ratios = [0.24, 0.78] if target_extra >= 2 else [0.76]
+                    for ex_i, ex_rat in enumerate(extra_ratios):
+                        em_a, lbl_a, sub_a, pos_a, var_a = ambient_pool[(ci + ex_i * 2) % len(ambient_pool)]
+                        cue_items.append(
+                            {
+                                "variant": "free_pop" if stk_style == "ai_pop_sticker" else var_a,
+                                "emoji": str((stk or {}).get("emoji") or em_a),
+                                "label": lbl_a,
+                                "sublabel": sub_a,
+                                "position": pos_a,
+                                "show_arrow": False,
+                                "offset_ratio": ex_rat,
+                            }
+                        )
+
                 for s_i, cue in enumerate(cue_items):
                     off_r = float(cue.get("offset_ratio") or (0.36 + s_i * 0.34))
                     cue_dur = 4.5
@@ -2209,9 +2252,14 @@ def render_longform_ffmpeg_vlog(
     subtitle_style: str = "editorial_clean",
     accent_color: str = "#F59E0B",
     color_preset: str = "natural",
+    content_vibe: str = "outdoor_picnic",
     progress_cb: Any = None,
 ) -> dict[str, Any]:
     """Render 4K/2K/1080p Vlog master with Remotion transparent overlays, sidechain ducking, & crisp ASS subs."""
+    vp_prof = get_vibe_editing_profile(content_vibe)
+    use_zoom = bool(vp_prof.get("motion_zoom"))
+    use_vignette = bool(vp_prof.get("vignette"))
+    use_flash = bool(vp_prof.get("flash_cut"))
     ffmpeg_bin = find_binary("ffmpeg")
     ffprobe_bin = find_binary("ffprobe")
     res_wh = plan.get("target_resolution") or [1920, 1080]
@@ -2236,12 +2284,19 @@ def render_longform_ffmpeg_vlog(
             st = float(seg.get("start") or 0.0)
             dur = max(0.5, round(float(seg.get("duration") or 3.0) * 30.0) / 30.0)
             seg_out = tmp_path / f"seg_{idx:04d}.mp4"
-            fade_part = ",fade=t=in:st=0:d=0.35" if seg.get("is_chapter_start") and idx > 1 else ""
+            fade_part = ",fade=t=in:st=0:d=0.35" if (seg.get("is_chapter_start") and idx > 1) else (",fade=t=in:st=0:d=0.14" if (use_flash and idx > 1) else "")
             color_filter = COLOR_PRESET_FILTERS.get(str(color_preset or "natural"), COLOR_PRESET_FILTERS["natural"])
+            zoom_expr = (
+                f",crop='iw*(1-0.065*min(1,t/{dur:.3f}))':'ih*(1-0.065*min(1,t/{dur:.3f}))':(iw-ow)/2:(ih-oh)/2"
+                if (use_zoom and idx % 2 == 1)
+                else ""
+            )
+            vig_expr = ",vignette=PI/4.8" if use_vignette else ""
             vf = (
-                f"crop='min(iw,ih*{target_w}/{target_h})':'min(ih,iw*{target_h}/{target_w})',"
+                f"crop='min(iw,ih*{target_w}/{target_h})':'min(ih,iw*{target_h}/{target_w})'"
+                f"{zoom_expr},"
                 f"scale={target_w}:{target_h}:flags=lanczos,unsharp=3:3:0.35:3:3:0.0,"
-                f"{color_filter},setsar=1,fps=30,format=yuv420p{fade_part}"
+                f"{color_filter}{vig_expr},setsar=1,fps=30,format=yuv420p{fade_part}"
             )
             color_tags = ["-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709"]
             if keep_clip_audio and not _has_audio_stream(ffprobe_bin, src_p):
