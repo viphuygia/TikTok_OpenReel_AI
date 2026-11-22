@@ -411,6 +411,34 @@ CONTENT_VIBE_PRESETS: dict[str, dict[str, Any]] = {
         "cta_default": "Thấy hay thì thả tim và lưu video lại nha.",
         "prompt_hint": "Phong cách sáng tạo tự do theo trend mạng xã hội: câu hook tò mò, góc nhìn mới mẻ, năng lượng tích cực, không rập khuôn bán hàng hay giỏ hàng.",
     },
+    "detective_mystery": {
+        "id": "detective_mystery",
+        "label": "🕵️ Thám tử điều tra (Soi manh mối, bí ẩn)",
+        "is_vlog": True,
+        "cta_default": "Bạn có phát hiện manh mối nào khác không, bình luận bên dưới nhé.",
+        "prompt_hint": "Nhập vai Thám tử điều tra / Phá án: soi từng chi tiết nhỏ trong khung hình như tìm manh mối, đặt câu hỏi bí ẩn kích thích tò mò, giọng điệu trinh thám lôi cuốn. TUYỆT ĐỐI KHÔNG nhắc giỏ hàng hay bán hàng.",
+    },
+    "pov_comedy": {
+        "id": "pov_comedy",
+        "label": "😂 POV Hài hước dí dỏm (Bình luận duyên dáng)",
+        "is_vlog": True,
+        "cta_default": "Tag ngay đứa bạn thân vào xem đoạn này đi nha.",
+        "prompt_hint": "Phong cách POV hài hước, tự thoại dí dỏm, phản ứng bất ngờ hoặc châm biếm nhẹ nhàng đầy duyên dáng trước các tình huống trong khung hình. TUYỆT ĐỐI KHÔNG nhắc giỏ hàng hay bán hàng.",
+    },
+    "field_report": {
+        "id": "field_report",
+        "label": "🎙️ Phóng sự hiện trường (Kịch tính, dứt khoát)",
+        "is_vlog": True,
+        "cta_default": "Theo dõi để cập nhật những thước phim hiện trường tiếp theo.",
+        "prompt_hint": "Phong cách phóng viên hiện trường / phim tài liệu kịch tính: câu văn ngắn gọn, dứt khoát, mở đầu gây tò mò mạnh và dẫn dắt mạch lạc. TUYỆT ĐỐI KHÔNG nhắc giỏ hàng hay bán hàng.",
+    },
+    "cinematic_deep": {
+        "id": "cinematic_deep",
+        "label": "🎬 Điện ảnh sâu lắng (Tự sự giàu cảm xúc)",
+        "is_vlog": True,
+        "cta_default": "Lưu lại khoảnh khắc bình yên này nhé.",
+        "prompt_hint": "Phong cách điện ảnh tự sự sâu lắng, giàu chất thơ và cảm xúc, câu văn tinh tế như lời dẫn phim. TUYỆT ĐỐI KHÔNG nhắc giỏ hàng hay bán hàng.",
+    },
 }
 
 

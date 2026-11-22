@@ -5863,7 +5863,11 @@ def _run_single_project_pipeline(req: OneClickPipelineReq) -> None:
                     ("pastel_soft", "cinema_box", "#FB7185"),
                     ("cinematic_glass", "highlight_bold", "#A78BFA"),
                 ]
-                vibe_pool = ["outdoor_picnic", "travel_vlog", "daily_story", "food_cafe", "creative_internet"]
+                vibe_pool = [
+                    "detective_mystery", "pov_comedy", "field_report",
+                    "cinematic_deep", "outdoor_picnic", "travel_vlog",
+                    "daily_story", "food_cafe", "creative_internet",
+                ]
                 color_pool = ["warm_sunset", "fresh_cool", "natural", "soft_film", "cinema_contrast"]
                 jitter_pool = [0.0, 1.8, 3.4, 1.1, 2.6]
                 _rnd.shuffle(style_combos)
