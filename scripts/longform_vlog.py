@@ -1267,13 +1267,12 @@ def build_longform_voice_and_srt(
         base_f5 = 1.0 + (rate_pct / 100.0)
     vlog_f5_speed = max(0.80, min(1.15, base_f5))
 
-    if engine == "f5_tts":
+    def _ensure_f5_model_and_ref(explicit_ref: str | None = None) -> bool:
+        nonlocal f5_model, f5_ref_wav, f5_ref_text, f5_tmp_dir_obj
+        if f5_model is not None and f5_ref_wav is not None:
+            return True
         try:
-            _ve.configure_runtime_paths()
-            _ve.patch_torchaudio_load()
-            from f5_tts.api import F5TTS
-
-            ref_raw = _ve.find_ref_audio(preset.get("ref_audio"))
+            ref_raw = _ve.find_ref_audio(explicit_ref)
             f5_tmp_dir_obj = tempfile.TemporaryDirectory()
             ref_norm_p = Path(f5_tmp_dir_obj.name) / "ref_norm.wav"
             f5_ref_wav, was_clipped = _ve.normalize_reference_audio(ref_raw, ref_norm_p)
@@ -1290,14 +1289,19 @@ def build_longform_voice_and_srt(
             f5_ref_text = r_txt.strip().lower()
             if f5_ref_text and f5_ref_text[-1] not in ".!?":
                 f5_ref_text += "."
-
             f5_model = _ve.get_cached_f5_model()
+            return True
         except Exception as exc:
-            print(f"[LongForm F5-TTS Init WARN] {exc} -> fallback Edge-TTS")
+            print(f"[LongForm F5-TTS Init WARN] {exc}")
             f5_model = None
             if f5_tmp_dir_obj is not None:
                 f5_tmp_dir_obj.cleanup()
                 f5_tmp_dir_obj = None
+            return False
+
+    if engine == "f5_tts":
+        if not _ensure_f5_model_and_ref(preset.get("ref_audio")):
+            print("[LongForm F5-TTS Init WARN] -> fallback Edge-TTS")
     elif engine == "piper_tts":
         try:
             from piper.voice import PiperVoice
@@ -1350,35 +1354,50 @@ def build_longform_voice_and_srt(
             print(f"[LongForm Piper Fallback WARN] {exc}")
             return False
 
-    def _synth_one_sentence(sent_txt: str, out_w: Path) -> bool:
-        if f5_model is not None and f5_ref_wav is not None:
-            for _attempt in range(2):
-                try:
-                    gen_norm = _ve.normalize_vietnamese_script(sent_txt)
-                    part_wav, part_sr, _ = f5_model.infer(
-                        ref_file=str(f5_ref_wav),
-                        ref_text=f5_ref_text,
-                        gen_text=gen_norm,
-                        speed=vlog_f5_speed,
-                        nfe_step=24,
-                        cfg_strength=2.0,
-                        sway_sampling_coef=-1.0,
-                        seed=42,
-                        remove_silence=False,
-                    )
-                    if part_wav is not None and len(part_wav) > 0:
+    def _run_f5_infer(sent_txt: str, out_w: Path) -> bool:
+        if f5_model is None or f5_ref_wav is None:
+            return False
+        for _attempt in range(2):
+            try:
+                gen_norm = _ve.normalize_vietnamese_script(sent_txt)
+                part_wav, part_sr, _ = f5_model.infer(
+                    ref_file=str(f5_ref_wav),
+                    ref_text=f5_ref_text,
+                    gen_text=gen_norm,
+                    speed=vlog_f5_speed,
+                    nfe_step=16,
+                    cfg_strength=2.0,
+                    sway_sampling_coef=-1.0,
+                    seed=42,
+                    remove_silence=False,
+                )
+                if part_wav is not None and len(part_wav) > 0:
+                    arr_1d = np.asarray(part_wav, dtype=np.float32).reshape(-1)
+                    out_sr = int(part_sr or sr)
+                    if out_sr == sr:
+                        sf.write(str(out_w), arr_1d, sr, subtype="PCM_16")
+                    else:
                         tmp_raw = out_w.with_name(f"{out_w.stem}_f5raw.wav")
-                        sf.write(str(tmp_raw), np.asarray(part_wav, dtype=np.float32), int(part_sr or sr))
+                        sf.write(str(tmp_raw), arr_1d, out_sr)
                         subprocess.run(
                             [ffmpeg_bin, "-y", "-hide_banner", "-loglevel", "error", "-i", str(tmp_raw), "-ar", "24000", "-ac", "1", "-c:a", "pcm_s16le", str(out_w)],
                             check=True,
                             timeout=60,
                         )
                         tmp_raw.unlink(missing_ok=True)
-                        if out_w.exists() and out_w.stat().st_size > 800:
-                            return True
-                except Exception as exc:
-                    print(f"[LongForm F5-TTS Infer WARN] {exc}")
+                    if out_w.exists() and out_w.stat().st_size > 800:
+                        return True
+            except Exception as exc:
+                print(f"[LongForm F5-TTS Infer WARN] {exc}")
+        return False
+
+    is_male_preset = str(preset.get("gender") or "").lower() == "male" or "namminh" in str(preset.get("edge_voice") or "").lower()
+    hybrid_f5_ref = "03_voice_clone/voices/nam_minh_local_ref.wav" if is_male_preset else "03_voice_clone/voices/hoai_my_local_ref.wav"
+
+    def _synth_one_sentence(sent_txt: str, out_w: Path) -> bool:
+        if engine == "f5_tts" and f5_model is not None and f5_ref_wav is not None:
+            if _run_f5_infer(sent_txt, out_w):
+                return True
         if engine == "piper_tts" and _ensure_piper_fallback():
             try:
                 tmp_raw = out_w.with_name(f"{out_w.stem}_praw.wav")
@@ -1413,7 +1432,9 @@ def build_longform_voice_and_srt(
             edge_consecutive_fails += 1
             if edge_consecutive_fails >= 2:
                 edge_circuit_open = True
-                print("[LongForm Edge-TTS] Mạng/API Edge-TTS bị giới hạn liên tiếp -> chuyển sang giọng Local cho các câu tiếp theo.")
+                print("[LongForm Edge-TTS] Mạng/API Edge-TTS bị giới hạn liên tiếp -> chuyển sang F5-TTS Local cùng màu giọng cho các câu tiếp theo.")
+        if _ensure_f5_model_and_ref(hybrid_f5_ref) and _run_f5_infer(sent_txt, out_w):
+            return True
         if _ensure_piper_fallback():
             try:
                 tmp_raw = out_w.with_name(f"{out_w.stem}_pfb.wav")
