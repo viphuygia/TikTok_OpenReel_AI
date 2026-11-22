@@ -2365,103 +2365,130 @@ def render_longform_ffmpeg_vlog(
             )
             has_ass = True
 
-        comp_cmd = [ffmpeg_bin, "-y", "-i", str(merged_video)]
-        next_idx = 1
-
         valid_overlays = [
             ov for ov in (overlays or [])
             if isinstance(ov, dict) and ov.get("path") and Path(ov["path"]).exists()
         ]
-        ov_inputs: list[tuple[int, float, float]] = []
-        for ov in valid_overlays:
-            st_sec = max(0.0, float(ov.get("start_sec") or 0.0))
-            dur_ov = float(ov.get("duration_sec") or 0.0)
-            comp_cmd.extend(["-c:v", "libvpx-vp9", "-i", str(ov["path"])])
-            ov_inputs.append((next_idx, st_sec, dur_ov))
-            next_idx += 1
+        OV_BATCH = 8
+        ov_chunks = [valid_overlays[i : i + OV_BATCH] for i in range(0, len(valid_overlays), OV_BATCH)] or [[]]
+        cur_video_in = merged_video
 
-        has_voice = bool(voice_wav and voice_wav.exists())
-        has_bgm = bool(bgm_path and bgm_path.exists())
-        voice_idx = None
-        bgm_idx = None
-        if has_voice:
-            comp_cmd.extend(["-i", str(voice_wav)])
-            voice_idx = next_idx
-            next_idx += 1
-        if has_bgm:
-            comp_cmd.extend(["-stream_loop", "-1", "-i", str(bgm_path)])
-            bgm_idx = next_idx
-            next_idx += 1
+        for c_i, chunk_ovs in enumerate(ov_chunks):
+            is_last_pass = (c_i == len(ov_chunks) - 1)
+            pass_out = output_mp4 if is_last_pass else (tmp_path / f"ov_pass_{c_i:02d}.mp4")
 
-        filter_parts: list[str] = []
-        cur_v = "0:v"
-        if has_ass:
-            ass_esc = ass_file.as_posix().replace(":", "\\:")
-            filter_parts.append(f"[{cur_v}]ass='{ass_esc}'[vsub]")
-            cur_v = "vsub"
+            comp_cmd = [ffmpeg_bin, "-y", "-i", str(cur_video_in)]
+            next_idx = 1
+            ov_inputs: list[tuple[int, float, float]] = []
+            for ov in chunk_ovs:
+                st_sec = max(0.0, float(ov.get("start_sec") or 0.0))
+                dur_ov = float(ov.get("duration_sec") or 0.0)
+                comp_cmd.extend(["-c:v", "libvpx-vp9", "-i", str(ov["path"])])
+                ov_inputs.append((next_idx, st_sec, dur_ov))
+                next_idx += 1
 
-        for oi, (in_idx, st_sec, dur_ov) in enumerate(ov_inputs):
-            ov_lbl = f"ov{oi}"
-            out_lbl = f"vov{oi}"
-            filter_parts.append(
-                f"[{in_idx}:v]scale={target_w}:{target_h}:flags=lanczos,format=yuva420p,setpts=PTS-STARTPTS+{st_sec:.3f}/TB[{ov_lbl}]"
-            )
-            en_expr = f":enable='between(t,{st_sec:.3f},{st_sec + dur_ov + 0.1:.3f})'" if dur_ov > 0.0 else ""
-            filter_parts.append(f"[{cur_v}][{ov_lbl}]overlay=0:0:eof_action=pass:shortest=0{en_expr}[{out_lbl}]")
-            cur_v = out_lbl
+            filter_parts: list[str] = []
+            cur_v = "0:v"
+            if is_last_pass and has_ass:
+                ass_esc = ass_file.as_posix().replace(":", "\\:")
+                filter_parts.append(f"[{cur_v}]ass='{ass_esc}'[vsub]")
+                cur_v = "vsub"
 
-        v_map = f"[{cur_v}]" if cur_v != "0:v" else "0:v"
+            for oi, (in_idx, st_sec, dur_ov) in enumerate(ov_inputs):
+                ov_lbl = f"ov{oi}"
+                out_lbl = f"vov{oi}"
+                filter_parts.append(
+                    f"[{in_idx}:v]scale={target_w}:{target_h}:flags=lanczos,format=yuva420p,setpts=PTS-STARTPTS+{st_sec:.3f}/TB[{ov_lbl}]"
+                )
+                en_expr = f":enable='between(t,{st_sec:.3f},{st_sec + dur_ov + 0.1:.3f})'" if dur_ov > 0.0 else ""
+                filter_parts.append(f"[{cur_v}][{ov_lbl}]overlay=0:0:eof_action=pass:shortest=0{en_expr}[{out_lbl}]")
+                cur_v = out_lbl
 
-        # Audio pipeline with true sidechain ducking when narration speaks
-        bed_labels: list[str] = []
-        if keep_clip_audio:
-            filter_parts.append("[0:a]aresample=44100,aformat=channel_layouts=stereo,volume=0.45[clipa]")
-            bed_labels.append("[clipa]")
-        if bgm_idx is not None:
-            filter_parts.append(f"[{bgm_idx}:a]aresample=44100,aformat=channel_layouts=stereo,volume={float(bgm_volume):.3f}[bgma]")
-            bed_labels.append("[bgma]")
+            v_map = f"[{cur_v}]" if cur_v != "0:v" else "0:v"
 
-        a_map = ""
-        if voice_idx is not None and bed_labels:
-            if len(bed_labels) > 1:
-                filter_parts.append(f"{''.join(bed_labels)}amix=inputs={len(bed_labels)}:duration=first:normalize=0[bed_mix]")
-                bed_lbl = "[bed_mix]"
+            if not is_last_pass:
+                if filter_parts:
+                    comp_cmd.extend(["-filter_complex", ";".join(filter_parts)])
+                comp_cmd.extend(["-map", v_map])
+                if keep_clip_audio:
+                    comp_cmd.extend(["-map", "0:a?", "-c:a", "copy"])
+                else:
+                    comp_cmd.extend(["-an"])
+                comp_cmd.extend(
+                    [
+                        "-c:v", vcodec_seg, *vargs_seg,
+                        "-pix_fmt", "yuv420p",
+                        "-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709",
+                        str(pass_out),
+                    ]
+                )
+                subprocess.run(comp_cmd, capture_output=True, check=True, timeout=600)
+                cur_video_in = pass_out
+                continue
+
+            has_voice = bool(voice_wav and voice_wav.exists())
+            has_bgm = bool(bgm_path and bgm_path.exists())
+            voice_idx = None
+            bgm_idx = None
+            if has_voice:
+                comp_cmd.extend(["-i", str(voice_wav)])
+                voice_idx = next_idx
+                next_idx += 1
+            if has_bgm:
+                comp_cmd.extend(["-stream_loop", "-1", "-i", str(bgm_path)])
+                bgm_idx = next_idx
+                next_idx += 1
+
+            # Audio pipeline with true sidechain ducking when narration speaks
+            bed_labels: list[str] = []
+            if keep_clip_audio:
+                filter_parts.append("[0:a]aresample=44100,aformat=channel_layouts=stereo,volume=0.45[clipa]")
+                bed_labels.append("[clipa]")
+            if bgm_idx is not None:
+                filter_parts.append(f"[{bgm_idx}:a]aresample=44100,aformat=channel_layouts=stereo,volume={float(bgm_volume):.3f}[bgma]")
+                bed_labels.append("[bgma]")
+
+            a_map = ""
+            if voice_idx is not None and bed_labels:
+                if len(bed_labels) > 1:
+                    filter_parts.append(f"{''.join(bed_labels)}amix=inputs={len(bed_labels)}:duration=first:normalize=0[bed_mix]")
+                    bed_lbl = "[bed_mix]"
+                else:
+                    bed_lbl = bed_labels[0]
+                filter_parts.append(f"[{voice_idx}:a]aresample=44100,aformat=channel_layouts=stereo,asplit=2[v_sc][v_mix]")
+                filter_parts.append(f"{bed_lbl}[v_sc]sidechaincompress=threshold=0.025:ratio=6:attack=80:release=650:makeup=1[bed_ducked]")
+                filter_parts.append("[v_mix][bed_ducked]amix=inputs=2:duration=first:normalize=0,alimiter=limit=0.95[aout]")
+                a_map = "[aout]"
+            elif voice_idx is not None:
+                filter_parts.append(f"[{voice_idx}:a]aresample=44100,aformat=channel_layouts=stereo,alimiter=limit=0.95[aout]")
+                a_map = "[aout]"
+            elif len(bed_labels) > 1:
+                filter_parts.append(f"{''.join(bed_labels)}amix=inputs={len(bed_labels)}:duration=first:normalize=0,alimiter=limit=0.95[aout]")
+                a_map = "[aout]"
+            elif len(bed_labels) == 1:
+                a_map = bed_labels[0]
+
+            if filter_parts:
+                comp_cmd.extend(["-filter_complex", ";".join(filter_parts)])
+            comp_cmd.extend(["-map", v_map])
+            if a_map:
+                comp_cmd.extend(["-map", a_map, "-c:a", "aac", "-ar", "44100", "-b:a", "256k"])
             else:
-                bed_lbl = bed_labels[0]
-            filter_parts.append(f"[{voice_idx}:a]aresample=44100,aformat=channel_layouts=stereo,asplit=2[v_sc][v_mix]")
-            filter_parts.append(f"{bed_lbl}[v_sc]sidechaincompress=threshold=0.025:ratio=6:attack=80:release=650:makeup=1[bed_ducked]")
-            filter_parts.append("[v_mix][bed_ducked]amix=inputs=2:duration=first:normalize=0,alimiter=limit=0.95[aout]")
-            a_map = "[aout]"
-        elif voice_idx is not None:
-            filter_parts.append(f"[{voice_idx}:a]aresample=44100,aformat=channel_layouts=stereo,alimiter=limit=0.95[aout]")
-            a_map = "[aout]"
-        elif len(bed_labels) > 1:
-            filter_parts.append(f"{''.join(bed_labels)}amix=inputs={len(bed_labels)}:duration=first:normalize=0,alimiter=limit=0.95[aout]")
-            a_map = "[aout]"
-        elif len(bed_labels) == 1:
-            a_map = bed_labels[0]
+                comp_cmd.extend(["-an"])
 
-        if filter_parts:
-            comp_cmd.extend(["-filter_complex", ";".join(filter_parts)])
-        comp_cmd.extend(["-map", v_map])
-        if a_map:
-            comp_cmd.extend(["-map", a_map, "-c:a", "aac", "-ar", "44100", "-b:a", "256k"])
-        else:
-            comp_cmd.extend(["-an"])
+            if v_map == "0:v":
+                comp_cmd.extend(["-c:v", "copy"])
+            else:
+                comp_cmd.extend(
+                    [
+                        "-c:v", vcodec_master, *vargs_master,
+                        "-pix_fmt", "yuv420p",
+                        "-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709",
+                    ]
+                )
 
-        if v_map == "0:v":
-            comp_cmd.extend(["-c:v", "copy"])
-        else:
-            comp_cmd.extend(
-                [
-                    "-c:v", vcodec_master, *vargs_master,
-                    "-pix_fmt", "yuv420p",
-                    "-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709",
-                ]
-            )
-
-        comp_cmd.extend(["-shortest", "-movflags", "+faststart", str(output_mp4)])
-        subprocess.run(comp_cmd, capture_output=True, check=True, timeout=900)
+            comp_cmd.extend(["-shortest", "-movflags", "+faststart", str(output_mp4)])
+            subprocess.run(comp_cmd, capture_output=True, check=True, timeout=900)
 
     final_dur = round(float(probe_duration(ffprobe_bin, output_mp4)), 2)
     return {
