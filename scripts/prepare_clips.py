@@ -354,6 +354,23 @@ def main() -> int:
     ffmpeg_bin = find_binary("ffmpeg")
     ffprobe_bin = find_binary("ffprobe")
 
+    import face_privacy as _fp
+    fp_state = _fp.load_face_privacy_state(PROJECT_ROOT)
+    fp_cfg = _fp.normalize_face_config(fp_state.get("config"))
+    fp_enabled = bool(fp_cfg.get("enabled"))
+    fp_cache_part: list[Any] = (
+        [
+            "face_v1",
+            fp_cfg["mode"],
+            fp_cfg["style"],
+            fp_cfg["padding"],
+            sorted(fp_cfg["selected_face_ids"]),
+            int(fp_state.get("updated_at") or 0),
+        ]
+        if fp_enabled
+        else []
+    )
+
     cache_dir = clips_out_dir.parent / ".clip_cache"
     cache_dir.mkdir(parents=True, exist_ok=True)
 
@@ -378,22 +395,22 @@ def main() -> int:
         out_name = f"clip_{idx:02d}.mp4"
         out_path = clips_out_dir / out_name
         src_mtime = round(src_path.stat().st_mtime, 2)
-        key_payload = json.dumps(
-            [
-                str(src_path.resolve()),
-                src_mtime,
-                round(start_sec, 3),
-                round(end_sec, 3),
-                round(speed, 3),
-                crop_mode,
-                target_w,
-                target_h,
-                target_fps,
-                keep_audio,
-                "polish_v2",
-            ],
-            ensure_ascii=False,
-        )
+        key_items: list[Any] = [
+            str(src_path.resolve()),
+            src_mtime,
+            round(start_sec, 3),
+            round(end_sec, 3),
+            round(speed, 3),
+            crop_mode,
+            target_w,
+            target_h,
+            target_fps,
+            keep_audio,
+            "polish_v2",
+        ]
+        if fp_cache_part:
+            key_items.append(fp_cache_part)
+        key_payload = json.dumps(key_items, ensure_ascii=False)
         cache_key = hashlib.sha1(key_payload.encode("utf-8")).hexdigest()[:16]
         cached_path = cache_dir / f"{cache_key}.mp4"
 
@@ -433,6 +450,13 @@ def main() -> int:
                 crop_mode=job["crop_mode"],
                 keep_audio=job["keep_audio"],
             )
+            if fp_enabled:
+                _fp.apply_face_privacy_to_clip(
+                    out_p,
+                    PROJECT_ROOT,
+                    override_cfg=fp_cfg,
+                    ffmpeg_bin=ffmpeg_bin,
+                )
             tmp_cache = cached_p.with_suffix(".tmp.mp4")
             shutil.copy2(out_p, tmp_cache)
             os.replace(tmp_cache, cached_p)
@@ -440,7 +464,8 @@ def main() -> int:
         return job, dur_val, hit
 
     results_by_idx: dict[int, tuple[dict[str, Any], float, bool]] = {}
-    with concurrent.futures.ThreadPoolExecutor(max_workers=min(3, max(1, len(prepared_jobs)))) as pool:
+    pool_workers = min(2 if fp_enabled else 3, max(1, len(prepared_jobs)))
+    with concurrent.futures.ThreadPoolExecutor(max_workers=pool_workers) as pool:
         futures = [pool.submit(_process_clip_job, j) for j in prepared_jobs]
         for fut in concurrent.futures.as_completed(futures):
             j_res, actual_dur, cache_hit = fut.result()

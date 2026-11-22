@@ -13,3 +13,4 @@ numpy
 vinorm
 av
 ctranslate2
+opencv-contrib-python

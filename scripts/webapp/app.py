@@ -1225,6 +1225,11 @@ class OneClickPipelineReq(BaseModel):
     hide_subtitles: bool = False
     enable_motion_zoom: bool = False
     disable_vibe_filter: bool = False
+    face_blur_enabled: bool = False
+    face_blur_mode: str = "blur_selected"
+    face_blur_style: str = "gaussian"
+    face_blur_padding: float = 1.25
+    face_blur_ids: list[str] = Field(default_factory=list)
     project_ids: list[str] = Field(default_factory=list)
     project_configs: dict[str, dict[str, Any]] = Field(default_factory=dict)
     sync: bool = False
@@ -4843,6 +4848,108 @@ def api_longform_generate_script(req: LongformGenScriptReq):
     return {"ok": True, "project_id": pid, "chapters_data": ch_script, "config": merged_cfg}
 
 
+class FacePrivacyScanReq(BaseModel):
+    project_id: str = ""
+    force: bool = True
+
+
+class FacePrivacyConfigReq(BaseModel):
+    project_id: str = ""
+    enabled: bool = False
+    mode: str = "blur_selected"
+    style: str = "gaussian"
+    padding: float = 1.25
+    selected_face_ids: list[str] = Field(default_factory=list)
+
+
+def _attach_face_thumb_urls(faces: list[dict[str, Any]], pid: str, updated_at: int) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    ts = int(updated_at or int(time.time()))
+    for f in faces or []:
+        item = dict(f)
+        fid = str(item.get("id") or "").strip()
+        item["thumb_url"] = (
+            f"/api/face-privacy/thumb?project_id={pid}&face_id={fid}&t={ts}"
+            if fid and item.get("thumb_name")
+            else ""
+        )
+        out.append(item)
+    return out
+
+
+def _req_face_privacy_dict(req: OneClickPipelineReq) -> dict[str, Any]:
+    return {
+        "enabled": bool(getattr(req, "face_blur_enabled", False)),
+        "mode": str(getattr(req, "face_blur_mode", "blur_selected") or "blur_selected"),
+        "style": str(getattr(req, "face_blur_style", "gaussian") or "gaussian"),
+        "padding": float(getattr(req, "face_blur_padding", 1.25) or 1.25),
+        "selected_face_ids": list(getattr(req, "face_blur_ids", None) or []),
+    }
+
+
+@app.get("/api/face-privacy/state")
+def api_face_privacy_state(project_id: str | None = None):
+    import face_privacy as _fp
+
+    pid = str(project_id or "").strip() or ACTIVE_PROJECT_ID
+    p_root = get_project_root(pid)
+    st = _fp.load_face_privacy_state(p_root)
+    faces_ui = _fp._strip_embeddings_for_ui(st.get("faces") or [])
+    ts = int(st.get("updated_at") or 0)
+    return {
+        "ok": True,
+        "project_id": pid,
+        "updated_at": ts,
+        "faces": _attach_face_thumb_urls(faces_ui, pid, ts),
+        "config": st.get("config") or dict(_fp.DEFAULT_FACE_PRIVACY_CONFIG),
+    }
+
+
+@app.post("/api/face-privacy/scan")
+def api_face_privacy_scan(req: FacePrivacyScanReq):
+    import face_privacy as _fp
+
+    pid = str(req.project_id or "").strip() or ACTIVE_PROJECT_ID
+    p_root = get_project_root(pid)
+    res = _fp.scan_project_faces(p_root, force=bool(req.force))
+    ts = int(res.get("updated_at") or int(time.time()))
+    res["faces"] = _attach_face_thumb_urls(res.get("faces") or [], pid, ts)
+    return {"ok": True, "project_id": pid, **res}
+
+
+@app.post("/api/face-privacy/config")
+def api_face_privacy_config(req: FacePrivacyConfigReq):
+    import face_privacy as _fp
+
+    pid = str(req.project_id or "").strip() or ACTIVE_PROJECT_ID
+    p_root = get_project_root(pid)
+    res = _fp.save_face_privacy_config(
+        p_root,
+        {
+            "enabled": req.enabled,
+            "mode": req.mode,
+            "style": req.style,
+            "padding": req.padding,
+            "selected_face_ids": req.selected_face_ids,
+        },
+    )
+    ts = int(res.get("updated_at") or 0)
+    res["faces"] = _attach_face_thumb_urls(res.get("faces") or [], pid, ts)
+    return {"ok": True, "project_id": pid, **res}
+
+
+@app.get("/api/face-privacy/thumb")
+def api_face_privacy_thumb(project_id: str = Query(...), face_id: str = Query(...)):
+    clean_fid = Path(str(face_id or "").strip()).stem
+    if not clean_fid or not re.match(r"^[a-zA-Z0-9_-]+$", clean_fid):
+        raise HTTPException(status_code=400, detail="face_id không hợp lệ.")
+    p_root = get_project_root(project_id).resolve()
+    thumb_fp = (p_root / "04_workspace" / "face_privacy" / "thumbs" / f"{clean_fid}.jpg").resolve()
+    if not thumb_fp.is_relative_to(p_root) or not thumb_fp.exists() or not thumb_fp.is_file():
+        raise HTTPException(status_code=404, detail="Không tìm thấy ảnh khuôn mặt.")
+    return FileResponse(path=str(thumb_fp), media_type="image/jpeg")
+
+
 @app.get("/api/style/vibes")
 def api_style_vibes():
     import style_dna as _sd
@@ -5743,6 +5850,14 @@ def _execute_longform_vlog_pipeline(
     last_out_mp4: Path | None = None
     last_render_res: dict[str, Any] = {}
 
+    import face_privacy as _fp
+    fp_saved = _fp.save_face_privacy_config(ACTIVE_PROJECT_ROOT, _req_face_privacy_dict(req))
+    fp_cfg = fp_saved["config"]
+    if fp_cfg.get("enabled"):
+        _update_pipeline(
+            log_line=f"[Che mặt AI] BẬT ({fp_cfg['mode']} · kiểu={fp_cfg['style']} · đã chọn={len(fp_cfg['selected_face_ids'])} mặt).",
+        )
+
     for ar_idx, cur_ar in enumerate(aspect_list, start=1):
         ar_plan = dict(plan)
         if cur_ar != req_aspect:
@@ -5787,6 +5902,8 @@ def _execute_longform_vlog_pipeline(
             content_vibe=req_vibe,
             enable_motion_zoom=bool(getattr(req, "enable_motion_zoom", False)),
             disable_vibe_filter=disable_vf,
+            face_privacy_cfg=fp_cfg,
+            project_root=ACTIVE_PROJECT_ROOT,
             keep_clip_audio=bool(getattr(req, "keep_clip_audio", False)),
         )
         lf_meta = _attach_output_assets(
@@ -6015,6 +6132,12 @@ def _run_single_project_pipeline(req: OneClickPipelineReq) -> None:
         raw_videos = list_media_in_dir(DIR_VIDEO_THO)
         if not raw_videos:
             raise RuntimeError("Thư mục 02_video_tho đang trống. Hãy thêm ít nhất 1 video thô trước.")
+        import face_privacy as _fp_short
+        fp_short_cfg = _fp_short.save_face_privacy_config(ACTIVE_PROJECT_ROOT, _req_face_privacy_dict(req))["config"]
+        if fp_short_cfg.get("enabled"):
+            _update_pipeline(
+                log_line=f"[Che mặt AI] BẬT ({fp_short_cfg['mode']} · kiểu={fp_short_cfg['style']} · đã chọn={len(fp_short_cfg['selected_face_ids'])} mặt).",
+            )
         _ensure_raw_frames_extracted(raw_videos)
         _update_pipeline(
             step_status=(
@@ -6674,7 +6797,7 @@ def _req_for_project(req: OneClickPipelineReq, pid: str, multi_projects: bool) -
             "vlog_title", "product_note", "quality_preset", "aspect_ratio", "content_vibe",
             "short_content_mode", "voice_preset", "tts_engine", "edge_voice", "bgm_track", "sticker_density", "sticker_style",
             "render_engine", "innovation_preset", "sfx_level", "transition_level",
-            "icon_density", "visual_theme",
+            "icon_density", "visual_theme", "face_blur_mode", "face_blur_style",
         )
         for sf_k in str_fields:
             if sf_k in pc and pc[sf_k] is not None:
@@ -6684,10 +6807,15 @@ def _req_for_project(req: OneClickPipelineReq, pid: str, multi_projects: bool) -
             "longform_random_mode", "mute_voice", "hide_subtitles", "enable_motion_zoom", "disable_vibe_filter",
             "batch_all_scripts", "mix_variants", "mix_engines",
             "preserve_clips", "regenerate_script", "force_tts", "disable_flash_shake",
+            "face_blur_enabled",
         )
         for bf_k in bool_fields:
             if bf_k in pc:
                 upd[bf_k] = bool(pc[bf_k])
+        if "face_blur_padding" in pc and pc["face_blur_padding"] is not None:
+            upd["face_blur_padding"] = float(pc["face_blur_padding"])
+        if isinstance(pc.get("face_blur_ids"), list):
+            upd["face_blur_ids"] = [str(x) for x in pc["face_blur_ids"] if str(x).strip()]
         if "target_duration_sec" in pc and pc["target_duration_sec"]:
             upd["target_duration_sec"] = float(pc["target_duration_sec"])
         if "longform_random_count" in pc and pc["longform_random_count"]:

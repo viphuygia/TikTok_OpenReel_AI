@@ -2277,6 +2277,8 @@ def render_longform_ffmpeg_vlog(
     content_vibe: str = "outdoor_picnic",
     enable_motion_zoom: bool = False,
     disable_vibe_filter: bool = False,
+    face_privacy_cfg: dict[str, Any] | None = None,
+    project_root: Path | None = None,
     progress_cb: Any = None,
 ) -> dict[str, Any]:
     """Render 4K/2K/1080p Vlog master with Remotion transparent overlays, sidechain ducking, & crisp ASS subs."""
@@ -2343,6 +2345,15 @@ def render_longform_ffmpeg_vlog(
                     cmd.append("-an")
                 cmd.append(str(seg_out))
             subprocess.run(cmd, capture_output=True, check=True, timeout=240)
+            if isinstance(face_privacy_cfg, dict) and face_privacy_cfg.get("enabled"):
+                import face_privacy as _fp
+
+                _fp.apply_face_privacy_to_clip(
+                    seg_out,
+                    project_root or PROJECT_ROOT,
+                    override_cfg=face_privacy_cfg,
+                    ffmpeg_bin=ffmpeg_bin,
+                )
             seg_files.append(seg_out)
 
         concat_list = tmp_path / "concat.txt"
