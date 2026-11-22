@@ -2274,11 +2274,12 @@ def render_longform_ffmpeg_vlog(
     accent_color: str = "#F59E0B",
     color_preset: str = "natural",
     content_vibe: str = "outdoor_picnic",
+    enable_motion_zoom: bool = False,
     progress_cb: Any = None,
 ) -> dict[str, Any]:
     """Render 4K/2K/1080p Vlog master with Remotion transparent overlays, sidechain ducking, & crisp ASS subs."""
     vp_prof = get_vibe_editing_profile(content_vibe)
-    use_zoom = bool(vp_prof.get("motion_zoom"))
+    use_zoom = bool(enable_motion_zoom) and bool(vp_prof.get("motion_zoom"))
     use_vignette = bool(vp_prof.get("vignette"))
     use_flash = bool(vp_prof.get("flash_cut"))
     ffmpeg_bin = find_binary("ffmpeg")
@@ -2423,6 +2424,10 @@ def render_longform_ffmpeg_vlog(
                     ]
                 )
                 subprocess.run(comp_cmd, capture_output=True, check=True, timeout=600)
+                if cur_video_in != merged_video and cur_video_in.exists():
+                    cur_video_in.unlink(missing_ok=True)
+                elif cur_video_in == merged_video and merged_video.exists():
+                    merged_video.unlink(missing_ok=True)
                 cur_video_in = pass_out
                 continue
 
@@ -2489,6 +2494,8 @@ def render_longform_ffmpeg_vlog(
 
             comp_cmd.extend(["-shortest", "-movflags", "+faststart", str(output_mp4)])
             subprocess.run(comp_cmd, capture_output=True, check=True, timeout=900)
+            if cur_video_in.exists() and cur_video_in != output_mp4:
+                cur_video_in.unlink(missing_ok=True)
 
     final_dur = round(float(probe_duration(ffprobe_bin, output_mp4)), 2)
     return {

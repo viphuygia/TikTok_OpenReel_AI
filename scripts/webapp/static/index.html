@@ -444,7 +444,7 @@
             </div>
             <div class="min-w-0">
               <label class="block text-[11px] text-pink-300 font-medium mb-1 truncate">🎬 Vibe Nội dung <span class="hidden md:inline text-zinc-400">(Không ghi đè DNA)</span></label>
-              <select id="auto-content-vibe" class="w-full rounded-lg bg-zinc-950 border border-zinc-700 px-2.5 py-2 text-xs text-zinc-100">
+              <select id="auto-content-vibe" onchange="syncMotionZoomUi()" class="w-full rounded-lg bg-zinc-950 border border-zinc-700 px-2.5 py-2 text-xs text-zinc-100">
                 <option value="learned_dna" selected>✨ Theo DNA đã học (Mặc định)</option>
                 <option value="outdoor_picnic">🏕️ Dã ngoại / Camping / Picnic</option>
                 <option value="travel_vlog">✈️ Du lịch / Travel Vlog</option>
@@ -554,6 +554,10 @@
             <label class="flex items-center gap-2 text-rose-300 cursor-pointer">
               <input id="chk-hide-subtitles" type="checkbox" class="rounded bg-zinc-800 border-rose-500 text-rose-500" />
               <span>🚫 Ẩn phụ đề (Video sạch đăng Story)</span>
+            </label>
+            <label id="wrap-longform-motion-zoom" class="hidden flex items-center gap-2 text-amber-200 cursor-pointer sm:col-span-2">
+              <input id="chk-longform-motion-zoom" type="checkbox" class="rounded bg-zinc-800 border-amber-500 text-amber-500" />
+              <span>🔍 Bật Zoom-in chuyển động (zoompan CPU · Chậm hơn ở 4K)</span>
             </label>
             <label id="wrap-auto-flash-shake" class="flex items-center gap-2 text-cyan-300 cursor-pointer sm:col-span-2">
               <input id="chk-disable-flash-shake" type="checkbox" checked class="rounded bg-zinc-800 border-cyan-500 text-cyan-500" />
@@ -4599,6 +4603,7 @@
         regenerate_script: !!document.getElementById('chk-pipeline-regen')?.checked,
         mute_voice: !!document.getElementById('chk-mute-voice')?.checked,
         hide_subtitles: !!document.getElementById('chk-hide-subtitles')?.checked,
+        enable_motion_zoom: !!document.getElementById('chk-longform-motion-zoom')?.checked,
         disable_flash_shake: document.getElementById('chk-disable-flash-shake')?.checked !== false,
       };
       state.projConfigMap[pid] = cfg;
@@ -4653,6 +4658,8 @@
       setChk('chk-pipeline-regen', cfg.regenerate_script);
       setChk('chk-mute-voice', cfg.mute_voice);
       setChk('chk-hide-subtitles', cfg.hide_subtitles);
+      setChk('chk-longform-motion-zoom', !!cfg.enable_motion_zoom);
+      syncMotionZoomUi();
       setChk('chk-disable-flash-shake', cfg.disable_flash_shake);
     }
 
@@ -5230,6 +5237,7 @@
       const preserve_longform_script = (isLongVlog && !longform_random_mode) ? !!document.getElementById('chk-longform-preserve-script')?.checked : false;
       const mute_voice = !!document.getElementById('chk-mute-voice')?.checked;
       const hide_subtitles = !!document.getElementById('chk-hide-subtitles')?.checked;
+      const enable_motion_zoom = isLongVlog ? !!document.getElementById('chk-longform-motion-zoom')?.checked : false;
       const project_configs = {};
       const pidList = (projectIds && projectIds.length) ? projectIds : getCheckedAutoProjectIds().map((x) => x.id);
       for (const pid of pidList) {
@@ -5271,6 +5279,7 @@
             sticker_style,
             mute_voice,
             hide_subtitles,
+            enable_motion_zoom,
             disable_flash_shake,
             mix_engines,
             tts_engine,
@@ -5753,6 +5762,20 @@
       toast(`Đã sắp xếp clip theo tên (${asc ? 'A → Z' : 'Z → A'})!`, 'success');
     }
 
+    function syncMotionZoomUi() {
+      const isLong = state.pipelineCategory === 'long_vlog';
+      const vibe = document.getElementById('auto-content-vibe')?.value || '';
+      const randOn = !!document.getElementById('chk-longform-random')?.checked;
+      const zoomVibes = ['detective_mystery', 'field_report', 'pov_comedy', 'creative_internet'];
+      const show = isLong && (randOn || zoomVibes.includes(vibe));
+      const wrap = document.getElementById('wrap-longform-motion-zoom');
+      if (wrap) wrap.classList.toggle('hidden', !show);
+      if (!show) {
+        const chk = document.getElementById('chk-longform-motion-zoom');
+        if (chk) chk.checked = false;
+      }
+    }
+
     function toggleLongformRandomUi() {
       const isLong = state.pipelineCategory === 'long_vlog';
       const on = isLong && !!document.getElementById('chk-longform-random')?.checked;
@@ -5788,6 +5811,7 @@
           }
         }
       });
+      syncMotionZoomUi();
     }
 
     state._galleryOutputsMap = {};

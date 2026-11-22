@@ -1223,6 +1223,7 @@ class OneClickPipelineReq(BaseModel):
     longform_random_count: int = 1
     mute_voice: bool = False
     hide_subtitles: bool = False
+    enable_motion_zoom: bool = False
     project_ids: list[str] = Field(default_factory=list)
     project_configs: dict[str, dict[str, Any]] = Field(default_factory=dict)
     sync: bool = False
@@ -5780,6 +5781,7 @@ def _execute_longform_vlog_pipeline(
             accent_color=str(vd.get("accent_color") or "#F59E0B"),
             color_preset=eff_color_preset,
             content_vibe=req_vibe,
+            enable_motion_zoom=bool(getattr(req, "enable_motion_zoom", False)),
             keep_clip_audio=bool(getattr(req, "keep_clip_audio", False)),
         )
         lf_meta = _attach_output_assets(
@@ -6674,7 +6676,7 @@ def _req_for_project(req: OneClickPipelineReq, pid: str, multi_projects: bool) -
                 upd[sf_k] = str(pc[sf_k]).strip()
         bool_fields = (
             "auto_fit_duration", "keep_clip_audio", "preserve_longform_script",
-            "longform_random_mode", "mute_voice", "hide_subtitles",
+            "longform_random_mode", "mute_voice", "hide_subtitles", "enable_motion_zoom",
             "batch_all_scripts", "mix_variants", "mix_engines",
             "preserve_clips", "regenerate_script", "force_tts", "disable_flash_shake",
         )
