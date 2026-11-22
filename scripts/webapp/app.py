@@ -5519,6 +5519,7 @@ def _execute_longform_vlog_pipeline(
     req_vibe = str(getattr(req, "content_vibe", "outdoor_picnic") or "outdoor_picnic").strip()
     if req_vibe == "learned_dna":
         req_vibe = "outdoor_picnic"
+    vp_prof = _lf.get_vibe_editing_profile(req_vibe)
     req_quality = str(getattr(req, "quality_preset", "auto_source") or "auto_source").strip()
     req_vlog_title = str(getattr(req, "vlog_title", "") or "").strip()
 
@@ -5550,6 +5551,7 @@ def _execute_longform_vlog_pipeline(
         aspect_ratio=req_aspect,
         quality_preset=req_quality,
         shot_jitter_sec=shot_jitter_sec,
+        target_shot_sec=float(vp_prof.get("shot_sec") or 6.2),
     )
     actual_target = float(plan["target_duration_sec"])
     n_shots = len(plan.get("segments") or [])
@@ -5596,7 +5598,10 @@ def _execute_longform_vlog_pipeline(
     pref_ts = forced_style[0] if forced_style else str(prev_lf_cfg.get("preferred_title_style") or "").strip()
     pref_ss = forced_style[1] if forced_style else str(prev_lf_cfg.get("preferred_subtitle_style") or "").strip()
     pref_ac = forced_style[2] if forced_style else str(prev_lf_cfg.get("preferred_accent_color") or "").strip()
-    eff_color_preset = forced_color_preset or str(getattr(req, "color_preset", "") or "natural")
+    req_color_raw = str(getattr(req, "color_preset", "") or "natural").strip()
+    eff_color_preset = forced_color_preset or (
+        str(vp_prof.get("color_preset") or "natural") if (req_color_raw == "natural" and vp_prof.get("force_vfx")) else req_color_raw
+    )
 
     ch_json_path = DIR_WORKSPACE / "longform_chapters.json"
     ch_script = None
@@ -5691,14 +5696,16 @@ def _execute_longform_vlog_pipeline(
                 step_status=(3, "running", msg_lbl),
             )
 
+        eff_pause = float(vp_prof.get("sentence_pause_sec") or 0.85) if vp_prof.get("force_vfx") else float(prev_lf_cfg.get("sentence_pause_sec") or vp_prof.get("sentence_pause_sec") or 0.85)
+        eff_vrate = str(vp_prof.get("voice_rate_offset") or "") if vp_prof.get("force_vfx") else str(prev_lf_cfg.get("voice_rate_offset") or vp_prof.get("voice_rate_offset") or "")
         voice_res = _lf.build_longform_voice_and_srt(
             chapter_script=ch_script,
             plan=plan,
             out_wav_path=FILE_TTS_WAV,
             out_srt_path=FILE_TTS_SRT,
             voice_preset=vp,
-            sentence_pause_sec=float(prev_lf_cfg.get("sentence_pause_sec") or 0.85),
-            voice_rate_override=str(prev_lf_cfg.get("voice_rate_offset") or ""),
+            sentence_pause_sec=eff_pause,
+            voice_rate_override=eff_vrate,
             phonetic_overrides=prev_lf_cfg.get("phonetic_overrides") or "",
             progress_cb=_lf_voice_progress,
         )
@@ -5857,6 +5864,9 @@ def _run_single_project_pipeline(req: OneClickPipelineReq) -> None:
                 ]
                 _rnd.shuffle(angles)
                 style_combos = [
+                    ("detective_noir", "highlight_bold", "#EF4444"),
+                    ("comic_pop", "highlight_bold", "#FACC15"),
+                    ("cinema_letterbox", "cinema_box", "#A78BFA"),
                     ("campfire_warm", "warm_vlog_gold", "#F59E0B"),
                     ("adventure_bold", "mint_nature", "#38BDF8"),
                     ("editorial_minimal", "editorial_clean", "#34D399"),

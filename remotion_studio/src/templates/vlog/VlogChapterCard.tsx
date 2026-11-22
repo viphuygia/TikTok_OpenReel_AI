@@ -52,6 +52,27 @@ export const VlogChapterCard: React.FC<VlogChapterProps> = ({
       titleColor: '#1E293B',
       subColor: '#64748B',
     },
+    detective_noir: {
+      bg: 'rgba(9, 13, 22, 0.90)',
+      border: `2px solid ${accentColor}`,
+      radius: 4,
+      titleColor: '#F8FAFC',
+      subColor: '#FCA5A5',
+    },
+    comic_pop: {
+      bg: '#FFFFFF',
+      border: '3px solid #090D16',
+      radius: 16,
+      titleColor: '#090D16',
+      subColor: '#334155',
+    },
+    cinema_letterbox: {
+      bg: 'rgba(6, 10, 18, 0.86)',
+      border: `1px solid ${accentColor}88`,
+      radius: 6,
+      titleColor: '#FFFFFF',
+      subColor: '#CBD5E1',
+    },
   } as const;
   const cTheme = cardThemes[titleStyle] || cardThemes.cinematic_glass;
 

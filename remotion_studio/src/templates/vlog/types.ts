@@ -3,7 +3,10 @@ export type VlogTitleStyle =
   | 'editorial_minimal'
   | 'campfire_warm'
   | 'adventure_bold'
-  | 'pastel_soft';
+  | 'pastel_soft'
+  | 'detective_noir'
+  | 'comic_pop'
+  | 'cinema_letterbox';
 
 export type VlogIntroProps = {
   title: string;

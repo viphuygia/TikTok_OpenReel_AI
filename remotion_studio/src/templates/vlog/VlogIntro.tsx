@@ -72,8 +72,44 @@ export const VlogIntro: React.FC<VlogIntroProps> = ({
       titleFont: "'Quicksand', 'Be Vietnam Pro', sans-serif",
       badgeRadius: 999,
     },
+    detective_noir: {
+      scrim: 'radial-gradient(ellipse at center, rgba(5,8,16,0.68) 0%, rgba(5,8,16,0.34) 75%, transparent 100%)',
+      cardBg: 'rgba(9, 13, 22, 0.84)',
+      cardBorder: `2px solid ${accentColor}`,
+      cardRadius: 4,
+      badgeBg: accentColor,
+      badgeColor: '#090D16',
+      titleColor: '#F8FAFC',
+      titleFont: "'Montserrat Black', 'Be Vietnam Pro', sans-serif",
+      badgeRadius: 2,
+    },
+    comic_pop: {
+      scrim: 'radial-gradient(ellipse at center, rgba(15,23,42,0.45) 0%, rgba(15,23,42,0.16) 75%, transparent 100%)',
+      cardBg: '#FFFFFF',
+      cardBorder: `4px solid #090D16`,
+      cardRadius: 20,
+      badgeBg: accentColor,
+      badgeColor: '#090D16',
+      titleColor: '#090D16',
+      titleFont: "'Baloo 2', 'Be Vietnam Pro', sans-serif",
+      badgeRadius: 10,
+    },
+    cinema_letterbox: {
+      scrim: 'linear-gradient(180deg, rgba(0,0,0,0.65) 0%, rgba(0,0,0,0.15) 50%, rgba(0,0,0,0.65) 100%)',
+      cardBg: 'transparent',
+      cardBorder: 'none',
+      cardRadius: 0,
+      badgeBg: 'rgba(15, 23, 42, 0.72)',
+      badgeColor: '#F8FAFC',
+      titleColor: '#FFFFFF',
+      titleFont: "'Be Vietnam Pro', 'Montserrat Black', sans-serif",
+      badgeRadius: 4,
+    },
   } as const;
   const theme = styleMap[titleStyle] || styleMap.cinematic_glass;
+  const isDetective = titleStyle === 'detective_noir';
+  const isComic = titleStyle === 'comic_pop';
+  const isLetterbox = titleStyle === 'cinema_letterbox';
 
   const masterAlpha = interpolate(
     frame,
@@ -82,8 +118,8 @@ export const VlogIntro: React.FC<VlogIntroProps> = ({
     { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' }
   );
 
-  const badgeSpring = spring({ frame: Math.max(0, frame - 4), fps, config: { damping: 14, stiffness: 120 } });
-  const titleSpring = spring({ frame: Math.max(0, frame - 10), fps, config: { damping: 16, stiffness: 110 } });
+  const badgeSpring = spring({ frame: Math.max(0, frame - 4), fps, config: { damping: isComic ? 8 : 14, stiffness: isComic ? 210 : 120 } });
+  const titleSpring = spring({ frame: Math.max(0, frame - 10), fps, config: { damping: isComic ? 7 : 16, stiffness: isComic ? 220 : 110 } });
   const subSpring = spring({ frame: Math.max(0, frame - 20), fps, config: { damping: 16, stiffness: 100 } });
   const lineWidthPct = interpolate(frame, [12, 42], [0, 100], {
     extrapolateLeft: 'clamp',
@@ -93,6 +129,12 @@ export const VlogIntro: React.FC<VlogIntroProps> = ({
     extrapolateLeft: 'clamp',
     extrapolateRight: 'clamp',
   });
+  const typedCount = isDetective
+    ? Math.max(1, Math.round(interpolate(frame, [10, 48], [1, title.length], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' })))
+    : title.length;
+  const displayTitle = isDetective ? `${title.slice(0, typedCount)}${frame < 52 && Math.floor(frame / 6) % 2 === 0 ? '_' : ''}` : title;
+  const letterboxBarPct = isLetterbox ? interpolate(frame, [0, 18], [0, 8.5], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' }) : 0;
+  const wipeRightPct = isLetterbox ? interpolate(frame, [10, 36], [100, 0], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' }) : 0;
 
   const titleFontSize = isLandscape ? Math.round(width * 0.044) : Math.round(width * 0.068);
   const subFontSize = isLandscape ? Math.round(width * 0.017) : Math.round(width * 0.032);
@@ -121,6 +163,24 @@ export const VlogIntro: React.FC<VlogIntroProps> = ({
           background: theme.scrim,
         }}
       />
+      {isLetterbox ? (
+        <>
+          <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: `${letterboxBarPct}%`, backgroundColor: '#000000' }} />
+          <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: `${letterboxBarPct}%`, backgroundColor: '#000000' }} />
+        </>
+      ) : null}
+      {isDetective ? (
+        <>
+          <div style={{ position: 'absolute', top: 28, left: 32, width: 38, height: 38, borderTop: `3px solid ${accentColor}`, borderLeft: `3px solid ${accentColor}` }} />
+          <div style={{ position: 'absolute', top: 28, right: 32, width: 38, height: 38, borderTop: `3px solid ${accentColor}`, borderRight: `3px solid ${accentColor}` }} />
+          <div style={{ position: 'absolute', bottom: 28, left: 32, width: 38, height: 38, borderBottom: `3px solid ${accentColor}`, borderLeft: `3px solid ${accentColor}` }} />
+          <div style={{ position: 'absolute', bottom: 28, right: 32, width: 38, height: 38, borderBottom: `3px solid ${accentColor}`, borderRight: `3px solid ${accentColor}` }} />
+          <div style={{ position: 'absolute', top: 38, right: 86, display: 'flex', alignItems: 'center', gap: 8, opacity: Math.floor(frame / 10) % 2 === 0 ? 1 : 0.35 }}>
+            <div style={{ width: 12, height: 12, borderRadius: 99, backgroundColor: '#EF4444' }} />
+            <span style={{ color: '#F8FAFC', fontWeight: 800, fontSize: 16, letterSpacing: 2 }}>REC</span>
+          </div>
+        </>
+      ) : null}
 
       <div
         style={{
@@ -134,8 +194,11 @@ export const VlogIntro: React.FC<VlogIntroProps> = ({
           backgroundColor: theme.cardBg,
           border: theme.cardBorder,
           borderRadius: theme.cardRadius,
+          transform: isComic ? `rotate(-1.8deg) scale(${interpolate(titleSpring, [0, 1], [0.75, 1])})` : undefined,
           padding: theme.cardBg === 'transparent' ? 0 : isLandscape ? '34px 52px' : '28px 32px',
-          boxShadow: theme.cardBg === 'transparent' ? 'none' : '0 24px 60px rgba(0,0,0,0.45)',
+          boxShadow: isComic
+            ? `10px 10px 0px #090D16`
+            : (theme.cardBg === 'transparent' ? 'none' : '0 24px 60px rgba(0,0,0,0.45)'),
         }}
       >
         {/* Top Badge */}
@@ -168,7 +231,11 @@ export const VlogIntro: React.FC<VlogIntroProps> = ({
           style={{
             position: 'relative',
             overflow: 'hidden',
-            transform: `translateY(${interpolate(titleSpring, [0, 1], [34, 0])}px)`,
+            transform: isComic
+              ? `scale(${interpolate(titleSpring, [0, 1], [0.65, 1])})`
+              : `translateY(${interpolate(titleSpring, [0, 1], [34, 0])}px)`,
+            clipPath: isLetterbox ? `inset(0 ${wipeRightPct}% 0 0)` : undefined,
+            letterSpacing: isLetterbox ? interpolate(frame, [10, 50], [1, 5], { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' }) : undefined,
             opacity: titleSpring,
             fontFamily: theme.titleFont,
             fontWeight: 900,
@@ -179,7 +246,7 @@ export const VlogIntro: React.FC<VlogIntroProps> = ({
             padding: '4px 12px',
           }}
         >
-          {title}
+          {displayTitle}
           <div
             style={{
               position: 'absolute',

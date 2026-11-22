@@ -200,6 +200,116 @@ def resolve_target_resolution(
     return (1920, 1080, "Full HD 1080p") if is_landscape else (1080, 1920, "Full HD 1080p")
 
 
+VIBE_EDITING_PROFILES: dict[str, dict[str, Any]] = {
+    "detective_mystery": {
+        "shot_sec": 3.4,
+        "sentence_pause_sec": 0.38,
+        "voice_rate_offset": "+3%",
+        "word_multiplier": 1.32,
+        "color_preset": "cinema_contrast",
+        "title_style": "detective_noir",
+        "subtitle_style": "highlight_bold",
+        "accent_color": "#EF4444",
+        "force_vfx": True,
+    },
+    "field_report": {
+        "shot_sec": 3.6,
+        "sentence_pause_sec": 0.40,
+        "voice_rate_offset": "+3%",
+        "word_multiplier": 1.28,
+        "color_preset": "cinema_contrast",
+        "title_style": "detective_noir",
+        "subtitle_style": "highlight_bold",
+        "accent_color": "#F59E0B",
+        "force_vfx": True,
+    },
+    "pov_comedy": {
+        "shot_sec": 3.8,
+        "sentence_pause_sec": 0.35,
+        "voice_rate_offset": "+4%",
+        "word_multiplier": 1.22,
+        "color_preset": "fresh_cool",
+        "title_style": "comic_pop",
+        "subtitle_style": "highlight_bold",
+        "accent_color": "#FACC15",
+        "force_vfx": True,
+    },
+    "creative_internet": {
+        "shot_sec": 4.0,
+        "sentence_pause_sec": 0.42,
+        "voice_rate_offset": "+3%",
+        "word_multiplier": 1.18,
+        "color_preset": "fresh_cool",
+        "title_style": "comic_pop",
+        "subtitle_style": "highlight_bold",
+        "accent_color": "#38BDF8",
+        "force_vfx": True,
+    },
+    "cinematic_deep": {
+        "shot_sec": 6.4,
+        "sentence_pause_sec": 0.95,
+        "voice_rate_offset": "-4%",
+        "word_multiplier": 0.95,
+        "color_preset": "soft_film",
+        "title_style": "cinema_letterbox",
+        "subtitle_style": "cinema_box",
+        "accent_color": "#A78BFA",
+        "force_vfx": True,
+    },
+    "outdoor_picnic": {
+        "shot_sec": 6.2,
+        "sentence_pause_sec": 0.85,
+        "voice_rate_offset": "",
+        "word_multiplier": 1.0,
+        "color_preset": "warm_sunset",
+        "title_style": "campfire_warm",
+        "subtitle_style": "warm_vlog_gold",
+        "accent_color": "#F59E0B",
+        "force_vfx": False,
+    },
+    "travel_vlog": {
+        "shot_sec": 5.8,
+        "sentence_pause_sec": 0.80,
+        "voice_rate_offset": "",
+        "word_multiplier": 1.02,
+        "color_preset": "fresh_cool",
+        "title_style": "adventure_bold",
+        "subtitle_style": "mint_nature",
+        "accent_color": "#38BDF8",
+        "force_vfx": False,
+    },
+    "food_cafe": {
+        "shot_sec": 5.4,
+        "sentence_pause_sec": 0.72,
+        "voice_rate_offset": "",
+        "word_multiplier": 1.05,
+        "color_preset": "warm_sunset",
+        "title_style": "pastel_soft",
+        "subtitle_style": "cinema_box",
+        "accent_color": "#FB7185",
+        "force_vfx": False,
+    },
+    "daily_story": {
+        "shot_sec": 6.2,
+        "sentence_pause_sec": 0.85,
+        "voice_rate_offset": "",
+        "word_multiplier": 1.0,
+        "color_preset": "natural",
+        "title_style": "editorial_minimal",
+        "subtitle_style": "editorial_clean",
+        "accent_color": "#34D399",
+        "force_vfx": False,
+    },
+}
+
+
+def get_vibe_editing_profile(content_vibe: str | None) -> dict[str, Any]:
+    key = str(content_vibe or "outdoor_picnic").strip()
+    if key == "learned_dna":
+        key = "outdoor_picnic"
+    return dict(VIBE_EDITING_PROFILES.get(key) or VIBE_EDITING_PROFILES["outdoor_picnic"])
+
+
 def build_longform_timeline_plan(
     ordered_clips: list[dict[str, Any]],
     target_duration_sec: float = 300.0,
@@ -207,6 +317,7 @@ def build_longform_timeline_plan(
     aspect_ratio: str = "16:9",
     quality_preset: str = "auto_source",
     shot_jitter_sec: float = 0.0,
+    target_shot_sec: float = 6.2,
 ) -> dict[str, Any]:
     """Slice raw clips into crisp chronological 4.5-8.5s vlog highlight cuts grouped into chapters."""
     if not ordered_clips:
@@ -234,12 +345,15 @@ def build_longform_timeline_plan(
             usable_end = max(usable_start + 1.0, c_dur - edge_trim)
             usable_span = usable_end - usable_start
 
-            if alloc_dur <= 9.0:
+            shot_step = max(2.2, min(9.0, float(target_shot_sec or 6.2)))
+            min_shot = max(2.0, shot_step * 0.65)
+            max_shot = max(4.2, shot_step * 1.35)
+            if alloc_dur <= max(6.5, shot_step * 1.4):
                 n_shots = 1
             else:
-                n_shots = max(2, min(12, int(round(alloc_dur / 6.2))))
+                n_shots = max(2, min(16, int(round(alloc_dur / shot_step))))
 
-            per_shot = max(3.0, min(8.5, alloc_dur / n_shots))
+            per_shot = max(min_shot, min(max_shot, alloc_dur / n_shots))
             # Pick highlight sub-shots evenly distributed chronologically across usable_span
             for si in range(n_shots):
                 if usable_span <= per_shot * n_shots + 0.5:
@@ -485,14 +599,16 @@ def generate_longform_chapter_script(
 ) -> dict[str, Any]:
     """Generate structured non-repeating Vlog chapters with Intro/Chapter cards/Outro & breathing narration."""
     vibe_meta = _sd.get_content_vibe_meta(content_vibe if content_vibe != "learned_dna" else "outdoor_picnic")
+    vp_prof = get_vibe_editing_profile(content_vibe)
     topic = (topic_note or "").strip() or "Chuyến dã ngoại trải nghiệm thiên nhiên cuối tuần"
     chapters_plan = plan.get("chapters") or [
         {"index": 1, "start_sec": 0.0, "end_sec": float(plan.get("target_duration_sec") or 300.0)}
     ]
     n_chap = len(chapters_plan)
     total_dur = float(plan.get("target_duration_sec") or 300.0)
-    # Calm vlog density: ~1.05 words per sec total -> ~55% B-roll breathing time
-    target_total_words = max(120, min(1100, int(round(total_dur * 1.05))))
+    # Scale narration density by Vibe Editing Profile (e.g. +30% for Detective/Field Report, calm for Camping)
+    word_mult = float(vp_prof.get("word_multiplier") or 1.0)
+    target_total_words = max(120, min(1450, int(round(total_dur * 1.05 * word_mult))))
     words_per_chap = max(38, int(round(target_total_words / max(1, n_chap))))
 
     segments_plan = plan.get("segments") or []
@@ -774,7 +890,11 @@ def generate_longform_chapter_script(
         idx_cur = next((i for i, c in enumerate(all_style_combos) if c[0] == avoid_title_style), 0)
         def_ts, def_ss, def_ac = all_style_combos[(idx_cur + 1) % len(all_style_combos)]
     raw_vd = (parsed_ai or {}).get("visual_direction") if isinstance((parsed_ai or {}).get("visual_direction"), dict) else {}
-    valid_title_styles = {"cinematic_glass", "editorial_minimal", "campfire_warm", "adventure_bold", "pastel_soft"}
+    valid_title_styles = {
+        "cinematic_glass", "editorial_minimal", "campfire_warm",
+        "adventure_bold", "pastel_soft", "detective_noir",
+        "comic_pop", "cinema_letterbox",
+    }
     valid_sub_styles = {"editorial_clean", "warm_vlog_gold", "mint_nature", "cinema_box", "highlight_bold"}
     raw_ts = str(raw_vd.get("title_style") or "").strip().split("|")[0].strip()
     raw_ss = str(raw_vd.get("subtitle_style") or "").strip().split("|")[0].strip()
@@ -784,6 +904,10 @@ def generate_longform_chapter_script(
         picked_ts = def_ts
     picked_ss = raw_ss if raw_ss in valid_sub_styles else def_ss
     picked_ac = raw_ac if re.fullmatch(r"#[0-9a-fA-F]{6}", raw_ac) else def_ac
+    if vp_prof.get("force_vfx") and not preferred_title_style:
+        picked_ts = str(vp_prof.get("title_style") or picked_ts)
+        picked_ss = str(vp_prof.get("subtitle_style") or picked_ss)
+        picked_ac = str(vp_prof.get("accent_color") or picked_ac)
     if preferred_title_style in valid_title_styles:
         picked_ts = preferred_title_style
     if preferred_subtitle_style in valid_sub_styles:
