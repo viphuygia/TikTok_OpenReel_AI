@@ -559,6 +559,10 @@
               <input id="chk-longform-motion-zoom" type="checkbox" class="rounded bg-zinc-800 border-amber-500 text-amber-500" />
               <span>🔍 Bật Zoom-in chuyển động (zoompan CPU · Chậm hơn ở 4K)</span>
             </label>
+            <label id="wrap-longform-disable-filter" class="hidden flex items-center gap-2 text-emerald-200 cursor-pointer sm:col-span-2">
+              <input id="chk-longform-disable-filter" type="checkbox" class="rounded bg-zinc-800 border-emerald-500 text-emerald-500" />
+              <span>🧹 Tắt lớp filter tối góc &amp; Giữ màu gốc (Render nhanh hơn)</span>
+            </label>
             <label id="wrap-auto-flash-shake" class="flex items-center gap-2 text-cyan-300 cursor-pointer sm:col-span-2">
               <input id="chk-disable-flash-shake" type="checkbox" checked class="rounded bg-zinc-800 border-cyan-500 text-cyan-500" />
               <span>🛡️ Chống chớp &amp; Chống rung (Tắt chớp trắng Flash, Rung camera &amp; Motion Trail)</span>
@@ -4604,6 +4608,7 @@
         mute_voice: !!document.getElementById('chk-mute-voice')?.checked,
         hide_subtitles: !!document.getElementById('chk-hide-subtitles')?.checked,
         enable_motion_zoom: !!document.getElementById('chk-longform-motion-zoom')?.checked,
+        disable_vibe_filter: !!document.getElementById('chk-longform-disable-filter')?.checked,
         disable_flash_shake: document.getElementById('chk-disable-flash-shake')?.checked !== false,
       };
       state.projConfigMap[pid] = cfg;
@@ -4659,6 +4664,7 @@
       setChk('chk-mute-voice', cfg.mute_voice);
       setChk('chk-hide-subtitles', cfg.hide_subtitles);
       setChk('chk-longform-motion-zoom', !!cfg.enable_motion_zoom);
+      setChk('chk-longform-disable-filter', !!cfg.disable_vibe_filter);
       syncMotionZoomUi();
       setChk('chk-disable-flash-shake', cfg.disable_flash_shake);
     }
@@ -5238,6 +5244,7 @@
       const mute_voice = !!document.getElementById('chk-mute-voice')?.checked;
       const hide_subtitles = !!document.getElementById('chk-hide-subtitles')?.checked;
       const enable_motion_zoom = isLongVlog ? !!document.getElementById('chk-longform-motion-zoom')?.checked : false;
+      const disable_vibe_filter = isLongVlog ? !!document.getElementById('chk-longform-disable-filter')?.checked : false;
       const project_configs = {};
       const pidList = (projectIds && projectIds.length) ? projectIds : getCheckedAutoProjectIds().map((x) => x.id);
       for (const pid of pidList) {
@@ -5280,6 +5287,7 @@
             mute_voice,
             hide_subtitles,
             enable_motion_zoom,
+            disable_vibe_filter,
             disable_flash_shake,
             mix_engines,
             tts_engine,
@@ -5767,12 +5775,20 @@
       const vibe = document.getElementById('auto-content-vibe')?.value || '';
       const randOn = !!document.getElementById('chk-longform-random')?.checked;
       const zoomVibes = ['detective_mystery', 'field_report', 'pov_comedy', 'creative_internet'];
-      const show = isLong && (randOn || zoomVibes.includes(vibe));
-      const wrap = document.getElementById('wrap-longform-motion-zoom');
-      if (wrap) wrap.classList.toggle('hidden', !show);
-      if (!show) {
+      const filterVibes = ['detective_mystery', 'field_report', 'pov_comedy', 'creative_internet', 'cinematic_deep'];
+      const showZoom = isLong && (randOn || zoomVibes.includes(vibe));
+      const showFilter = isLong && (randOn || filterVibes.includes(vibe));
+      const wrapZoom = document.getElementById('wrap-longform-motion-zoom');
+      if (wrapZoom) wrapZoom.classList.toggle('hidden', !showZoom);
+      if (!showZoom) {
         const chk = document.getElementById('chk-longform-motion-zoom');
         if (chk) chk.checked = false;
+      }
+      const wrapFlt = document.getElementById('wrap-longform-disable-filter');
+      if (wrapFlt) wrapFlt.classList.toggle('hidden', !showFilter);
+      if (!showFilter) {
+        const chkF = document.getElementById('chk-longform-disable-filter');
+        if (chkF) chkF.checked = false;
       }
     }
 

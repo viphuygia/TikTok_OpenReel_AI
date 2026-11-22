@@ -1224,6 +1224,7 @@ class OneClickPipelineReq(BaseModel):
     mute_voice: bool = False
     hide_subtitles: bool = False
     enable_motion_zoom: bool = False
+    disable_vibe_filter: bool = False
     project_ids: list[str] = Field(default_factory=list)
     project_configs: dict[str, dict[str, Any]] = Field(default_factory=dict)
     sync: bool = False
@@ -5600,8 +5601,11 @@ def _execute_longform_vlog_pipeline(
     pref_ss = forced_style[1] if forced_style else str(prev_lf_cfg.get("preferred_subtitle_style") or "").strip()
     pref_ac = forced_style[2] if forced_style else str(prev_lf_cfg.get("preferred_accent_color") or "").strip()
     req_color_raw = str(getattr(req, "color_preset", "") or "natural").strip()
-    eff_color_preset = forced_color_preset or (
-        str(vp_prof.get("color_preset") or "natural") if (req_color_raw == "natural" and vp_prof.get("force_vfx")) else req_color_raw
+    disable_vf = bool(getattr(req, "disable_vibe_filter", False))
+    eff_color_preset = "natural" if disable_vf else (
+        forced_color_preset or (
+            str(vp_prof.get("color_preset") or "natural") if (req_color_raw == "natural" and vp_prof.get("force_vfx")) else req_color_raw
+        )
     )
 
     ch_json_path = DIR_WORKSPACE / "longform_chapters.json"
@@ -5782,6 +5786,7 @@ def _execute_longform_vlog_pipeline(
             color_preset=eff_color_preset,
             content_vibe=req_vibe,
             enable_motion_zoom=bool(getattr(req, "enable_motion_zoom", False)),
+            disable_vibe_filter=disable_vf,
             keep_clip_audio=bool(getattr(req, "keep_clip_audio", False)),
         )
         lf_meta = _attach_output_assets(
@@ -6676,7 +6681,7 @@ def _req_for_project(req: OneClickPipelineReq, pid: str, multi_projects: bool) -
                 upd[sf_k] = str(pc[sf_k]).strip()
         bool_fields = (
             "auto_fit_duration", "keep_clip_audio", "preserve_longform_script",
-            "longform_random_mode", "mute_voice", "hide_subtitles", "enable_motion_zoom",
+            "longform_random_mode", "mute_voice", "hide_subtitles", "enable_motion_zoom", "disable_vibe_filter",
             "batch_all_scripts", "mix_variants", "mix_engines",
             "preserve_clips", "regenerate_script", "force_tts", "disable_flash_shake",
         )

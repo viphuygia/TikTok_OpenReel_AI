@@ -2276,12 +2276,15 @@ def render_longform_ffmpeg_vlog(
     color_preset: str = "natural",
     content_vibe: str = "outdoor_picnic",
     enable_motion_zoom: bool = False,
+    disable_vibe_filter: bool = False,
     progress_cb: Any = None,
 ) -> dict[str, Any]:
     """Render 4K/2K/1080p Vlog master with Remotion transparent overlays, sidechain ducking, & crisp ASS subs."""
     vp_prof = get_vibe_editing_profile(content_vibe)
     use_zoom = bool(enable_motion_zoom) and bool(vp_prof.get("motion_zoom"))
-    use_vignette = bool(vp_prof.get("vignette"))
+    use_vignette = (not bool(disable_vibe_filter)) and bool(vp_prof.get("vignette"))
+    if disable_vibe_filter:
+        color_preset = "natural"
     use_flash = bool(vp_prof.get("flash_cut"))
     ffmpeg_bin = find_binary("ffmpeg")
     ffprobe_bin = find_binary("ffprobe")
