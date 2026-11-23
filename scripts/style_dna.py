@@ -459,6 +459,137 @@ def _srt_ts_to_sec(ts: str) -> float:
     return round(h * 3600 + m_ * 60 + s + ms / 1000.0, 3)
 
 
+def _gtx_translate_vi_to_en(text: str, timeout: int = 12) -> str:
+    """Translate a string (or newline-joined lines) from Vietnamese to English via Google Translate GTX."""
+    import urllib.parse
+    import urllib.request
+
+    q = urllib.parse.quote(text)
+    url = f"https://translate.googleapis.com/translate_a/single?client=gtx&sl=vi&tl=en&dt=t&q={q}"
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        data = json.loads(resp.read().decode("utf-8"))
+    if not isinstance(data, list) or not data or not isinstance(data[0], list):
+        return ""
+    return "".join(str(seg[0]) for seg in data[0] if isinstance(seg, list) and seg and seg[0]).strip()
+
+
+def translate_srt_lines_to_english(
+    lines: list[str],
+    cache_dir: Path | None = None,
+    gemini_api_key: str = "",
+) -> list[str]:
+    """Translate Vietnamese SRT subtitle lines to concise English 1-to-1 with per-project caching."""
+    cleaned_inputs = [re.sub(r"\s+", " ", str(ln or "")).strip() for ln in lines]
+    if not cleaned_inputs:
+        return []
+
+    ws_dir = Path(cache_dir) if cache_dir else DIR_WORKSPACE
+    cache_path = ws_dir / "en_subs_cache.json"
+    cache: dict[str, str] = {}
+    if cache_path.exists():
+        try:
+            loaded = json.loads(cache_path.read_text(encoding="utf-8-sig"))
+            if isinstance(loaded, dict):
+                cache = {str(k): str(v) for k, v in loaded.items() if str(k).strip() and str(v).strip()}
+        except Exception:
+            cache = {}
+
+    missing: list[str] = []
+    seen_missing: set[str] = set()
+    for txt in cleaned_inputs:
+        if txt and txt not in cache and txt not in seen_missing:
+            seen_missing.add(txt)
+            missing.append(txt)
+
+    if missing:
+        eff_key = str(gemini_api_key or "").strip()
+        if not eff_key:
+            cfg_p = ws_dir / "webapp_config.json"
+            if cfg_p.exists():
+                try:
+                    eff_key = str(json.loads(cfg_p.read_text(encoding="utf-8-sig")).get("gemini_api_key") or "").strip()
+                except Exception:
+                    eff_key = ""
+
+        # Strategy 1: Batch JSON translation via Gemini Flash (natural concise spoken English)
+        if eff_key:
+            import urllib.request
+
+            endpoint = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={eff_key}"
+            for i in range(0, len(missing), 45):
+                batch = missing[i : i + 45]
+                prompt = (
+                    "Translate each Vietnamese video subtitle line below into concise, natural conversational English "
+                    "(aim for 4-10 words per line so it reads comfortably as a video subtitle). "
+                    f"Return ONLY a JSON array of strings of exact length {len(batch)} matching order 1-to-1.\n\n"
+                    f"Input lines:\n{json.dumps(batch, ensure_ascii=False)}"
+                )
+                payload = {
+                    "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+                    "generationConfig": {"responseMimeType": "application/json"},
+                }
+                try:
+                    req = urllib.request.Request(
+                        endpoint,
+                        data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+                        headers={"Content-Type": "application/json"},
+                    )
+                    with urllib.request.urlopen(req, timeout=30) as resp:
+                        rdata = json.loads(resp.read().decode("utf-8"))
+                    txt_out = (
+                        rdata.get("candidates", [{}])[0]
+                        .get("content", {})
+                        .get("parts", [{}])[0]
+                        .get("text", "")
+                    )
+                    arr = json.loads(txt_out) if txt_out else []
+                    if isinstance(arr, list) and len(arr) == len(batch):
+                        for src_t, tr_t in zip(batch, arr):
+                            en_clean = re.sub(r"\s+", " ", str(tr_t or "")).strip()
+                            if en_clean:
+                                cache[src_t] = en_clean
+                except Exception:
+                    pass
+
+        # Strategy 2: Free Google Translate GTX endpoint for any still-missing lines
+        still_missing = [txt for txt in missing if txt not in cache]
+        if still_missing:
+            for i in range(0, len(still_missing), 25):
+                chunk = still_missing[i : i + 25]
+                try:
+                    joined = "\n".join(chunk)
+                    tr_joined = _gtx_translate_vi_to_en(joined)
+                    parts = [re.sub(r"\s+", " ", p).strip() for p in tr_joined.splitlines()]
+                    if len(parts) == len(chunk) and all(parts):
+                        for src_t, tr_t in zip(chunk, parts):
+                            cache[src_t] = tr_t
+                        continue
+                except Exception:
+                    pass
+                # Safe line-by-line fallback within chunk if newline count mismatched
+                for src_t in chunk:
+                    if src_t in cache:
+                        continue
+                    try:
+                        en_one = re.sub(r"\s+", " ", _gtx_translate_vi_to_en(src_t)).strip()
+                        if en_one:
+                            cache[src_t] = en_one
+                    except Exception:
+                        pass
+
+        if cache:
+            try:
+                ws_dir.mkdir(parents=True, exist_ok=True)
+                tmp_c = cache_path.with_suffix(".tmp.json")
+                tmp_c.write_text(json.dumps(cache, ensure_ascii=False, indent=2), encoding="utf-8")
+                os.replace(tmp_c, cache_path)
+            except Exception:
+                pass
+
+    return [cache.get(txt, txt) if txt else "" for txt in cleaned_inputs]
+
+
 def ensure_words_json_from_srt(
     srt_path: Path | None = None,
     words_json_path: Path | None = None,

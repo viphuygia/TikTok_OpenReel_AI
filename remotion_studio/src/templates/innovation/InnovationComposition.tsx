@@ -1311,6 +1311,8 @@ export const InnovationComposition: React.FC<TikTokVideoProps> = (props) => {
           pillColor={wc?.accentColor || (isNeon ? '#7C3AED' : '#E11D48')}
           variant={wc?.subtitleVariant || 'clean_stroke'}
           fontHeading={fontHeading}
+          subtitleLang={props.subtitleLang}
+          enSubtitles={props.enSubtitles}
         />
       )}
 

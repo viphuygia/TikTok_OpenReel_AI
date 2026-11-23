@@ -447,6 +447,8 @@ export const TikTokComposition: React.FC<TikTokVideoProps> = (props) => {
           subtitleY={props.subtitleY || 0.72}
           activeColor={props.subtitleActiveColor || '#FFE500'}
           fontHeading={props.fontHeading || 'Baloo 2'}
+          subtitleLang={props.subtitleLang}
+          enSubtitles={props.enSubtitles}
         />
       ) : null}
 

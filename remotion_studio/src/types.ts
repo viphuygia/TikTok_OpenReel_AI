@@ -38,6 +38,12 @@ export type WordTimestamp = {
   end: number;
 };
 
+export type SubtitleCue = {
+  start: number;
+  end: number;
+  text: string;
+};
+
 export type VideoClipItem = {
   id: string;
   src: string; // relative path inside public/, e.g. "workspace/01_clips/clip_01.mp4"
@@ -119,6 +125,8 @@ export type WildcardStyleSpec = {
 export type TikTokVideoProps = {
   title?: string;
   disclaimerText?: string;
+  subtitleLang?: 'vi' | 'bilingual' | 'en';
+  enSubtitles?: SubtitleCue[];
   durationSec: number;
   aspectRatio?: '9:16' | '16:9';
   width?: number;

@@ -796,9 +796,64 @@ def build_remotion_props(overrides: dict[str, Any] | None = None) -> dict[str, A
         eff_hook_y = min(eff_hook_y, 0.11)
         eff_sub_y = max(eff_sub_y, 0.82)
 
+    subtitle_lang = str(ov.get("subtitle_lang") or dna.get("subtitle_lang") or "vi").strip().lower()
+    if subtitle_lang not in ("vi", "bilingual", "en"):
+        subtitle_lang = "vi"
+    en_subtitles: list[dict[str, Any]] = []
+    words_for_props = [] if bool(ov.get("hide_subtitles")) else words
+    if not bool(ov.get("hide_subtitles")) and subtitle_lang in ("bilingual", "en") and FILE_TTS_SRT.exists():
+        try:
+            srt_raw = FILE_TTS_SRT.read_text(encoding="utf-8-sig")
+            srt_blocks = re.split(r"\r?\n\r?\n+", srt_raw.strip())
+            parsed_srt: list[tuple[float, float, str]] = []
+            for blk in srt_blocks:
+                lines = [ln.strip() for ln in blk.splitlines() if ln.strip()]
+                if len(lines) < 2:
+                    continue
+                ts_line = lines[1] if "-->" in lines[1] else (lines[0] if "-->" in lines[0] else "")
+                if "-->" not in ts_line:
+                    continue
+                parts = [p.strip() for p in ts_line.split("-->")]
+                st_s = _style_dna_mod._srt_ts_to_sec(parts[0])
+                en_s = _style_dna_mod._srt_ts_to_sec(parts[1])
+                txt_lines = lines[2:] if "-->" in lines[1] else lines[1:]
+                vi_txt = re.sub(r"\s+", " ", " ".join(txt_lines).replace("\n", " ")).strip()
+                if vi_txt and en_s > st_s:
+                    parsed_srt.append((st_s, en_s, vi_txt))
+            if parsed_srt:
+                en_lines = _style_dna_mod.translate_srt_lines_to_english(
+                    [b[2] for b in parsed_srt],
+                    cache_dir=DIR_WORKSPACE,
+                )
+                for (st_s, en_s, _), en_txt in zip(parsed_srt, en_lines):
+                    clean_en = str(en_txt or "").strip()
+                    if clean_en:
+                        en_subtitles.append({"start": round(st_s, 3), "end": round(en_s, 3), "text": clean_en})
+                if subtitle_lang == "en" and en_subtitles:
+                    en_words: list[dict[str, Any]] = []
+                    for item in en_subtitles:
+                        tokens = item["text"].split()
+                        if not tokens:
+                            continue
+                        st_s, en_s = float(item["start"]), float(item["end"])
+                        dur_s = max(0.15, en_s - st_s)
+                        tot_ch = sum(len(t) for t in tokens) or 1
+                        cur_t = st_s
+                        for ti, tok in enumerate(tokens):
+                            share = dur_s * (len(tok) / tot_ch)
+                            w_end = en_s if ti == len(tokens) - 1 else round(cur_t + share, 3)
+                            en_words.append({"word": tok, "start": round(cur_t, 3), "end": max(round(cur_t + 0.05, 3), w_end)})
+                            cur_t = w_end
+                    if en_words:
+                        words_for_props = en_words
+        except Exception:
+            pass
+
     props = {
         "title": str(edit_plan.get("title") or ("Vlog Story" if vibe_meta["is_vlog"] else "TikTok Shop Review")),
         "disclaimerText": str(ov.get("disclaimer_text") or "").strip(),
+        "subtitleLang": subtitle_lang,
+        "enSubtitles": en_subtitles,
         "durationSec": total_duration,
         "aspectRatio": aspect_ratio,
         "width": target_w,
@@ -833,7 +888,7 @@ def build_remotion_props(overrides: dict[str, Any] | None = None) -> dict[str, A
         "subtitleActiveColor": subtitle_active_color,
         "floralBadge": floral_badge,
         "callouts": callouts,
-        "words": [] if bool(ov.get("hide_subtitles")) else words,
+        "words": words_for_props,
         "clips": clip_items,
         "voiceSrc": "" if bool(ov.get("mute_voice")) else synced["voice"],
         "bgmSrc": synced["bgm"],

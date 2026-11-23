@@ -555,6 +555,14 @@
               <input id="chk-hide-subtitles" type="checkbox" class="rounded bg-zinc-800 border-rose-500 text-rose-500" />
               <span>🚫 Ẩn phụ đề (Video sạch đăng Story)</span>
             </label>
+            <div class="sm:col-span-2 flex flex-wrap items-center gap-2">
+              <label for="auto-subtitle-lang" class="text-[11px] text-cyan-200 font-medium shrink-0">🌐 Ngôn ngữ Phụ đề:</label>
+              <select id="auto-subtitle-lang" class="flex-1 min-w-[210px] rounded-lg bg-zinc-950 border border-zinc-700 px-2.5 py-1.5 text-xs text-zinc-100">
+                <option value="vi" selected>🇻🇳 Phụ đề Tiếng Việt (Mặc định)</option>
+                <option value="bilingual">🇻🇳+🇬🇧 Song ngữ Việt – Anh (2 dòng chuẩn Quốc tế)</option>
+                <option value="en">🇬🇧 Chỉ phụ đề Tiếng Anh (Giữ nguyên giọng đọc Việt)</option>
+              </select>
+            </div>
             <label id="wrap-longform-motion-zoom" class="hidden flex items-center gap-2 text-amber-200 cursor-pointer sm:col-span-2">
               <input id="chk-longform-motion-zoom" type="checkbox" class="rounded bg-zinc-800 border-amber-500 text-amber-500" />
               <span>🔍 Bật Zoom-in chuyển động (zoompan CPU · Chậm hơn ở 4K)</span>
@@ -4683,6 +4691,7 @@
         regenerate_script: !!document.getElementById('chk-pipeline-regen')?.checked,
         mute_voice: !!document.getElementById('chk-mute-voice')?.checked,
         hide_subtitles: !!document.getElementById('chk-hide-subtitles')?.checked,
+        subtitle_lang: document.getElementById('auto-subtitle-lang')?.value || 'vi',
         enable_motion_zoom: !!document.getElementById('chk-longform-motion-zoom')?.checked,
         disable_vibe_filter: !!document.getElementById('chk-longform-disable-filter')?.checked,
         disable_flash_shake: document.getElementById('chk-disable-flash-shake')?.checked !== false,
@@ -4747,6 +4756,7 @@
       setChk('chk-pipeline-regen', cfg.regenerate_script);
       setChk('chk-mute-voice', cfg.mute_voice);
       setChk('chk-hide-subtitles', cfg.hide_subtitles);
+      setVal('auto-subtitle-lang', cfg.subtitle_lang || 'vi');
       setChk('chk-longform-motion-zoom', !!cfg.enable_motion_zoom);
       setChk('chk-longform-disable-filter', !!cfg.disable_vibe_filter);
       setChk('chk-disclaimer-enabled', !!cfg.disclaimer_enabled);
@@ -5362,6 +5372,7 @@
       const preserve_longform_script = (isLongVlog && !longform_random_mode) ? !!document.getElementById('chk-longform-preserve-script')?.checked : false;
       const mute_voice = !!document.getElementById('chk-mute-voice')?.checked;
       const hide_subtitles = !!document.getElementById('chk-hide-subtitles')?.checked;
+      const subtitle_lang = document.getElementById('auto-subtitle-lang')?.value || 'vi';
       const enable_motion_zoom = isLongVlog ? !!document.getElementById('chk-longform-motion-zoom')?.checked : false;
       const disable_vibe_filter = isLongVlog ? !!document.getElementById('chk-longform-disable-filter')?.checked : false;
       const disclaimer_enabled = !!document.getElementById('chk-disclaimer-enabled')?.checked;
@@ -5413,6 +5424,7 @@
             sticker_style,
             mute_voice,
             hide_subtitles,
+            subtitle_lang,
             enable_motion_zoom,
             disable_vibe_filter,
             disclaimer_enabled,

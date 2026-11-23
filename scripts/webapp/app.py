@@ -1223,6 +1223,7 @@ class OneClickPipelineReq(BaseModel):
     longform_random_count: int = 1
     mute_voice: bool = False
     hide_subtitles: bool = False
+    subtitle_lang: str = "vi"
     enable_motion_zoom: bool = False
     disable_vibe_filter: bool = False
     disclaimer_enabled: bool = False
@@ -5886,6 +5887,11 @@ def _execute_longform_vlog_pipeline(
     eff_disclaimer = _resolve_effective_disclaimer(req, req_vibe, is_random_variant=bool(variant_tag))
     if eff_disclaimer:
         _update_pipeline(log_line=f"[Nhãn Cảnh báo đầu clip] {eff_disclaimer}")
+    req_sub_lang = str(getattr(req, "subtitle_lang", "vi") or "vi").strip().lower()
+    if req_sub_lang not in ("vi", "bilingual", "en"):
+        req_sub_lang = "vi"
+    if req_sub_lang != "vi" and not req_hide_subs:
+        _update_pipeline(log_line=f"[Ngôn ngữ Phụ đề] {req_sub_lang} (Dịch tự động từ SRT tiếng Việt).")
 
     for ar_idx, cur_ar in enumerate(aspect_list, start=1):
         ar_plan = dict(plan)
@@ -5934,6 +5940,7 @@ def _execute_longform_vlog_pipeline(
             disable_vibe_filter=disable_vf,
             face_privacy_cfg=fp_cfg,
             project_root=ACTIVE_PROJECT_ROOT,
+            subtitle_lang=req_sub_lang,
             keep_clip_audio=bool(getattr(req, "keep_clip_audio", False)),
         )
         lf_meta = _attach_output_assets(
@@ -6557,6 +6564,7 @@ def _run_single_project_pipeline(req: OneClickPipelineReq) -> None:
                             "aspect_ratio": req_aspect,
                             "content_vibe": req_vibe,
                             "disclaimer_text": _resolve_effective_disclaimer(req, req_vibe, is_random_variant=False),
+                            "subtitle_lang": str(getattr(req, "subtitle_lang", "vi") or "vi"),
                             "mute_voice": bool(getattr(req, "mute_voice", False)),
                             "hide_subtitles": bool(getattr(req, "hide_subtitles", False)),
                             **({"wildcard_spec": slot_wildcard} if slot_wildcard else {}),
@@ -6765,6 +6773,7 @@ def _run_single_project_pipeline(req: OneClickPipelineReq) -> None:
                 "aspect_ratio": req_aspect,
                 "content_vibe": req_vibe,
                 "disclaimer_text": _resolve_effective_disclaimer(req, req_vibe, is_random_variant=False),
+                "subtitle_lang": str(getattr(req, "subtitle_lang", "vi") or "vi"),
                 "mute_voice": bool(getattr(req, "mute_voice", False)),
                 "hide_subtitles": bool(getattr(req, "hide_subtitles", False)),
                 **({"wildcard_spec": single_wildcard} if single_wildcard else {}),
@@ -6829,7 +6838,7 @@ def _req_for_project(req: OneClickPipelineReq, pid: str, multi_projects: bool) -
             "vlog_title", "product_note", "quality_preset", "aspect_ratio", "content_vibe",
             "short_content_mode", "voice_preset", "tts_engine", "edge_voice", "bgm_track", "sticker_density", "sticker_style",
             "render_engine", "innovation_preset", "sfx_level", "transition_level",
-            "icon_density", "visual_theme", "disclaimer_text", "face_blur_mode", "face_blur_style", "face_blur_icon",
+            "icon_density", "visual_theme", "subtitle_lang", "disclaimer_text", "face_blur_mode", "face_blur_style", "face_blur_icon",
         )
         for sf_k in str_fields:
             if sf_k in pc and pc[sf_k] is not None:

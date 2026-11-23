@@ -2080,6 +2080,8 @@ def srt_to_ass_file(
     font_name: str = "Baloo 2",
     subtitle_style: str = "editorial_clean",
     accent_color: str = "#F59E0B",
+    subtitle_lang: str = "vi",
+    cache_dir: Path | None = None,
 ) -> Path:
     """Convert SRT subtitles into AI-directed Vlog ASS subtitles across 5 distinct visual presets."""
     is_landscape = width > height
@@ -2088,6 +2090,10 @@ def srt_to_ass_file(
     margin_lr = int(round(width * 0.07))
     outline_px = max(2, int(round(font_size * 0.055)))
     shadow_px = max(2, int(round(font_size * 0.05)))
+    sub_lang = str(subtitle_lang or "vi").strip().lower()
+    if sub_lang not in ("vi", "bilingual", "en"):
+        sub_lang = "vi"
+    en_font_size = max(16, int(round(font_size * 0.72)))
 
     presets = {
         "editorial_clean": {
@@ -2156,11 +2162,11 @@ def srt_to_ass_file(
         "Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text\n"
     )
 
-    events: list[str] = []
+    parsed_events: list[tuple[float, float, str]] = []
     if srt_path.exists():
         raw = srt_path.read_text(encoding="utf-8-sig")
         blocks = re.split(r"\r?\n\r?\n+", raw.strip())
-        for blk_idx, blk in enumerate(blocks):
+        for blk in blocks:
             lines = [ln.strip() for ln in blk.splitlines() if ln.strip()]
             if len(lines) < 2:
                 continue
@@ -2175,17 +2181,37 @@ def srt_to_ass_file(
             txt = re.sub(r"\s+", " ", txt)
             if not txt or en <= st:
                 continue
-            if subtitle_style == "highlight_bold" or (blk_idx % 3 == 1 and len(txt.split()) >= 5):
-                words = txt.split()
-                split_at = max(1, len(words) - 2)
-                head_txt = " ".join(words[:split_at])
-                tail_txt = " ".join(words[split_at:])
-                styled_txt = f"{head_txt} {{\\c{accent_ass}&}}{tail_txt}{{\\c{st_cfg['primary']}&}}"
-            else:
-                styled_txt = txt
-            events.append(
-                f"Dialogue: 0,{_sec_to_ass_time(st)},{_sec_to_ass_time(en)},Default,,0,0,0,,{{{st_cfg['fad']}}}{styled_txt}"
-            )
+            parsed_events.append((st, en, txt))
+
+    en_texts: list[str] = []
+    if sub_lang in ("bilingual", "en") and parsed_events:
+        en_texts = _sd.translate_srt_lines_to_english(
+            [ev[2] for ev in parsed_events],
+            cache_dir=cache_dir or srt_path.parent.parent,
+        )
+
+    events: list[str] = []
+    for blk_idx, (st, en, vi_txt) in enumerate(parsed_events):
+        en_raw = en_texts[blk_idx] if blk_idx < len(en_texts) else ""
+        en_clean = re.sub(r"[{}]", "", en_raw).strip()
+        vi_clean = re.sub(r"[{}]", "", vi_txt).strip()
+        primary_txt = en_clean if (sub_lang == "en" and en_clean) else vi_clean
+
+        if subtitle_style == "highlight_bold" or (blk_idx % 3 == 1 and len(primary_txt.split()) >= 5):
+            words = primary_txt.split()
+            split_at = max(1, len(words) - 2)
+            head_txt = " ".join(words[:split_at])
+            tail_txt = " ".join(words[split_at:])
+            styled_txt = f"{head_txt} {{\\c{accent_ass}&}}{tail_txt}{{\\c{st_cfg['primary']}&}}"
+        else:
+            styled_txt = primary_txt
+
+        if sub_lang == "bilingual" and en_clean:
+            styled_txt = f"{styled_txt}\\N{{\\fs{en_font_size}\\c&H00A5F3FC&\\b0}}{en_clean}"
+
+        events.append(
+            f"Dialogue: 0,{_sec_to_ass_time(st)},{_sec_to_ass_time(en)},Default,,0,0,0,,{{{st_cfg['fad']}}}{styled_txt}"
+        )
 
     ass_path.parent.mkdir(parents=True, exist_ok=True)
     ass_path.write_text(header + "\n".join(events) + "\n", encoding="utf-8")
@@ -2281,6 +2307,7 @@ def render_longform_ffmpeg_vlog(
     disable_vibe_filter: bool = False,
     face_privacy_cfg: dict[str, Any] | None = None,
     project_root: Path | None = None,
+    subtitle_lang: str = "vi",
     progress_cb: Any = None,
 ) -> dict[str, Any]:
     """Render 4K/2K/1080p Vlog master with Remotion transparent overlays, sidechain ducking, & crisp ASS subs."""
@@ -2380,6 +2407,8 @@ def render_longform_ffmpeg_vlog(
                 font_name=font_name,
                 subtitle_style=subtitle_style,
                 accent_color=accent_color,
+                subtitle_lang=subtitle_lang,
+                cache_dir=(Path(project_root) / "04_workspace" if project_root else None),
             )
             has_ass = True
 
