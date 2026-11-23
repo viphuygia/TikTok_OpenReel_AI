@@ -118,6 +118,7 @@ export type WildcardStyleSpec = {
 
 export type TikTokVideoProps = {
   title?: string;
+  disclaimerText?: string;
   durationSec: number;
   aspectRatio?: '9:16' | '16:9';
   width?: number;

@@ -37,10 +37,21 @@ SFACE_URLS = [
     "https://huggingface.co/opencv/face_recognition_sface/resolve/main/face_recognition_sface_2021dec.onnx",
 ]
 
+FACE_EMOJI_CATALOG: dict[str, str] = {
+    "cool": "1f60e.webp",
+    "disguise": "1f978.webp",
+    "laugh": "1f602.webp",
+    "giggle": "1f92d.webp",
+    "hearts": "1f970.webp",
+    "cat": "1f638.webp",
+    "robot": "1f916.webp",
+}
+
 DEFAULT_FACE_PRIVACY_CONFIG: dict[str, Any] = {
     "enabled": False,
     "mode": "blur_selected",  # "blur_selected" | "keep_selected"
     "style": "gaussian",      # "gaussian" | "pixelate" | "emoji"
+    "icon": "cool",           # key in FACE_EMOJI_CATALOG or "random_person"
     "padding": 1.25,
     "selected_face_ids": [],
 }
@@ -50,6 +61,7 @@ _CV2_LOCK = threading.Lock()
 _MODEL_LOCK = threading.Lock()
 _HW_ENC_CACHE: tuple[str, list[str]] | None = None
 _EMOJI_BGRA_CACHE: np.ndarray | None = None
+_EMOJI_ICON_CACHE: dict[str, np.ndarray] = {}
 
 
 def _ensure_cv2() -> Any:
@@ -259,6 +271,9 @@ def normalize_face_config(cfg: dict[str, Any] | None) -> dict[str, Any]:
     style = str(raw.get("style") or "gaussian").strip()
     if style not in ("gaussian", "pixelate", "emoji"):
         style = "gaussian"
+    icon = str(raw.get("icon") or "cool").strip()
+    if icon != "random_person" and icon not in FACE_EMOJI_CATALOG:
+        icon = "cool"
     try:
         padding = float(raw.get("padding") or 1.25)
     except (TypeError, ValueError):
@@ -280,6 +295,7 @@ def normalize_face_config(cfg: dict[str, Any] | None) -> dict[str, Any]:
         "enabled": bool(raw.get("enabled", False)),
         "mode": mode,
         "style": style,
+        "icon": icon,
         "padding": padding,
         "selected_face_ids": sel_ids,
     }
@@ -764,16 +780,49 @@ def _get_sunglasses_emoji_bgra(cv2: Any) -> np.ndarray:
     return img
 
 
+def _get_emoji_icon_bgra(cv2: Any, icon_id: str) -> np.ndarray:
+    """Load high-res 512x512 Noto emoji .webp with alpha from assets/animated_stickers, cached thread-safely."""
+    clean_id = icon_id if icon_id in FACE_EMOJI_CATALOG else "cool"
+    cached = _EMOJI_ICON_CACHE.get(clean_id)
+    if cached is not None:
+        return cached
+    with _MODEL_LOCK:
+        cached = _EMOJI_ICON_CACHE.get(clean_id)
+        if cached is not None:
+            return cached
+        fname = FACE_EMOJI_CATALOG.get(clean_id, "1f60e.webp")
+        icon_path = REPO_ROOT / "assets" / "animated_stickers" / fname
+        if icon_path.exists():
+            try:
+                raw_bytes = np.fromfile(str(icon_path), dtype=np.uint8)
+                decoded = cv2.imdecode(raw_bytes, cv2.IMREAD_UNCHANGED)
+                if decoded is not None and decoded.ndim == 3:
+                    if decoded.shape[2] == 3:
+                        alpha_ch = np.full((decoded.shape[0], decoded.shape[1], 1), 255, dtype=np.uint8)
+                        decoded = np.concatenate([decoded, alpha_ch], axis=2)
+                    if decoded.shape[2] == 4:
+                        _EMOJI_ICON_CACHE[clean_id] = decoded
+                        return decoded
+            except Exception:
+                pass
+        fallback = _get_sunglasses_emoji_bgra(cv2)
+        _EMOJI_ICON_CACHE[clean_id] = fallback
+        return fallback
+
+
 def _apply_roi_mask(
     cv2: Any,
     frame: np.ndarray,
-    boxes: list[tuple[int, int, int, int]],
+    boxes: list[tuple[Any, ...]],
     style: str,
 ) -> None:
     fh, fw = frame.shape[:2]
-    emoji_src = _get_sunglasses_emoji_bgra(cv2) if style == "emoji" else None
 
-    for (x1, y1, x2, y2) in boxes:
+    for box in boxes:
+        if len(box) >= 5:
+            x1, y1, x2, y2, icon_id = int(box[0]), int(box[1]), int(box[2]), int(box[3]), str(box[4] or "cool")
+        else:
+            x1, y1, x2, y2, icon_id = int(box[0]), int(box[1]), int(box[2]), int(box[3]), "cool"
         x1c = max(0, min(fw - 1, x1))
         y1c = max(0, min(fh - 1, y1))
         x2c = max(0, min(fw, x2))
@@ -783,7 +832,8 @@ def _apply_roi_mask(
         if rw < 6 or rh < 6:
             continue
 
-        if style == "emoji" and emoji_src is not None:
+        if style == "emoji":
+            emoji_src = _get_emoji_icon_bgra(cv2, icon_id)
             cx = (x1 + x2) * 0.5
             cy = (y1 + y2) * 0.5
             d = max(12, int(round(max(x2 - x1, y2 - y1) * 1.04)))
@@ -797,7 +847,11 @@ def _apply_roi_mask(
             fy2 = min(fh, ey2)
             if fx2 - fx1 < 4 or fy2 - fy1 < 4:
                 continue
-            resized = cv2.resize(emoji_src, (d, d), interpolation=cv2.INTER_AREA if d < 256 else cv2.INTER_LINEAR)
+            resized = cv2.resize(
+                emoji_src,
+                (d, d),
+                interpolation=cv2.INTER_AREA if d < emoji_src.shape[0] else cv2.INTER_LINEAR,
+            )
             sx1 = fx1 - ex1
             sy1 = fy1 - ey1
             sx2 = sx1 + (fx2 - fx1)
@@ -863,7 +917,8 @@ def _build_masked_frame_boxes(
     fps: float,
     total_frames: int,
     onnx_mode: bool,
-) -> dict[int, list[tuple[int, int, int, int]]]:
+    icon_mode: str = "cool",
+) -> dict[int, list[tuple[int, int, int, int, str]]]:
     """Link detections into smooth spatial tracks, classify target identities, and interpolate per frame."""
     if not keyframes:
         return {}
@@ -936,7 +991,7 @@ def _build_masked_frame_boxes(
                     should_mask = not (cid is not None and cid in selected_ids)
 
             if should_mask:
-                cur_seg.append(node)
+                cur_seg.append({**node, "resolved_cid": cid})
             else:
                 if cur_seg:
                     target_segments.append(cur_seg)
@@ -948,9 +1003,25 @@ def _build_masked_frame_boxes(
         return {}
 
     # 3. Interpolate frame-by-frame boxes + add temporal & spatial padding
-    frame_boxes: dict[int, list[tuple[int, int, int, int]]] = {}
+    frame_boxes: dict[int, list[tuple[int, int, int, int, str]]] = {}
+    icon_keys = list(FACE_EMOJI_CATALOG.keys())
 
-    def _add_box(fi: int, cx: float, cy: float, bw: float, bh: float) -> None:
+    def _pick_seg_icon(seg: list[dict[str, Any]], seg_idx: int) -> str:
+        if icon_mode != "random_person":
+            return icon_mode if icon_mode in FACE_EMOJI_CATALOG else "cool"
+        counts: dict[str, int] = {}
+        for item in seg:
+            c = item.get("resolved_cid")
+            if c:
+                counts[str(c)] = counts.get(str(c), 0) + 1
+        if counts:
+            dom = max(counts.items(), key=lambda kv: kv[1])[0]
+            digits = "".join(ch for ch in dom if ch.isdigit())
+            idx_pick = (int(digits) - 1) if digits else sum(ord(ch) for ch in dom)
+            return icon_keys[idx_pick % len(icon_keys)]
+        return icon_keys[seg_idx % len(icon_keys)]
+
+    def _add_box(fi: int, cx: float, cy: float, bw: float, bh: float, icon_id: str) -> None:
         ew = bw * padding
         eh = bh * padding * 1.06
         x1 = max(0, int(round(cx - ew * 0.5)))
@@ -958,15 +1029,16 @@ def _build_masked_frame_boxes(
         x2 = min(orig_w, int(round(cx + ew * 0.5)))
         y2 = min(orig_h, int(round(cy + eh * 0.52)))
         if x2 - x1 >= 4 and y2 - y1 >= 4:
-            frame_boxes.setdefault(fi, []).append((x1, y1, x2, y2))
+            frame_boxes.setdefault(fi, []).append((x1, y1, x2, y2, icon_id))
 
     max_frame_idx = max(0, total_frames - 1) if total_frames > 0 else 10**7
 
-    for seg in target_segments:
+    for seg_idx, seg in enumerate(target_segments):
+        seg_icon = _pick_seg_icon(seg, seg_idx)
         first = seg[0]
         f0 = int(first["frame"])
         for fi in range(max(0, f0 - pad_edge_frames), f0):
-            _add_box(fi, first["cx"], first["cy"], first["w"], first["h"])
+            _add_box(fi, first["cx"], first["cy"], first["w"], first["h"], seg_icon)
 
         for k in range(len(seg) - 1):
             a = seg[k]
@@ -982,13 +1054,14 @@ def _build_masked_frame_boxes(
                     a["cy"] * (1.0 - alpha) + b["cy"] * alpha,
                     a["w"] * (1.0 - alpha) + b["w"] * alpha,
                     a["h"] * (1.0 - alpha) + b["h"] * alpha,
+                    seg_icon,
                 )
 
         last = seg[-1]
         fl = int(last["frame"])
-        _add_box(fl, last["cx"], last["cy"], last["w"], last["h"])
+        _add_box(fl, last["cx"], last["cy"], last["w"], last["h"], seg_icon)
         for fi in range(fl + 1, min(max_frame_idx + 1, fl + 1 + pad_edge_frames)):
-            _add_box(fi, last["cx"], last["cy"], last["w"], last["h"])
+            _add_box(fi, last["cx"], last["cy"], last["w"], last["h"], seg_icon)
 
     return frame_boxes
 
@@ -1016,11 +1089,13 @@ def apply_face_privacy_to_clip(
             merged_raw["mode"] = override_cfg["face_blur_mode"]
         if "face_blur_style" in override_cfg:
             merged_raw["style"] = override_cfg["face_blur_style"]
+        if "face_blur_icon" in override_cfg:
+            merged_raw["icon"] = override_cfg["face_blur_icon"]
         if "face_blur_padding" in override_cfg:
             merged_raw["padding"] = override_cfg["face_blur_padding"]
         if "face_blur_ids" in override_cfg:
             merged_raw["selected_face_ids"] = override_cfg["face_blur_ids"]
-        for k in ("enabled", "mode", "style", "padding", "selected_face_ids"):
+        for k in ("enabled", "mode", "style", "icon", "padding", "selected_face_ids"):
             if k in override_cfg:
                 merged_raw[k] = override_cfg[k]
 
@@ -1123,6 +1198,7 @@ def apply_face_privacy_to_clip(
         fps=fps,
         total_frames=total_frames,
         onnx_mode=engine.use_onnx,
+        icon_mode=cfg["icon"],
     )
     if not frame_boxes:
         return False

@@ -1225,9 +1225,12 @@ class OneClickPipelineReq(BaseModel):
     hide_subtitles: bool = False
     enable_motion_zoom: bool = False
     disable_vibe_filter: bool = False
+    disclaimer_enabled: bool = False
+    disclaimer_text: str = ""
     face_blur_enabled: bool = False
     face_blur_mode: str = "blur_selected"
     face_blur_style: str = "gaussian"
+    face_blur_icon: str = "cool"
     face_blur_padding: float = 1.25
     face_blur_ids: list[str] = Field(default_factory=list)
     project_ids: list[str] = Field(default_factory=list)
@@ -4848,6 +4851,26 @@ def api_longform_generate_script(req: LongformGenScriptReq):
     return {"ok": True, "project_id": pid, "chapters_data": ch_script, "config": merged_cfg}
 
 
+VIBE_DISCLAIMER_PRESETS: dict[str, str] = {
+    "detective_mystery": "⚠️ LƯU Ý: Phong cách Thám Tử lồng tiếng vui vẻ gia đình — Không phải chuyên án hay sự vụ thật!",
+    "field_report": "📢 LƯU Ý: Kịch bản dựng phong cách Phóng Sự giải trí gia đình — Không phải bản tin thời sự!",
+    "pov_comedy": "😄 LƯU Ý: Lời bình POV trêu đùa vui vẻ trong gia đình — Chỉ mang tính giải trí!",
+    "creative_internet": "✨ LƯU Ý: Nội dung sáng tạo theo trend giải trí gia đình & bạn bè.",
+    "cinematic_deep": "🎬 Thước phim kỷ niệm gia đình dựng theo phong cách Điện Ảnh.",
+    "default": "🏡 Video lưu giữ kỷ niệm vui vẻ gia đình — Nội dung chỉ mang tính giải trí!",
+}
+
+
+def _resolve_effective_disclaimer(req: OneClickPipelineReq, cur_vibe: str, is_random_variant: bool = False) -> str:
+    if not bool(getattr(req, "disclaimer_enabled", False)):
+        return ""
+    raw_txt = str(getattr(req, "disclaimer_text", "") or "").strip()
+    preset_vals = set(VIBE_DISCLAIMER_PRESETS.values())
+    if not raw_txt or (is_random_variant and raw_txt in preset_vals):
+        return VIBE_DISCLAIMER_PRESETS.get(cur_vibe, VIBE_DISCLAIMER_PRESETS["default"])
+    return raw_txt
+
+
 class FacePrivacyScanReq(BaseModel):
     project_id: str = ""
     force: bool = True
@@ -4858,6 +4881,7 @@ class FacePrivacyConfigReq(BaseModel):
     enabled: bool = False
     mode: str = "blur_selected"
     style: str = "gaussian"
+    icon: str = "cool"
     padding: float = 1.25
     selected_face_ids: list[str] = Field(default_factory=list)
 
@@ -4882,6 +4906,7 @@ def _req_face_privacy_dict(req: OneClickPipelineReq) -> dict[str, Any]:
         "enabled": bool(getattr(req, "face_blur_enabled", False)),
         "mode": str(getattr(req, "face_blur_mode", "blur_selected") or "blur_selected"),
         "style": str(getattr(req, "face_blur_style", "gaussian") or "gaussian"),
+        "icon": str(getattr(req, "face_blur_icon", "cool") or "cool"),
         "padding": float(getattr(req, "face_blur_padding", 1.25) or 1.25),
         "selected_face_ids": list(getattr(req, "face_blur_ids", None) or []),
     }
@@ -4929,6 +4954,7 @@ def api_face_privacy_config(req: FacePrivacyConfigReq):
             "enabled": req.enabled,
             "mode": req.mode,
             "style": req.style,
+            "icon": req.icon,
             "padding": req.padding,
             "selected_face_ids": req.selected_face_ids,
         },
@@ -5855,8 +5881,11 @@ def _execute_longform_vlog_pipeline(
     fp_cfg = fp_saved["config"]
     if fp_cfg.get("enabled"):
         _update_pipeline(
-            log_line=f"[Che mặt AI] BẬT ({fp_cfg['mode']} · kiểu={fp_cfg['style']} · đã chọn={len(fp_cfg['selected_face_ids'])} mặt).",
+            log_line=f"[Che mặt AI] BẬT ({fp_cfg['mode']} · kiểu={fp_cfg['style']} · icon={fp_cfg.get('icon', 'cool')} · đã chọn={len(fp_cfg['selected_face_ids'])} mặt).",
         )
+    eff_disclaimer = _resolve_effective_disclaimer(req, req_vibe, is_random_variant=bool(variant_tag))
+    if eff_disclaimer:
+        _update_pipeline(log_line=f"[Nhãn Cảnh báo đầu clip] {eff_disclaimer}")
 
     for ar_idx, cur_ar in enumerate(aspect_list, start=1):
         ar_plan = dict(plan)
@@ -5881,6 +5910,7 @@ def _execute_longform_vlog_pipeline(
             channel_name=ch_name,
             sticker_density=str(req.sticker_density or "normal"),
             sticker_style=str(getattr(req, "sticker_style", "pill_minimal") or "pill_minimal"),
+            disclaimer_text=eff_disclaimer,
         )
         stk_rendered = sum(1 for ov in overlays if "sticker_" in str(ov.get("path") or ""))
         _update_pipeline(
@@ -6526,6 +6556,7 @@ def _run_single_project_pipeline(req: OneClickPipelineReq) -> None:
                             "sfx_level": getattr(req, "sfx_level", "subtle") or "subtle",
                             "aspect_ratio": req_aspect,
                             "content_vibe": req_vibe,
+                            "disclaimer_text": _resolve_effective_disclaimer(req, req_vibe, is_random_variant=False),
                             "mute_voice": bool(getattr(req, "mute_voice", False)),
                             "hide_subtitles": bool(getattr(req, "hide_subtitles", False)),
                             **({"wildcard_spec": slot_wildcard} if slot_wildcard else {}),
@@ -6733,6 +6764,7 @@ def _run_single_project_pipeline(req: OneClickPipelineReq) -> None:
                 "sfx_level": getattr(req, "sfx_level", "subtle") or "subtle",
                 "aspect_ratio": req_aspect,
                 "content_vibe": req_vibe,
+                "disclaimer_text": _resolve_effective_disclaimer(req, req_vibe, is_random_variant=False),
                 "mute_voice": bool(getattr(req, "mute_voice", False)),
                 "hide_subtitles": bool(getattr(req, "hide_subtitles", False)),
                 **({"wildcard_spec": single_wildcard} if single_wildcard else {}),
@@ -6797,7 +6829,7 @@ def _req_for_project(req: OneClickPipelineReq, pid: str, multi_projects: bool) -
             "vlog_title", "product_note", "quality_preset", "aspect_ratio", "content_vibe",
             "short_content_mode", "voice_preset", "tts_engine", "edge_voice", "bgm_track", "sticker_density", "sticker_style",
             "render_engine", "innovation_preset", "sfx_level", "transition_level",
-            "icon_density", "visual_theme", "face_blur_mode", "face_blur_style",
+            "icon_density", "visual_theme", "disclaimer_text", "face_blur_mode", "face_blur_style", "face_blur_icon",
         )
         for sf_k in str_fields:
             if sf_k in pc and pc[sf_k] is not None:
@@ -6805,6 +6837,7 @@ def _req_for_project(req: OneClickPipelineReq, pid: str, multi_projects: bool) -
         bool_fields = (
             "auto_fit_duration", "keep_clip_audio", "preserve_longform_script",
             "longform_random_mode", "mute_voice", "hide_subtitles", "enable_motion_zoom", "disable_vibe_filter",
+            "disclaimer_enabled",
             "batch_all_scripts", "mix_variants", "mix_engines",
             "preserve_clips", "regenerate_script", "force_tts", "disable_flash_shake",
             "face_blur_enabled",

@@ -1729,6 +1729,7 @@ def render_vlog_remotion_overlays(
     channel_name: str = "VLOG JOURNAL",
     sticker_density: str = "normal",
     sticker_style: str = "pill_minimal",
+    disclaimer_text: str = "",
 ) -> list[dict[str, Any]]:
     """Render transparent Remotion WebM overlays for VlogIntro, VlogChapterCards, VlogStickers, and VlogOutro."""
     npx, browser_exe = _find_remotion_tools()
@@ -1818,6 +1819,7 @@ def render_vlog_remotion_overlays(
             "title": chapter_script.get("video_title") or "CHUYẾN ĐI ĐÁNG NHỚ",
             "subtitle": chapter_script.get("video_subtitle") or "",
             "badgeText": f"{channel_name.upper()} · {plan.get('quality_label', '4K')}",
+            "disclaimerText": str(disclaimer_text or "").strip(),
             "accentColor": accent_color,
             "titleStyle": title_style,
             "durationSec": 4.5,

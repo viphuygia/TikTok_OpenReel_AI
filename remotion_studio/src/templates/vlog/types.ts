@@ -12,6 +12,7 @@ export type VlogIntroProps = {
   title: string;
   subtitle: string;
   badgeText?: string;
+  disclaimerText?: string;
   accentColor?: string;
   titleStyle?: VlogTitleStyle;
   durationSec?: number;

@@ -363,6 +363,7 @@ def main() -> int:
             "face_v1",
             fp_cfg["mode"],
             fp_cfg["style"],
+            fp_cfg.get("icon", "cool"),
             fp_cfg["padding"],
             sorted(fp_cfg["selected_face_ids"]),
             int(fp_state.get("updated_at") or 0),

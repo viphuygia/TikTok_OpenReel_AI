@@ -567,6 +567,19 @@
               <input id="chk-disable-flash-shake" type="checkbox" checked class="rounded bg-zinc-800 border-cyan-500 text-cyan-500" />
               <span>🛡️ Chống chớp &amp; Chống rung (Tắt chớp trắng Flash, Rung camera &amp; Motion Trail)</span>
             </label>
+            <div id="wrap-disclaimer-box" class="sm:col-span-2 pt-1 border-t border-zinc-800/80 space-y-2">
+              <label class="flex items-center gap-2 text-amber-200 font-medium cursor-pointer">
+                <input id="chk-disclaimer-enabled" type="checkbox" onchange="onDisclaimerToggleChange()" class="rounded bg-zinc-800 border-amber-500 text-amber-500" />
+                <span>⚠️ Hiện nhãn Cảnh báo / Miễn trừ đầu clip (Tránh hiểu lầm chuyên án / thời sự / drama)</span>
+              </label>
+              <div id="disclaimer-panel" class="hidden rounded-xl bg-zinc-950/80 border border-amber-500/35 p-2.5 space-y-1.5">
+                <div class="flex flex-wrap items-center justify-between gap-2">
+                  <span class="text-[11px] text-amber-200/90">Nội dung hiện 4.5 giây đầu clip (tự khớp theo Vibe hoặc sửa tự do):</span>
+                  <button type="button" onclick="syncDisclaimerWithVibe(true)" class="px-2 py-0.5 rounded bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-[10px] font-semibold text-amber-200">🔄 Tự khớp theo Vibe</button>
+                </div>
+                <input id="disclaimer-text-input" type="text" placeholder="⚠️ LƯU Ý: Đây chỉ là yếu tố vui vẻ gia đình — Không phải chuyên án hay sự vụ thật!" class="w-full rounded-lg bg-zinc-900 border border-zinc-700 px-2.5 py-1.5 text-[11px] text-zinc-100 placeholder-zinc-500" />
+              </div>
+            </div>
             <div id="wrap-face-blur-box" class="sm:col-span-2 pt-1 border-t border-zinc-800/80 space-y-2.5">
               <label class="flex items-center gap-2 text-sky-200 font-medium cursor-pointer">
                 <input id="chk-face-blur-enabled" type="checkbox" onchange="onFaceBlurToggleChange()" class="rounded bg-zinc-800 border-sky-500 text-sky-500" />
@@ -602,6 +615,19 @@
                       <option value="1.45">🛡️ Rộng an toàn (1.45x)</option>
                     </select>
                   </div>
+                </div>
+                <div id="wrap-face-blur-icon" class="hidden rounded-lg bg-zinc-900/80 border border-amber-500/35 p-2 space-y-1">
+                  <label class="block text-[10px] text-amber-200 font-medium">🎭 Mẫu Icon / Emoji che mặt (Noto HD 512px)</label>
+                  <select id="face-blur-icon" onchange="onFaceBlurOptionChange()" class="w-full rounded-lg bg-zinc-950 border border-zinc-700 px-2.5 py-1.5 text-[11px] text-zinc-100">
+                    <option value="cool" selected>😎 Kính râm ngầu (Mặc định)</option>
+                    <option value="disguise">🥸 Đeo kính râu giả (Ẩn danh Thám tử)</option>
+                    <option value="laugh">😂 Cười ra nước mắt (POV Hài)</option>
+                    <option value="giggle">🤭 Cười tủm tỉm che miệng</option>
+                    <option value="hearts">🥰 Mặt thả tim đáng yêu (Gia đình / Em bé)</option>
+                    <option value="cat">😸 Mèo cười tươi (Cute)</option>
+                    <option value="robot">🤖 Mặt Robot (Vui nhộn)</option>
+                    <option value="random_person">🎲 Random đổi icon theo từng người</option>
+                  </select>
                 </div>
                 <div class="flex flex-wrap items-center justify-between gap-2 text-[11px]">
                   <span id="face-blur-hint" class="text-rose-300">Bấm vào ảnh mặt để ĐÁNH DẤU CHE (viền đỏ).</span>
@@ -4660,9 +4686,12 @@
         enable_motion_zoom: !!document.getElementById('chk-longform-motion-zoom')?.checked,
         disable_vibe_filter: !!document.getElementById('chk-longform-disable-filter')?.checked,
         disable_flash_shake: document.getElementById('chk-disable-flash-shake')?.checked !== false,
+        disclaimer_enabled: !!document.getElementById('chk-disclaimer-enabled')?.checked,
+        disclaimer_text: document.getElementById('disclaimer-text-input')?.value?.trim() || '',
         face_blur_enabled: !!document.getElementById('chk-face-blur-enabled')?.checked,
         face_blur_mode: document.getElementById('face-blur-mode')?.value || 'blur_selected',
         face_blur_style: document.getElementById('face-blur-style')?.value || 'gaussian',
+        face_blur_icon: document.getElementById('face-blur-icon')?.value || 'cool',
         face_blur_padding: parseFloat(document.getElementById('face-blur-padding')?.value || '1.25') || 1.25,
         face_blur_ids: Array.isArray(state.currentFaceBlurIds) ? [...state.currentFaceBlurIds] : [],
       };
@@ -4720,11 +4749,15 @@
       setChk('chk-hide-subtitles', cfg.hide_subtitles);
       setChk('chk-longform-motion-zoom', !!cfg.enable_motion_zoom);
       setChk('chk-longform-disable-filter', !!cfg.disable_vibe_filter);
+      setChk('chk-disclaimer-enabled', !!cfg.disclaimer_enabled);
+      setVal('disclaimer-text-input', cfg.disclaimer_text ?? '');
+      onDisclaimerToggleChange();
       syncMotionZoomUi();
       setChk('chk-disable-flash-shake', cfg.disable_flash_shake);
       setChk('chk-face-blur-enabled', !!cfg.face_blur_enabled);
       setVal('face-blur-mode', cfg.face_blur_mode || 'blur_selected');
       setVal('face-blur-style', cfg.face_blur_style || 'gaussian');
+      setVal('face-blur-icon', cfg.face_blur_icon || 'cool');
       setVal('face-blur-padding', String(cfg.face_blur_padding || '1.25'));
       state.currentFaceBlurIds = Array.isArray(cfg.face_blur_ids) ? [...cfg.face_blur_ids] : [];
       toggleFaceBlurPanel(true);
@@ -4767,6 +4800,7 @@
         face_blur_enabled: fpCfg.enabled !== undefined ? !!fpCfg.enabled : false,
         face_blur_mode: fpCfg.mode || base.face_blur_mode || 'blur_selected',
         face_blur_style: fpCfg.style || base.face_blur_style || 'gaussian',
+        face_blur_icon: fpCfg.icon || base.face_blur_icon || 'cool',
         face_blur_padding: fpCfg.padding || base.face_blur_padding || 1.25,
         face_blur_ids: Array.isArray(fpCfg.selected_face_ids) ? [...fpCfg.selected_face_ids] : [],
       };
@@ -5330,9 +5364,12 @@
       const hide_subtitles = !!document.getElementById('chk-hide-subtitles')?.checked;
       const enable_motion_zoom = isLongVlog ? !!document.getElementById('chk-longform-motion-zoom')?.checked : false;
       const disable_vibe_filter = isLongVlog ? !!document.getElementById('chk-longform-disable-filter')?.checked : false;
+      const disclaimer_enabled = !!document.getElementById('chk-disclaimer-enabled')?.checked;
+      const disclaimer_text = document.getElementById('disclaimer-text-input')?.value?.trim() || '';
       const face_blur_enabled = !!document.getElementById('chk-face-blur-enabled')?.checked;
       const face_blur_mode = document.getElementById('face-blur-mode')?.value || 'blur_selected';
       const face_blur_style = document.getElementById('face-blur-style')?.value || 'gaussian';
+      const face_blur_icon = document.getElementById('face-blur-icon')?.value || 'cool';
       const face_blur_padding = parseFloat(document.getElementById('face-blur-padding')?.value || '1.25') || 1.25;
       const face_blur_ids = Array.isArray(state.currentFaceBlurIds) ? [...state.currentFaceBlurIds] : [];
       const project_configs = {};
@@ -5378,9 +5415,12 @@
             hide_subtitles,
             enable_motion_zoom,
             disable_vibe_filter,
+            disclaimer_enabled,
+            disclaimer_text,
             face_blur_enabled,
             face_blur_mode,
             face_blur_style,
+            face_blur_icon,
             face_blur_padding,
             face_blur_ids,
             disable_flash_shake,
@@ -5885,6 +5925,41 @@
         const chkF = document.getElementById('chk-longform-disable-filter');
         if (chkF) chkF.checked = false;
       }
+      syncDisclaimerWithVibe(false);
+    }
+
+    const VIBE_DISCLAIMER_PRESETS = {
+      detective_mystery: '⚠️ LƯU Ý: Phong cách Thám Tử lồng tiếng vui vẻ gia đình — Không phải chuyên án hay sự vụ thật!',
+      field_report: '📢 LƯU Ý: Kịch bản dựng phong cách Phóng Sự giải trí gia đình — Không phải bản tin thời sự!',
+      pov_comedy: '😄 LƯU Ý: Lời bình POV trêu đùa vui vẻ trong gia đình — Chỉ mang tính giải trí!',
+      creative_internet: '✨ LƯU Ý: Nội dung sáng tạo theo trend giải trí gia đình & bạn bè.',
+      cinematic_deep: '🎬 Thước phim kỷ niệm gia đình dựng theo phong cách Điện Ảnh.',
+      default: '🏡 Video lưu giữ kỷ niệm vui vẻ gia đình — Nội dung chỉ mang tính giải trí!',
+    };
+
+    function syncDisclaimerWithVibe(forceReset = false) {
+      const inp = document.getElementById('disclaimer-text-input');
+      if (!inp) return;
+      const vibe = document.getElementById('auto-content-vibe')?.value || '';
+      const suggestion = VIBE_DISCLAIMER_PRESETS[vibe] || VIBE_DISCLAIMER_PRESETS.default;
+      const cur = inp.value.trim();
+      const knownPresets = new Set(Object.values(VIBE_DISCLAIMER_PRESETS));
+      if (forceReset || !cur || knownPresets.has(cur)) {
+        inp.value = suggestion;
+      }
+    }
+
+    function onDisclaimerToggleChange() {
+      const on = !!document.getElementById('chk-disclaimer-enabled')?.checked;
+      const panel = document.getElementById('disclaimer-panel');
+      if (panel) panel.classList.toggle('hidden', !on);
+      if (on) syncDisclaimerWithVibe(false);
+    }
+
+    function syncFaceBlurIconUi() {
+      const style = document.getElementById('face-blur-style')?.value || 'gaussian';
+      const wrap = document.getElementById('wrap-face-blur-icon');
+      if (wrap) wrap.classList.toggle('hidden', style !== 'emoji');
     }
 
     function toggleLongformRandomUi() {
@@ -5939,6 +6014,7 @@
       const enabled = !!document.getElementById('chk-face-blur-enabled')?.checked;
       const panel = document.getElementById('face-blur-panel');
       if (panel) panel.classList.toggle('hidden', !enabled);
+      syncFaceBlurIconUi();
       const pid = getActiveModalProjectId();
       if (enabled && pid) {
         if (!state.facePrivacyMap[pid]) {
@@ -5958,6 +6034,7 @@
     }
 
     function onFaceBlurOptionChange() {
+      syncFaceBlurIconUi();
       const pid = getActiveModalProjectId();
       renderFaceBlurGrid(pid);
       if (pid) {
@@ -5978,10 +6055,12 @@
             const chk = document.getElementById('chk-face-blur-enabled');
             const mEl = document.getElementById('face-blur-mode');
             const sEl = document.getElementById('face-blur-style');
+            const iEl = document.getElementById('face-blur-icon');
             const pEl = document.getElementById('face-blur-padding');
             if (chk) chk.checked = !!c.enabled;
             if (mEl && c.mode) mEl.value = c.mode;
             if (sEl && c.style) sEl.value = c.style;
+            if (iEl && c.icon) iEl.value = c.icon;
             if (pEl && c.padding) pEl.value = String(c.padding);
             state.currentFaceBlurIds = Array.isArray(c.selected_face_ids) ? [...c.selected_face_ids] : [];
             toggleFaceBlurPanel(true);
@@ -5999,6 +6078,7 @@
       const enabled = !!document.getElementById('chk-face-blur-enabled')?.checked;
       const mode = document.getElementById('face-blur-mode')?.value || 'blur_selected';
       const style = document.getElementById('face-blur-style')?.value || 'gaussian';
+      const icon = document.getElementById('face-blur-icon')?.value || 'cool';
       const padding = parseFloat(document.getElementById('face-blur-padding')?.value || '1.25') || 1.25;
       const selected_face_ids = Array.isArray(state.currentFaceBlurIds) ? [...state.currentFaceBlurIds] : [];
       try {
@@ -6010,6 +6090,7 @@
             enabled,
             mode,
             style,
+            icon,
             padding,
             selected_face_ids,
           }),

@@ -1315,6 +1315,48 @@ export const InnovationComposition: React.FC<TikTokVideoProps> = (props) => {
       )}
 
       {/* 7. Bottom TikTok Shop CTA Pill */}
+      {!props.badgeOnly && props.disclaimerText && frame < Math.round(fps * 4.2) ? (() => {
+        const discFrames = Math.round(fps * 4.2);
+        const discAlpha = interpolate(frame, [0, 8, Math.max(12, discFrames - 10), discFrames], [0, 1, 1, 0], {
+          extrapolateLeft: 'clamp',
+          extrapolateRight: 'clamp',
+        });
+        return (
+          <div
+            style={{
+              position: 'absolute',
+              top: (props.aspectRatio === '16:9') ? 22 : '4.2%',
+              left: 28,
+              right: 28,
+              display: 'flex',
+              justifyContent: 'center',
+              opacity: discAlpha,
+              zIndex: 48,
+              pointerEvents: 'none',
+            }}
+          >
+            <div
+              style={{
+                backgroundColor: 'rgba(15, 23, 42, 0.88)',
+                border: `2px solid ${wc?.accentColor || '#F59E0B'}`,
+                borderRadius: 999,
+                padding: '9px 22px',
+                boxShadow: '0 10px 26px rgba(0,0,0,0.5)',
+                color: '#FEF3C7',
+                fontFamily: `'${fontHeading}', sans-serif`,
+                fontWeight: 700,
+                fontSize: (props.aspectRatio === '16:9') ? 22 : 24,
+                lineHeight: 1.3,
+                textAlign: 'center',
+                maxWidth: '94%',
+              }}
+            >
+              {props.disclaimerText}
+            </div>
+          </div>
+        );
+      })() : null}
+
       {!props.badgeOnly && (
         <Sequence from={ctaStartFrame} durationInFrames={ctaDurationFrames}>
           <div style={{ position: 'absolute', bottom: 108, left: 52, pointerEvents: 'none' }}>

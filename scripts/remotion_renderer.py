@@ -798,6 +798,7 @@ def build_remotion_props(overrides: dict[str, Any] | None = None) -> dict[str, A
 
     props = {
         "title": str(edit_plan.get("title") or ("Vlog Story" if vibe_meta["is_vlog"] else "TikTok Shop Review")),
+        "disclaimerText": str(ov.get("disclaimer_text") or "").strip(),
         "durationSec": total_duration,
         "aspectRatio": aspect_ratio,
         "width": target_w,

@@ -9,6 +9,7 @@ export const VlogIntro: React.FC<VlogIntroProps> = ({
   title,
   subtitle,
   badgeText = 'OUTDOOR VLOG · 4K',
+  disclaimerText = '',
   accentColor = '#F59E0B',
   titleStyle = 'cinematic_glass',
 }) => {
@@ -298,6 +299,31 @@ export const VlogIntro: React.FC<VlogIntroProps> = ({
             }}
           >
             {subtitle}
+          </div>
+        ) : null}
+
+        {/* Optional Opening Disclaimer Banner */}
+        {disclaimerText ? (
+          <div
+            style={{
+              marginTop: isLandscape ? 22 : 24,
+              transform: `translateY(${interpolate(subSpring, [0, 1], [16, 0])}px)`,
+              opacity: subSpring,
+              padding: isLandscape ? '12px 26px' : '11px 20px',
+              borderRadius: 999,
+              backgroundColor: 'rgba(15, 23, 42, 0.88)',
+              border: `2px solid ${accentColor}`,
+              boxShadow: '0 10px 28px rgba(0,0,0,0.45)',
+              color: '#FEF3C7',
+              fontFamily: "'Be Vietnam Pro', 'Baloo 2', sans-serif",
+              fontWeight: 700,
+              fontSize: isLandscape ? Math.round(width * 0.0135) : Math.round(width * 0.025),
+              lineHeight: 1.35,
+              maxWidth: isLandscape ? '88%' : '96%',
+              textAlign: 'center',
+            }}
+          >
+            {disclaimerText}
           </div>
         ) : null}
       </div>
