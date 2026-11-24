@@ -231,6 +231,134 @@ def make_bass_drop_soft(path: Path) -> None:
     _write_wav(path, np.sin(phase) * env * 0.72)
 
 
+def make_dramatic_boom(path: Path) -> None:
+    dur = 1.35
+    n = int(SR * dur)
+    t = np.linspace(0, dur, n, endpoint=False)
+    rng = np.random.default_rng(101)
+    freq = 42.0 + 135.0 * np.exp(-t * 8.5)
+    phase = 2 * math.pi * np.cumsum(freq) / SR
+    sub = np.sin(phase) + 0.35 * np.sin(2.0 * phase)
+    env = np.exp(-t * 2.8) * (1 - np.exp(-t * 320))
+    transient = rng.normal(0, 1, n)
+    kernel = np.ones(18) / 18.0
+    thud = np.convolve(transient, kernel, mode="same") * np.exp(-t * 24.0) * 0.65
+    _write_wav(path, (sub * 0.75 * env) + thud)
+
+
+def make_heartbeat_low(path: Path) -> None:
+    dur = 1.15
+    n = int(SR * dur)
+    t = np.linspace(0, dur, n, endpoint=False)
+    out = np.zeros(n, dtype=np.float64)
+    for center, amp, f0 in [(0.08, 0.85, 58.0), (0.28, 0.62, 50.0), (0.66, 0.85, 58.0), (0.86, 0.62, 50.0)]:
+        dt = np.maximum(0.0, t - center)
+        mask = (t >= center) & (t < center + 0.19)
+        if not np.any(mask):
+            continue
+        f_sweep = f0 + 48.0 * np.exp(-dt[mask] * 28.0)
+        ph = 2 * math.pi * np.cumsum(f_sweep) / SR
+        env = np.exp(-dt[mask] * 20.0) * (1 - np.exp(-dt[mask] * 260))
+        out[mask] += np.sin(ph) * env * amp
+    _write_wav(path, out)
+
+
+def make_clock_tick(path: Path) -> None:
+    dur = 0.95
+    n = int(SR * dur)
+    t = np.linspace(0, dur, n, endpoint=False)
+    rng = np.random.default_rng(103)
+    noise = rng.normal(0, 1, n)
+    out = np.zeros(n, dtype=np.float64)
+    for idx, t0 in enumerate([0.04, 0.27, 0.50, 0.73]):
+        dt = np.maximum(0.0, t - t0)
+        mask = (t >= t0) & (t < t0 + 0.08)
+        if not np.any(mask):
+            continue
+        tone_f = 2150.0 if idx % 2 == 0 else 1680.0
+        env = np.exp(-dt[mask] * 95.0) * (1 - np.exp(-dt[mask] * 1200))
+        sig = (0.65 * np.sin(2 * math.pi * tone_f * dt[mask]) + 0.35 * noise[mask]) * env
+        out[mask] += sig * 0.62
+    _write_wav(path, out)
+
+
+def make_suspense_sting(path: Path) -> None:
+    dur = 1.10
+    n = int(SR * dur)
+    t = np.linspace(0, dur, n, endpoint=False)
+    rng = np.random.default_rng(107)
+    noise = rng.normal(0, 1, n)
+    kernel = np.ones(35) / 35.0
+    smooth_noise = np.convolve(noise, kernel, mode="same")
+    # Dissonant minor-second cluster swelling up before sharp tail release
+    swell = (t / dur) ** 1.45 * np.exp(-np.maximum(0.0, t - 0.88) * 18.0)
+    f1 = 293.66 + 38.0 * (t / dur)
+    f2 = 311.13 + 42.0 * (t / dur)
+    f3 = 415.30 + 55.0 * (t / dur)
+    sig = (
+        0.38 * np.sin(2 * math.pi * np.cumsum(f1) / SR)
+        + 0.36 * np.sin(2 * math.pi * np.cumsum(f2) / SR)
+        + 0.24 * np.sin(2 * math.pi * np.cumsum(f3) / SR)
+        + 0.22 * smooth_noise
+    )
+    _write_wav(path, sig * swell * 0.58)
+
+
+def make_vine_boom(path: Path) -> None:
+    dur = 0.72
+    n = int(SR * dur)
+    t = np.linspace(0, dur, n, endpoint=False)
+    rng = np.random.default_rng(109)
+    freq = 54.0 + 185.0 * np.exp(-t * 16.0)
+    phase = 2 * math.pi * np.cumsum(freq) / SR
+    body = np.tanh((np.sin(phase) + 0.28 * np.sin(2.0 * phase)) * 1.45)
+    env = np.exp(-t * 4.8) * (1 - np.exp(-t * 480))
+    kick = np.convolve(rng.normal(0, 1, n), np.ones(12) / 12.0, mode="same") * np.exp(-t * 36.0) * 0.50
+    _write_wav(path, (body * env * 0.78) + kick)
+
+
+def make_record_scratch(path: Path) -> None:
+    dur = 0.42
+    n = int(SR * dur)
+    t = np.linspace(0, dur, n, endpoint=False)
+    rng = np.random.default_rng(113)
+    zip_hz = 460.0 + 680.0 * np.sin(2 * math.pi * 11.5 * t) * np.exp(-t * 3.0)
+    zip_hz = np.maximum(140.0, zip_hz * np.exp(-t * 2.2))
+    phase = 2 * math.pi * np.cumsum(zip_hz) / SR
+    grit = rng.normal(0, 1, n) * 0.25
+    env = np.sin(math.pi * (t / dur)) ** 0.7 * np.exp(-t * 2.4)
+    out = np.tanh((np.sin(phase) + 0.45 * np.sin(2.5 * phase) + grit) * 1.2) * env * 0.62
+    _write_wav(path, out)
+
+
+def make_boing(path: Path) -> None:
+    dur = 0.46
+    n = int(SR * dur)
+    t = np.linspace(0, dur, n, endpoint=False)
+    base_f = 260.0 + 210.0 * (1 - np.exp(-t * 10.0)) + 135.0 * np.sin(2 * math.pi * 16.0 * t) * np.exp(-t * 4.0)
+    phase = 2 * math.pi * np.cumsum(base_f) / SR
+    env = np.exp(-t * 5.2) * (1 - np.exp(-t * 380))
+    _write_wav(path, (np.sin(phase) + 0.25 * np.sin(2 * phase)) * env * 0.56)
+
+
+def make_cricket(path: Path) -> None:
+    dur = 0.95
+    n = int(SR * dur)
+    t = np.linspace(0, dur, n, endpoint=False)
+    out = np.zeros(n, dtype=np.float64)
+    for burst_start in (0.04, 0.50):
+        for p in range(4):
+            t0 = burst_start + p * 0.055
+            mask = (t >= t0) & (t < t0 + 0.036)
+            if not np.any(mask):
+                continue
+            dt = t[mask] - t0
+            env = np.sin(math.pi * (dt / 0.036)) ** 1.3
+            chirp = np.sin(2 * math.pi * 4320.0 * dt) + 0.35 * np.sin(2 * math.pi * 4480.0 * dt)
+            out[mask] += chirp * env * 0.36
+    _write_wav(path, out)
+
+
 def ensure_audio_assets(force_soft: bool = False) -> dict[str, Path]:
     DIR_ASSETS_AUDIO.mkdir(parents=True, exist_ok=True)
     DIR_BGM.mkdir(parents=True, exist_ok=True)
@@ -249,6 +377,14 @@ def ensure_audio_assets(force_soft: bool = False) -> dict[str, Path]:
         "snap_finger": ("sfx_snap_finger.wav", make_snap_finger),
         "notification": ("sfx_notification.wav", make_notification),
         "bass_drop_soft": ("sfx_bass_drop_soft.wav", make_bass_drop_soft),
+        "dramatic_boom": ("sfx_dramatic_boom.wav", make_dramatic_boom),
+        "heartbeat_low": ("sfx_heartbeat_low.wav", make_heartbeat_low),
+        "clock_tick": ("sfx_clock_tick.wav", make_clock_tick),
+        "suspense_sting": ("sfx_suspense_sting.wav", make_suspense_sting),
+        "vine_boom": ("sfx_vine_boom.wav", make_vine_boom),
+        "record_scratch": ("sfx_record_scratch.wav", make_record_scratch),
+        "boing": ("sfx_boing.wav", make_boing),
+        "cricket": ("sfx_cricket.wav", make_cricket),
     }
     out: dict[str, Path] = {}
     for key, (fname, fn) in sfx_builders.items():

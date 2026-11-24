@@ -5916,6 +5916,7 @@ def _execute_longform_vlog_pipeline(
     )
     req_mute_voice = bool(getattr(req, "mute_voice", False))
     req_hide_subs = bool(getattr(req, "hide_subtitles", False))
+    voice_res: dict[str, Any] | None = None
     if req_mute_voice:
         _update_pipeline(
             step_status=(3, "done", "Đã tắt giọng đọc (Story)"),
@@ -5946,12 +5947,15 @@ def _execute_longform_vlog_pipeline(
             sentence_pause_sec=eff_pause,
             voice_rate_override=eff_vrate,
             phonetic_overrides=prev_lf_cfg.get("phonetic_overrides") or "",
+            content_vibe=req_vibe,
             progress_cb=_lf_voice_progress,
         )
+        sfx_cnt = int(voice_res.get("sfx_count") or 0)
+        sfx_note = f" + {sfx_cnt} SFX" if sfx_cnt > 0 else ""
         _update_pipeline(
-            step_status=(3, "done", f"{voice_res['placed_blocks']} đoạn · {voice_res['srt_lines']} dòng SRT"),
+            step_status=(3, "done", f"{voice_res['placed_blocks']} đoạn{sfx_note} · {voice_res['srt_lines']} dòng SRT"),
             percent=66,
-            log_line=f"[Bước 3/5] Hoàn tất giọng ({voice_res['preset_label']}), chừa nhịp thở B-roll & {voice_res['srt_lines']} dòng phụ đề.",
+            log_line=f"[Bước 3/5] Hoàn tất giọng ({voice_res['preset_label']}{sfx_note}), đồng bộ {voice_res['srt_lines']} dòng phụ đề.",
         )
 
     bgm_name = str(req.bgm_track or "bgm_upbeat_tiktok.wav").strip()
@@ -6041,6 +6045,7 @@ def _execute_longform_vlog_pipeline(
             face_privacy_cfg=fp_cfg,
             project_root=ACTIVE_PROJECT_ROOT,
             subtitle_lang=req_sub_lang,
+            audio_cues=(voice_res.get("audio_cues") if (not req_mute_voice and isinstance(voice_res, dict)) else None),
             keep_clip_audio=bool(getattr(req, "keep_clip_audio", False)),
         )
         lf_meta = _attach_output_assets(

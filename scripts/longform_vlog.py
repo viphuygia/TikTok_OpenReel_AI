@@ -202,10 +202,18 @@ def resolve_target_resolution(
 
 VIBE_EDITING_PROFILES: dict[str, dict[str, Any]] = {
     "detective_mystery": {
-        "shot_sec": 3.4,
-        "sentence_pause_sec": 0.35,
+        "shot_sec": 3.1,
+        "sentence_pause_sec": 0.30,
         "voice_rate_offset": "+4%",
-        "word_multiplier": 1.65,
+        "word_multiplier": 1.80,
+        "blocks_per_chap": 4,
+        "tight_pacing": True,
+        "max_block_gap_sec": 1.5,
+        "lead_gap_cap_sec": 0.8,
+        "tail_reserve_ratio": 0.08,
+        "sfx_theme": "detective",
+        "rec_hud": True,
+        "bgm_drop_on_twist": True,
         "color_preset": "cinema_contrast",
         "title_style": "detective_noir",
         "subtitle_style": "highlight_bold",
@@ -217,10 +225,18 @@ VIBE_EDITING_PROFILES: dict[str, dict[str, Any]] = {
         "chapter_sfx": True,
     },
     "field_report": {
-        "shot_sec": 3.6,
-        "sentence_pause_sec": 0.38,
+        "shot_sec": 3.3,
+        "sentence_pause_sec": 0.32,
         "voice_rate_offset": "+4%",
-        "word_multiplier": 1.60,
+        "word_multiplier": 1.70,
+        "blocks_per_chap": 4,
+        "tight_pacing": True,
+        "max_block_gap_sec": 1.4,
+        "lead_gap_cap_sec": 0.8,
+        "tail_reserve_ratio": 0.08,
+        "sfx_theme": "field_report",
+        "rec_hud": True,
+        "bgm_drop_on_twist": False,
         "color_preset": "cinema_contrast",
         "title_style": "detective_noir",
         "subtitle_style": "highlight_bold",
@@ -232,10 +248,18 @@ VIBE_EDITING_PROFILES: dict[str, dict[str, Any]] = {
         "chapter_sfx": True,
     },
     "pov_comedy": {
-        "shot_sec": 3.8,
-        "sentence_pause_sec": 0.32,
-        "voice_rate_offset": "+5%",
-        "word_multiplier": 1.48,
+        "shot_sec": 2.9,
+        "sentence_pause_sec": 0.22,
+        "voice_rate_offset": "+6%",
+        "word_multiplier": 2.15,
+        "blocks_per_chap": 5,
+        "tight_pacing": True,
+        "max_block_gap_sec": 0.85,
+        "lead_gap_cap_sec": 0.55,
+        "tail_reserve_ratio": 0.04,
+        "sfx_theme": "comedy",
+        "punch_zoom_on_sfx": True,
+        "bgm_drop_on_twist": True,
         "color_preset": "fresh_cool",
         "title_style": "comic_pop",
         "subtitle_style": "highlight_bold",
@@ -247,10 +271,16 @@ VIBE_EDITING_PROFILES: dict[str, dict[str, Any]] = {
         "chapter_sfx": True,
     },
     "creative_internet": {
-        "shot_sec": 4.0,
-        "sentence_pause_sec": 0.38,
-        "voice_rate_offset": "+4%",
-        "word_multiplier": 1.40,
+        "shot_sec": 3.5,
+        "sentence_pause_sec": 0.34,
+        "voice_rate_offset": "+5%",
+        "word_multiplier": 1.60,
+        "blocks_per_chap": 4,
+        "tight_pacing": True,
+        "max_block_gap_sec": 1.6,
+        "lead_gap_cap_sec": 0.9,
+        "tail_reserve_ratio": 0.10,
+        "sfx_theme": "comedy",
         "color_preset": "fresh_cool",
         "title_style": "comic_pop",
         "subtitle_style": "highlight_bold",
@@ -259,13 +289,16 @@ VIBE_EDITING_PROFILES: dict[str, dict[str, Any]] = {
         "motion_zoom": True,
         "vignette": False,
         "flash_cut": True,
-        "chapter_sfx": False,
+        "chapter_sfx": True,
     },
     "cinematic_deep": {
         "shot_sec": 6.4,
         "sentence_pause_sec": 0.95,
         "voice_rate_offset": "-4%",
         "word_multiplier": 0.95,
+        "ambient_swell": True,
+        "film_grain": True,
+        "sfx_theme": "cinematic",
         "color_preset": "soft_film",
         "title_style": "cinema_letterbox",
         "subtitle_style": "cinema_box",
@@ -277,6 +310,7 @@ VIBE_EDITING_PROFILES: dict[str, dict[str, Any]] = {
         "sentence_pause_sec": 0.85,
         "voice_rate_offset": "",
         "word_multiplier": 1.0,
+        "ambient_swell": True,
         "color_preset": "warm_sunset",
         "title_style": "campfire_warm",
         "subtitle_style": "warm_vlog_gold",
@@ -299,6 +333,7 @@ VIBE_EDITING_PROFILES: dict[str, dict[str, Any]] = {
         "sentence_pause_sec": 0.72,
         "voice_rate_offset": "",
         "word_multiplier": 1.05,
+        "ambient_swell": True,
         "color_preset": "warm_sunset",
         "title_style": "pastel_soft",
         "subtitle_style": "cinema_box",
@@ -571,12 +606,82 @@ def _extract_clip_preview_frame_jpg(
         return False
 
 
+_SFX_TAG_RE = re.compile(r"\[SFX:([a-z0-9_]+)\]", re.IGNORECASE)
+VALID_INLINE_SFX: set[str] = {
+    "dramatic_boom",
+    "heartbeat_low",
+    "clock_tick",
+    "suspense_sting",
+    "vine_boom",
+    "record_scratch",
+    "boing",
+    "cricket",
+    "whoosh",
+    "pop",
+    "ding",
+    "camera_shutter",
+    "typewriter_tick",
+    "riser_short",
+    "bass_drop_soft",
+}
+
+
+def _strip_inline_sfx_tags(text: str) -> tuple[str, list[str]]:
+    """Extract `[SFX:...]` tags cleanly from narration text before TTS and subtitle generation."""
+    raw = str(text or "")
+    tags: list[str] = []
+    for m in _SFX_TAG_RE.finditer(raw):
+        key = str(m.group(1) or "").strip().lower()
+        if key in VALID_INLINE_SFX:
+            tags.append(key)
+    cleaned = _SFX_TAG_RE.sub(" ", raw)
+    cleaned = re.sub(r"\s+([,.!?])", r"\1", cleaned)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    return cleaned, tags
+
+
+def _build_vibe_director_rules(content_vibe: str, n_chap: int) -> str:
+    """Return genre-specific storytelling, pacing, and `[SFX:...]` cue instructions."""
+    key = str(content_vibe or "outdoor_picnic").strip()
+    if key == "pov_comedy":
+        return (
+            "- NHỊP HÀI HƯỚC KHÔNG KHOẢNG LẶNG (POV COMEDY): Viết câu ngắn gọn, tốc độ nhanh, đối thoại nội tâm duyên dáng, KHÔNG viết câu dài lê thê kiểu văn tả cảnh.\n"
+            "- CẤU TRÚC 3 NHỊP MỖI CHƯƠNG: [1. Setup tưởng nghiêm túc] -> [2. Lật kèo / Cà khịa thực tế trong ảnh] -> [3. Punchline câu chốt 5-10 từ thật mặn mà].\n"
+            "- HIỆU ỨNG ÂM THANH (BẮT BUỘC): Chèn 1 đến 2 thẻ `[SFX:vine_boom]`, `[SFX:record_scratch]`, `[SFX:boing]`, hoặc `[SFX:cricket]` NGAY SAU dấu câu chốt của câu bất ngờ (hệ thống tự kích hoạt tiếng động & zoom mặt, KHÔNG đọc thành tiếng).\n"
+        )
+    if key == "detective_mystery":
+        return (
+            f"- CẤU TRÚC PHÁ ÁN {n_chap} HỒI (DETECTIVE MYSTERY): Chương 1 mở màn bằng Cold Open đặt nghi vấn lớn ngay lập tức; các chương giữa soi từng chi tiết nhỏ trong khung hình như manh mối + đánh lạc hướng; chương áp chót tạo Plot Twist lật ngược suy đoán; chương cuối kết mở gây tò mò.\n"
+            "- SOI BẰNG CHỨNG: Dùng `visual_cues` kiểu `pointer` chỉ thẳng vào đồ vật thật trong ảnh với nhãn kiểu `BẰNG CHỨNG #01`, `DẤU HIỆU LẠ`.\n"
+            "- HIỆU ỨNG CĂNG THẲNG (BẮT BUỘC): Chèn 1 đến 2 thẻ `[SFX:clock_tick]`, `[SFX:heartbeat_low]`, `[SFX:suspense_sting]`, hoặc `[SFX:dramatic_boom]` (ngay trước/sau cú twist để hệ thống tự ngắt nhạc nền tạo áp lực).\n"
+        )
+    if key == "field_report":
+        return (
+            "- PHONG CÁCH PHÓNG SỰ HIỆN TRƯỜNG (BREAKING NEWS): Văn phong phóng viên dứt khoát, nêu mốc thời gian / tình huống đang diễn ra trước ống kính, dẫn dắt mạch lạc giàu thông tin.\n"
+            "- HIỆU ỨNG BẢN TIN: Chèn tối đa 1-2 thẻ `[SFX:camera_shutter]` hoặc `[SFX:typewriter_tick]` khi chuyển số liệu hoặc bằng chứng mới.\n"
+        )
+    if key == "cinematic_deep":
+        return (
+            "- CHẤT THƠ ĐIỆN ẢNH (CINEMATIC DEEP): Câu văn tinh tế, giàu hình ảnh, tránh kể lể thừa thãi để nhường chỗ cho âm thanh môi trường và hình ảnh tự kể chuyện.\n"
+            "- SIGNATURE QUOTE: Ở chương cao trào giữa video, cài 1 câu chiêm nghiệm sâu sắc, ngắn gọn (<= 14 từ) có sức đọng lại lâu.\n"
+        )
+    if key == "creative_internet":
+        return (
+            "- NHỊP VIRAL TREND / REVIEW SÁNG TẠO: Mở đầu bằng hook tò mò ngay câu đầu tiên, đưa ra nhận xét thú vị / xếp hạng / góc nhìn độc đáo; có thể chèn `[SFX:pop]`, `[SFX:whoosh]`, hoặc `[SFX:vine_boom]` ở điểm nhấn.\n"
+        )
+    return "- GIỮ NHỊP KỂ TỰ NHIÊN: Bám sát diễn biến từng chương một cách gần gũi, chân thực.\n"
+
+
 def _deduplicate_sentences(text: str, seen: list[str]) -> str:
     """Remove duplicate or near-duplicate sentences (SequenceMatcher > 0.78) across chapters."""
     sents = [s.strip() for s in re.split(r"(?<=[.!?])\s+", (text or "").strip()) if s.strip()]
     kept: list[str] = []
     for s in sents:
-        norm = re.sub(r"[^\w\s]", "", s.lower()).strip()
+        plain = _SFX_TAG_RE.sub(" ", s).strip()
+        if not plain and kept:
+            kept[-1] = f"{kept[-1]} {s}".strip()
+            continue
+        norm = re.sub(r"[^\w\s]", "", plain.lower()).strip()
         if not norm:
             continue
         is_dup = any(SequenceMatcher(None, norm, prev).ratio() >= 0.78 for prev in seen)
@@ -624,9 +729,10 @@ def generate_longform_chapter_script(
     total_dur = float(plan.get("target_duration_sec") or 300.0)
     # Scale narration density by Vibe Editing Profile (e.g. +30% for Detective/Field Report, calm for Camping)
     word_mult = float(vp_prof.get("word_multiplier") or 1.0)
-    target_total_words = max(120, min(1850, int(round(total_dur * 1.05 * word_mult))))
+    target_total_words = max(120, min(2200, int(round(total_dur * 1.05 * word_mult))))
     words_per_chap = max(38, int(round(target_total_words / max(1, n_chap))))
-    blocks_per_chap = 4 if word_mult >= 1.35 else 2
+    blocks_per_chap = int(vp_prof.get("blocks_per_chap") or (4 if word_mult >= 1.35 else 2))
+    director_rules = _build_vibe_director_rules(content_vibe, n_chap)
 
     segments_plan = plan.get("segments") or []
     clip_summary = ", ".join(
@@ -717,7 +823,8 @@ def generate_longform_chapter_script(
         "YÊU CẦU CỰC KỲ QUAN TRỌNG:\n"
         "- ĐÚNG NGỮ CẢNH TỪNG CHƯƠNG: Lời bình của Chương nào CHỈ được mô tả đúng hình ảnh thực tế của Chương đó (dựa trên các khung hình được gắn nhãn [Chương X]). TUYỆT ĐỐI không kể trước sự việc của Chương sau (ví dụ chưa đốt lửa thì không được nói lửa tắt).\n"
         "- PHONG CÁCH ĐẠO DIỄN: Nếu Chủ đề/Ghi chú có chỉ định vai diễn đột phá (như Thám tử điều tra, POV Hài hước, Phóng sự kịch tính...), hãy nhập vai TRIỆT ĐỂ giọng điệu đó (đặt câu hỏi bí ẩn, châm biếm duyên dáng hoặc dẫn dắt hồi hộp); nếu không chỉ định thì giữ giọng kể chuyện tự nhiên.\n"
-        f"- Tổng lời thoại toàn video khoảng {target_total_words} từ (~{words_per_chap} từ mỗi chương, chia thành {blocks_per_chap} đoạn ngắn 22-30 từ/đoạn rải đều trong chương).\n"
+        f"{director_rules}"
+        f"- Tổng lời thoại toàn video khoảng {target_total_words} từ (~{words_per_chap} từ mỗi chương, chia thành {blocks_per_chap} đoạn ngắn 18-28 từ/đoạn rải đều trong chương).\n"
         "- Viết dàn trải đều cho TẤT CẢ các chương từ đầu tới cuối video, không dồn chữ vào đầu video.\n"
         "- TUYỆT ĐỐI KHÔNG lặp lại câu văn hoặc ý diễn đạt giữa các chương.\n"
         "- TUYỆT ĐỐI KHÔNG nhắc giỏ hàng, chốt đơn, freeship hay bán hàng.\n"
@@ -1026,14 +1133,16 @@ def generate_longform_chapter_script(
         if ci == n_chap - 1 and n_chap > 2:
             phase_key = "closing"
 
-        for bi, blk in enumerate(raw_blocks[:4]):
+        max_blks = max(4, blocks_per_chap)
+        for bi, blk in enumerate(raw_blocks[:max_blks]):
             if not isinstance(blk, dict):
                 continue
             deduped = _deduplicate_sentences(str(blk.get("text") or ""), seen_norms)
             if deduped:
+                def_off = round(0.12 + bi * (0.72 / max(1, max_blks - 1)), 2) if max_blks > 1 else 0.14
                 clean_blocks.append(
                     {
-                        "offset_ratio": float(blk.get("offset_ratio") if blk.get("offset_ratio") is not None else (0.14 + bi * 0.42)),
+                        "offset_ratio": float(blk.get("offset_ratio") if blk.get("offset_ratio") is not None else def_off),
                         "text": deduped,
                     }
                 )
@@ -1177,7 +1286,8 @@ def _split_display_caption_lines(text: str, max_words: int = 9) -> list[str]:
 
 
 def _clean_tts_text(text: str) -> str:
-    txt = re.sub(r"[*_`~#\[\](){}<>]", " ", str(text or ""))
+    txt = _SFX_TAG_RE.sub(" ", str(text or ""))
+    txt = re.sub(r"[*_`~#\[\](){}<>]", " ", txt)
     txt = re.sub(r"\s+", " ", txt).strip()
     return txt
 
@@ -1227,6 +1337,150 @@ def _vlog_edge_rate(raw_rate: str, override_rate: str = "") -> str:
     return "-5%"
 
 
+def _compute_chapter_pacing(
+    win_st: float,
+    win_en: float,
+    ch_blocks: list[dict[str, Any]],
+    vp_prof: dict[str, Any],
+) -> tuple[float, float]:
+    """Compute `(lead_gap, gap_after_each)` honoring tight pacing caps for comedy/thriller vibes."""
+    ch_span = max(0.5, win_en - win_st)
+    ch_speech = sum(float(b["duration"]) for b in ch_blocks)
+    n_c = len(ch_blocks)
+    free_pool = max(0.0, ch_span - ch_speech)
+    tight = bool(vp_prof.get("tight_pacing"))
+
+    if tight:
+        lead_cap = float(vp_prof.get("lead_gap_cap_sec") or 0.65)
+        max_gap = float(vp_prof.get("max_block_gap_sec") or 1.2)
+        tail_ratio = float(vp_prof.get("tail_reserve_ratio") or 0.06)
+        if n_c <= 1:
+            off_r = max(0.0, min(0.75, float(ch_blocks[0].get("offset_ratio") or 0.10))) if ch_blocks else 0.10
+            lead_gap = min(lead_cap, free_pool * 0.35, ch_span * off_r * 0.35)
+            return round(lead_gap, 3), 0.0
+        lead_gap = min(lead_cap, free_pool * 0.08)
+        tail_reserve = min(lead_cap * 1.4, free_pool * tail_ratio)
+        raw_gap = (free_pool - lead_gap - tail_reserve) / float(max(1, n_c - 1))
+        gap_after_each = max(0.22, min(max_gap, raw_gap))
+        return round(lead_gap, 3), round(gap_after_each, 3)
+
+    if n_c == 1:
+        off_r = max(0.0, min(0.75, float(ch_blocks[0].get("offset_ratio") or 0.14)))
+        lead_gap = min(free_pool * 0.45, ch_span * off_r * 0.45)
+        return round(lead_gap, 3), 0.0
+
+    lead_gap = (free_pool / float(n_c)) * 0.28
+    gap_after_each = (free_pool - lead_gap) / float(max(1, n_c - 1)) if n_c > 1 else 0.0
+    if n_c >= 2 and free_pool > 2.5:
+        lead_gap = free_pool * 0.14
+        tail_reserve = free_pool * 0.22
+        gap_after_each = max(0.8, (free_pool - lead_gap - tail_reserve) / float(n_c - 1))
+    return round(lead_gap, 3), round(gap_after_each, 3)
+
+
+def _mix_sfx_into_master_wav(
+    wav_path: Path,
+    sfx_events: list[dict[str, Any]],
+    volume_scale: float = 0.62,
+) -> int:
+    """Overlay scheduled SFX WAVs onto mastered mono WAV without touching Faster-Whisper alignment."""
+    if not sfx_events or not wav_path.exists():
+        return 0
+    try:
+        from generate_audio_assets import ensure_audio_assets
+
+        sfx_map = ensure_audio_assets(force_soft=False)
+    except Exception:
+        return 0
+
+    pcm, sr = sf.read(str(wav_path), dtype="float32")
+    arr = np.asarray(pcm, dtype=np.float32)
+    if arr.ndim > 1:
+        arr = np.mean(arr, axis=1).astype(np.float32)
+    n_tot = len(arr)
+    if n_tot < int(sr * 0.5):
+        return 0
+
+    cache: dict[str, np.ndarray] = {}
+    last_placed: dict[str, float] = {}
+    mixed = 0
+    for ev in sorted(sfx_events, key=lambda x: float(x.get("time_sec") or 0.0)):
+        key = str(ev.get("sfx") or "").strip().lower()
+        t_sec = max(0.0, float(ev.get("time_sec") or 0.0))
+        gain = float(ev.get("gain") or volume_scale)
+        p = sfx_map.get(key)
+        if not p or not Path(p).exists():
+            continue
+        if key in last_placed and abs(t_sec - last_placed[key]) < 0.45:
+            continue
+        if key not in cache:
+            try:
+                spcm, ssr = sf.read(str(p), dtype="float32")
+                sarr = np.asarray(spcm, dtype=np.float32)
+                if sarr.ndim > 1:
+                    sarr = np.mean(sarr, axis=1).astype(np.float32)
+                if int(ssr) != int(sr) and len(sarr) >= 2:
+                    new_len = max(1, int(round(len(sarr) * float(sr) / float(ssr))))
+                    x_old = np.linspace(0.0, 1.0, len(sarr), endpoint=False)
+                    x_new = np.linspace(0.0, 1.0, new_len, endpoint=False)
+                    sarr = np.interp(x_new, x_old, sarr).astype(np.float32)
+                cache[key] = sarr
+            except Exception:
+                cache[key] = np.zeros(0, dtype=np.float32)
+        swav = cache[key]
+        if len(swav) == 0:
+            continue
+        st_idx = int(round(t_sec * sr))
+        if st_idx >= n_tot:
+            continue
+        copy_n = min(len(swav), n_tot - st_idx)
+        if copy_n <= 0:
+            continue
+        arr[st_idx : st_idx + copy_n] += swav[:copy_n] * gain
+        last_placed[key] = t_sec
+        mixed += 1
+
+    if mixed > 0:
+        tmp_out = wav_path.with_name(f"{wav_path.stem}_sfx_tmp.wav")
+        sf.write(str(tmp_out), np.clip(arr, -0.96, 0.96), int(sr))
+        os.replace(str(tmp_out), str(wav_path))
+    return mixed
+
+
+def _build_audio_cues(
+    sfx_events: list[dict[str, Any]],
+    vp_prof: dict[str, Any],
+    total_dur: float,
+) -> dict[str, Any]:
+    """Compute BGM audio drop windows and punch-zoom windows from scheduled SFX events."""
+    raw_drops: list[tuple[float, float]] = []
+    punch_zooms: list[list[float]] = []
+    allow_bgm_drop = bool(vp_prof.get("bgm_drop_on_twist"))
+    allow_punch = bool(vp_prof.get("punch_zoom_on_sfx"))
+
+    for ev in sorted(sfx_events, key=lambda x: float(x.get("time_sec") or 0.0)):
+        key = str(ev.get("sfx") or "").strip().lower()
+        t_sec = float(ev.get("time_sec") or 0.0)
+        if (allow_bgm_drop and key in ("dramatic_boom", "record_scratch", "suspense_sting")) or key in ("dramatic_boom", "record_scratch"):
+            ds = max(0.5, round(t_sec - 0.85, 2))
+            de = min(max(ds + 0.3, total_dur - 0.3), round(t_sec + 0.15, 2))
+            raw_drops.append((ds, de))
+        if allow_punch and key in ("vine_boom", "record_scratch", "boing", "cricket"):
+            ps = max(0.0, round(t_sec - 0.15, 2))
+            pe = min(total_dur, round(t_sec + 0.60, 2))
+            if pe > ps and len(punch_zooms) < 8:
+                punch_zooms.append([ps, pe])
+
+    merged_drops: list[list[float]] = []
+    for ds, de in raw_drops:
+        if merged_drops and ds <= merged_drops[-1][1] + 0.2:
+            merged_drops[-1][1] = max(merged_drops[-1][1], de)
+        elif len(merged_drops) < 6:
+            merged_drops.append([ds, de])
+
+    return {"bgm_drops": merged_drops, "punch_zooms": punch_zooms}
+
+
 def build_longform_voice_and_srt(
     chapter_script: dict[str, Any],
     plan: dict[str, Any],
@@ -1236,6 +1490,7 @@ def build_longform_voice_and_srt(
     sentence_pause_sec: float = 0.85,
     voice_rate_override: str = "",
     phonetic_overrides: str | dict[str, str] | None = None,
+    content_vibe: str = "outdoor_picnic",
     progress_cb: Any = None,
 ) -> dict[str, Any]:
     """Synthesize calm sentence-spaced vlog narration distributed evenly across the entire video."""
@@ -1477,9 +1732,13 @@ def build_longform_voice_and_srt(
                 raw_sents = [s.strip() for s in re.split(r"(?<=[.!?])\s+", disp_txt) if s.strip()] or [disp_txt]
                 sent_pcms: list[np.ndarray] = []
                 sent_disp: list[str] = []
-                for si, s_disp in enumerate(raw_sents, start=1):
+                sent_tags_list: list[list[str]] = []
+                for si, s_raw in enumerate(raw_sents, start=1):
+                    s_disp, s_tags = _strip_inline_sfx_tags(s_raw)
                     s_speak = _clean_tts_text(_apply_phonetic_overrides(s_disp, phonetic_pairs))
                     if not s_speak:
+                        if s_tags and sent_tags_list:
+                            sent_tags_list[-1].extend(s_tags)
                         continue
                     s_wav = tmp_p / f"ch{ch_idx}_b{bi}_s{si}.wav"
                     if not _synth_one_sentence(s_speak, s_wav):
@@ -1489,21 +1748,23 @@ def build_longform_voice_and_srt(
                     if len(pcm_1d) >= 300:
                         sent_pcms.append(pcm_1d)
                         sent_disp.append(s_disp)
+                        sent_tags_list.append(s_tags)
                 if not sent_pcms:
                     continue
 
-                # Join sentences with 0.85s calm breathing pause
                 pause_arr = np.zeros(int(round(sentence_pause_sec * sr)), dtype=np.float32)
                 joined_parts: list[np.ndarray] = []
                 sent_offsets: list[tuple[float, float, str]] = []
+                sent_sfx: list[list[str]] = []
                 cur_offset = 0.0
-                for idx_s, (spcm, sdisp) in enumerate(zip(sent_pcms, sent_disp)):
+                for idx_s, (spcm, sdisp, stags) in enumerate(zip(sent_pcms, sent_disp, sent_tags_list)):
                     if idx_s > 0:
                         joined_parts.append(pause_arr)
                         cur_offset += sentence_pause_sec
                     sdur = len(spcm) / float(sr)
                     joined_parts.append(spcm)
                     sent_offsets.append((cur_offset, cur_offset + sdur, sdisp))
+                    sent_sfx.append(list(stags))
                     cur_offset += sdur
 
                 blk_pcm = np.concatenate(joined_parts)
@@ -1514,6 +1775,7 @@ def build_longform_voice_and_srt(
                         "pcm": blk_pcm,
                         "duration": len(blk_pcm) / float(sr),
                         "sent_offsets": sent_offsets,
+                        "sent_sfx": sent_sfx,
                     }
                 )
 
@@ -1525,16 +1787,17 @@ def build_longform_voice_and_srt(
                 torch.cuda.empty_cache()
         except Exception:
             pass
-            pass
     if f5_tmp_dir_obj is not None:
         try:
             f5_tmp_dir_obj.cleanup()
         except Exception:
             pass
 
-    # Pass 2: Chapter-Locked Placement — keep each chapter's narration strictly inside its own [start_sec .. end_sec]
-    safe_start = 4.8 if total_dur >= 20.0 else 0.3
-    safe_end = max(safe_start + 3.0, total_dur - (6.5 if total_dur >= 20.0 else 0.4))
+    # Pass 2: Chapter-Locked Placement — keep each chapter's narration inside [start_sec .. end_sec]
+    vp_prof = get_vibe_editing_profile(content_vibe)
+    tight_mode = bool(vp_prof.get("tight_pacing"))
+    safe_start = (4.4 if tight_mode else 4.8) if total_dur >= 20.0 else 0.3
+    safe_end = max(safe_start + 3.0, total_dur - ((5.2 if tight_mode else 6.5) if total_dur >= 20.0 else 0.4))
 
     chapters_plan = plan.get("chapters") or []
     chap_windows: dict[int, tuple[float, float]] = {}
@@ -1544,8 +1807,10 @@ def build_longform_voice_and_srt(
         raw_en = float(ch.get("end_sec") or total_dur)
         is_first = ci == 0
         is_last = ci == len(chapters_plan) - 1
-        win_st = max(safe_start if is_first else raw_st + 2.0, raw_st + (1.0 if is_first else 2.0))
-        win_en = min(safe_end if is_last else raw_en - 1.4, raw_en - (1.0 if is_last else 1.4))
+        in_pad = 0.65 if tight_mode else (1.0 if is_first else 2.0)
+        out_pad = 0.45 if tight_mode else (1.0 if is_last else 1.4)
+        win_st = max(safe_start if is_first else raw_st + in_pad, raw_st + in_pad)
+        win_en = min(safe_end if is_last else raw_en - out_pad, raw_en - out_pad)
         if win_en <= win_st + 1.2:
             win_st = max(safe_start, raw_st + 0.5)
             win_en = min(safe_end, max(win_st + 1.5, raw_en - 0.5))
@@ -1557,28 +1822,15 @@ def build_longform_voice_and_srt(
 
     placed_blocks = 0
     placed_sentences: list[tuple[float, float, str]] = []
+    sfx_events: list[dict[str, Any]] = []
+    chaps_with_inline_sfx: set[int] = set()
+    chap_sent_windows: dict[int, list[tuple[float, float]]] = {}
+
     for ch_idx in sorted(blocks_by_chap.keys()):
         ch_blocks = blocks_by_chap[ch_idx]
         win_st, win_en = chap_windows.get(ch_idx, (safe_start, safe_end))
-        ch_span = max(0.5, win_en - win_st)
-        ch_speech = sum(float(b["duration"]) for b in ch_blocks)
-        n_c = len(ch_blocks)
-        free_pool = max(0.0, ch_span - ch_speech)
-
-        if n_c == 1:
-            off_r = max(0.0, min(0.75, float(ch_blocks[0].get("offset_ratio") or 0.14)))
-            lead_gap = min(free_pool * 0.45, ch_span * off_r * 0.45)
-            cursor_t = win_st + lead_gap
-            gap_after_each = 0.0
-        else:
-            lead_gap = (free_pool / float(n_c)) * 0.28
-            gap_after_each = (free_pool - lead_gap) / float(max(1, n_c - 1)) if n_c > 1 else 0.0
-            # Keep last block comfortably before win_en so trailing B-roll breathes
-            if n_c >= 2 and free_pool > 2.5:
-                lead_gap = free_pool * 0.14
-                tail_reserve = free_pool * 0.22
-                gap_after_each = max(0.8, (free_pool - lead_gap - tail_reserve) / float(n_c - 1))
-            cursor_t = win_st + lead_gap
+        lead_gap, gap_after_each = _compute_chapter_pacing(win_st, win_en, ch_blocks, vp_prof)
+        cursor_t = win_st + lead_gap
 
         for b_info in ch_blocks:
             b_pcm = b_info["pcm"]
@@ -1593,12 +1845,24 @@ def build_longform_voice_and_srt(
             master_samples[st_idx:en_idx] += b_pcm[:copy_len]
             placed_blocks += 1
 
-            for s_off_st, s_off_en, s_disp in b_info["sent_offsets"]:
+            b_sfx_list = b_info.get("sent_sfx") or []
+            for s_i, (s_off_st, s_off_en, s_disp) in enumerate(b_info["sent_offsets"]):
                 abs_st = cursor_t + s_off_st
                 abs_en = min(cursor_t + s_off_en, cursor_t + copy_len / float(sr))
                 if abs_en <= abs_st + 0.15:
                     continue
                 placed_sentences.append((abs_st, abs_en, s_disp))
+                chap_sent_windows.setdefault(ch_idx, []).append((abs_st, abs_en))
+                s_tags = b_sfx_list[s_i] if s_i < len(b_sfx_list) else []
+                for tg in s_tags:
+                    sfx_events.append(
+                        {
+                            "chapter_index": ch_idx,
+                            "time_sec": round(min(total_dur - 0.5, abs_en + 0.04), 2),
+                            "sfx": tg,
+                        }
+                    )
+                    chaps_with_inline_sfx.add(ch_idx)
 
             cursor_t += (copy_len / float(sr)) + gap_after_each
 
@@ -1697,12 +1961,61 @@ def build_longform_voice_and_srt(
     out_srt_path.parent.mkdir(parents=True, exist_ok=True)
     out_srt_path.write_text("\n".join(srt_blocks), encoding="utf-8")
 
+    # Add chapter-start SFX and per-chapter fallback beat SFX after Whisper alignment
+    sfx_theme = str(vp_prof.get("sfx_theme") or "").strip().lower()
+    if bool(vp_prof.get("chapter_sfx")):
+        chap_sfx_key = {
+            "detective": "riser_short",
+            "field_report": "camera_shutter",
+            "comedy": "pop",
+            "cinematic": "swoosh_soft",
+        }.get(sfx_theme, "swoosh_soft")
+        for ci, ch in enumerate(chapters_plan):
+            if ci == 0:
+                continue
+            ch_st = float(ch.get("start_sec") or 0.0)
+            if 1.0 < ch_st < total_dur - 1.0:
+                sfx_events.append(
+                    {
+                        "chapter_index": int(ch.get("index") or (ci + 1)),
+                        "time_sec": round(ch_st + 0.08, 2),
+                        "sfx": chap_sfx_key,
+                        "gain": 0.45,
+                    }
+                )
+
+    if sfx_theme in ("comedy", "detective", "field_report"):
+        fallback_cycle = {
+            "comedy": ("vine_boom", "boing", "record_scratch", "cricket"),
+            "detective": ("clock_tick", "heartbeat_low", "suspense_sting", "dramatic_boom"),
+            "field_report": ("camera_shutter", "typewriter_tick"),
+        }[sfx_theme]
+        for ch_idx_fb, swins in sorted(chap_sent_windows.items()):
+            if ch_idx_fb in chaps_with_inline_sfx or not swins:
+                continue
+            pick_idx = min(len(swins) - 1, max(0, len(swins) // 2))
+            _, s_en_t = swins[pick_idx]
+            if 1.0 < s_en_t < total_dur - 0.6:
+                sfx_events.append(
+                    {
+                        "chapter_index": ch_idx_fb,
+                        "time_sec": round(min(total_dur - 0.5, s_en_t + 0.04), 2),
+                        "sfx": fallback_cycle[(ch_idx_fb - 1) % len(fallback_cycle)],
+                        "gain": 0.58,
+                    }
+                )
+
+    sfx_mixed = _mix_sfx_into_master_wav(out_wav_path, sfx_events, volume_scale=0.62)
+    audio_cues = _build_audio_cues(sfx_events, vp_prof, total_dur=total_dur)
+
     return {
         "ok": True,
         "placed_blocks": placed_blocks,
         "srt_lines": len(srt_entries),
         "preset_id": preset.get("id"),
         "preset_label": preset.get("label"),
+        "sfx_count": sfx_mixed,
+        "audio_cues": audio_cues,
     }
 
 
@@ -2308,12 +2621,26 @@ def render_longform_ffmpeg_vlog(
     face_privacy_cfg: dict[str, Any] | None = None,
     project_root: Path | None = None,
     subtitle_lang: str = "vi",
+    audio_cues: dict[str, Any] | None = None,
     progress_cb: Any = None,
 ) -> dict[str, Any]:
     """Render 4K/2K/1080p Vlog master with Remotion transparent overlays, sidechain ducking, & crisp ASS subs."""
     vp_prof = get_vibe_editing_profile(content_vibe)
     use_zoom = bool(enable_motion_zoom) and bool(vp_prof.get("motion_zoom"))
     use_vignette = (not bool(disable_vibe_filter)) and bool(vp_prof.get("vignette"))
+    use_grain = (not bool(disable_vibe_filter)) and bool(vp_prof.get("film_grain"))
+    ambient_swell = bool(vp_prof.get("ambient_swell"))
+    cues_dict = audio_cues if isinstance(audio_cues, dict) else {}
+    punch_zoom_wins = [
+        (float(w[0]), float(w[1]))
+        for w in (cues_dict.get("punch_zooms") or [])
+        if isinstance(w, (list, tuple)) and len(w) >= 2 and float(w[1]) > float(w[0])
+    ]
+    bgm_drop_wins = [
+        (float(w[0]), float(w[1]))
+        for w in (cues_dict.get("bgm_drops") or [])
+        if isinstance(w, (list, tuple)) and len(w) >= 2 and float(w[1]) > float(w[0])
+    ]
     if disable_vibe_filter:
         color_preset = "natural"
     use_flash = bool(vp_prof.get("flash_cut"))
@@ -2340,19 +2667,26 @@ def render_longform_ffmpeg_vlog(
             src_p = Path(seg["abs_path"])
             st = float(seg.get("start") or 0.0)
             dur = max(0.5, round(float(seg.get("duration") or 3.0) * 30.0) / 30.0)
+            seg_tl_st = float(seg.get("timeline_start") or 0.0)
+            seg_tl_en = float(seg.get("timeline_end") or (seg_tl_st + dur))
+            has_punch = (not bool(disable_vibe_filter)) and bool(vp_prof.get("punch_zoom_on_sfx")) and any(
+                not (pz_en < seg_tl_st or pz_st > seg_tl_en) for pz_st, pz_en in punch_zoom_wins
+            )
             seg_out = tmp_path / f"seg_{idx:04d}.mp4"
             fade_part = ",fade=t=in:st=0:d=0.35" if (seg.get("is_chapter_start") and idx > 1) else (",fade=t=in:st=0:d=0.14" if (use_flash and idx > 1) else "")
             color_filter = COLOR_PRESET_FILTERS.get(str(color_preset or "natural"), COLOR_PRESET_FILTERS["natural"])
-            zoom_expr = (
-                f",zoompan=z='min(1.07,1+0.065*it/{dur:.3f})':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:s={target_w}x{target_h}:fps=30"
-                if (use_zoom and idx % 2 == 1)
-                else ""
-            )
+            if has_punch:
+                zoom_expr = f",zoompan=z='min(1.13,1+0.12*it/{dur:.3f})':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:s={target_w}x{target_h}:fps=30"
+            elif use_zoom and idx % 2 == 1:
+                zoom_expr = f",zoompan=z='min(1.07,1+0.065*it/{dur:.3f})':x='iw/2-(iw/zoom/2)':y='ih/2-(ih/zoom/2)':d=1:s={target_w}x{target_h}:fps=30"
+            else:
+                zoom_expr = ""
             vig_expr = ",vignette=PI/4.8" if use_vignette else ""
+            grain_expr = ",noise=alls=4:allf=t+u" if use_grain else ""
             vf = (
                 f"crop='min(iw,ih*{target_w}/{target_h})':'min(ih,iw*{target_h}/{target_w})',"
                 f"scale={target_w}:{target_h}:flags=lanczos{zoom_expr},unsharp=3:3:0.35:3:3:0.0,"
-                f"{color_filter}{vig_expr},setsar=1,fps=30,format=yuv420p{fade_part}"
+                f"{color_filter}{vig_expr}{grain_expr},setsar=1,fps=30,format=yuv420p{fade_part}"
             )
             color_tags = ["-colorspace", "bt709", "-color_primaries", "bt709", "-color_trc", "bt709"]
             if keep_clip_audio and not _has_audio_stream(ffprobe_bin, src_p):
@@ -2369,7 +2703,8 @@ def render_longform_ffmpeg_vlog(
                     "-vf", vf, "-c:v", vcodec_seg, *vargs_seg, "-pix_fmt", "yuv420p", *color_tags,
                 ]
                 if keep_clip_audio:
-                    cmd.extend(["-af", "aresample=44100,volume=0.45", "-c:a", "aac", "-ar", "44100", "-ac", "2", "-b:a", "192k"])
+                    seg_audio_vol = "0.85" if ambient_swell else "0.45"
+                    cmd.extend(["-af", f"aresample=44100,volume={seg_audio_vol}", "-c:a", "aac", "-ar", "44100", "-ac", "2", "-b:a", "192k"])
                 else:
                     cmd.append("-an")
                 cmd.append(str(seg_out))
@@ -2441,6 +2776,35 @@ def render_longform_ffmpeg_vlog(
                 filter_parts.append(f"[{cur_v}]ass='{ass_esc}'[vsub]")
                 cur_v = "vsub"
 
+            if is_last_pass and (not bool(disable_vibe_filter)) and bool(vp_prof.get("rec_hud")):
+                hud_font = next(
+                    (
+                        fp
+                        for fp in (
+                            PROJECT_ROOT / "assets" / "fonts" / "Oswald-Bold.ttf",
+                            PROJECT_ROOT / "assets" / "fonts" / "BeVietnamPro-Black.ttf",
+                        )
+                        if fp.exists()
+                    ),
+                    None,
+                )
+                if hud_font is not None:
+                    sc = max(1.0, min(2.2, float(max(target_w, target_h)) / 1920.0))
+                    hx = int(round(30 * sc))
+                    hy = int(round((84 if target_h > target_w else 26) * sc))
+                    hw = int(round((220 if str(content_vibe) == "field_report" else 196) * sc))
+                    hh = int(round(36 * sc))
+                    dot_sz = int(round(11 * sc))
+                    fs_hud = int(round(18 * sc))
+                    hud_lbl = "LIVE  HIEN TRUONG" if str(content_vibe) == "field_report" else "REC  CASE FILE"
+                    font_esc = hud_font.resolve().as_posix().replace(":", "\\:")
+                    filter_parts.append(
+                        f"[{cur_v}]drawbox=x={hx}:y={hy}:w={hw}:h={hh}:color=black@0.48:t=fill,"
+                        f"drawbox=x={hx + int(round(12 * sc))}:y={hy + (hh - dot_sz) // 2}:w={dot_sz}:h={dot_sz}:color=#EF4444@0.95:t=fill:enable='lt(mod(t,1.2),0.75)',"
+                        f"drawtext=fontfile='{font_esc}':text='{hud_lbl}':fontcolor=white@0.95:fontsize={fs_hud}:x={hx + int(round(32 * sc))}:y={hy + (hh - fs_hud) // 2}[vhud]"
+                    )
+                    cur_v = "vhud"
+
             for oi, (in_idx, st_sec, dur_ov) in enumerate(ov_inputs):
                 ov_lbl = f"ov{oi}"
                 out_lbl = f"vov{oi}"
@@ -2493,10 +2857,17 @@ def render_longform_ffmpeg_vlog(
             # Audio pipeline with true sidechain ducking when narration speaks
             bed_labels: list[str] = []
             if keep_clip_audio:
-                filter_parts.append("[0:a]aresample=44100,aformat=channel_layouts=stereo,volume=0.45[clipa]")
+                clip_bed_vol = "0.90" if ambient_swell else "0.45"
+                filter_parts.append(f"[0:a]aresample=44100,aformat=channel_layouts=stereo,volume={clip_bed_vol}[clipa]")
                 bed_labels.append("[clipa]")
             if bgm_idx is not None:
-                filter_parts.append(f"[{bgm_idx}:a]aresample=44100,aformat=channel_layouts=stereo,volume={float(bgm_volume):.3f}[bgma]")
+                base_bgm_vol = float(bgm_volume)
+                if bgm_drop_wins:
+                    drop_cond = "+".join(f"between(t,{ds:.2f},{de:.2f})" for ds, de in bgm_drop_wins)
+                    bgm_vol_expr = f"volume='if({drop_cond},0.02,{base_bgm_vol:.3f})':eval=frame"
+                else:
+                    bgm_vol_expr = f"volume={base_bgm_vol:.3f}"
+                filter_parts.append(f"[{bgm_idx}:a]aresample=44100,aformat=channel_layouts=stereo,{bgm_vol_expr}[bgma]")
                 bed_labels.append("[bgma]")
 
             a_map = ""
