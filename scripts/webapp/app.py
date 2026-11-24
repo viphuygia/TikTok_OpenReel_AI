@@ -4872,9 +4872,31 @@ def _resolve_effective_disclaimer(req: OneClickPipelineReq, cur_vibe: str, is_ra
     return raw_txt
 
 
+FACE_SCAN_LOCK = threading.Lock()
+FACE_SCAN_JOBS: dict[str, dict[str, Any]] = {}
+
+
+def _default_face_scan_job() -> dict[str, Any]:
+    return {
+        "status": "idle",
+        "done_clips": 0,
+        "total_clips": 0,
+        "current_clip": "",
+        "error": "",
+        "updated_at": 0,
+    }
+
+
+def _get_face_scan_job(pid: str) -> dict[str, Any]:
+    with FACE_SCAN_LOCK:
+        job = FACE_SCAN_JOBS.get(pid)
+        return dict(job) if isinstance(job, dict) else _default_face_scan_job()
+
+
 class FacePrivacyScanReq(BaseModel):
     project_id: str = ""
     force: bool = True
+    background: bool = True
 
 
 class FacePrivacyConfigReq(BaseModel):
@@ -4922,12 +4944,15 @@ def api_face_privacy_state(project_id: str | None = None):
     st = _fp.load_face_privacy_state(p_root)
     faces_ui = _fp._strip_embeddings_for_ui(st.get("faces") or [])
     ts = int(st.get("updated_at") or 0)
+    clip_sig = st.get("clip_signature") or []
     return {
         "ok": True,
         "project_id": pid,
         "updated_at": ts,
+        "clip_count": len(clip_sig) if isinstance(clip_sig, list) else 0,
         "faces": _attach_face_thumb_urls(faces_ui, pid, ts),
         "config": st.get("config") or dict(_fp.DEFAULT_FACE_PRIVACY_CONFIG),
+        "scan_job": _get_face_scan_job(pid),
     }
 
 
@@ -4937,10 +4962,85 @@ def api_face_privacy_scan(req: FacePrivacyScanReq):
 
     pid = str(req.project_id or "").strip() or ACTIVE_PROJECT_ID
     p_root = get_project_root(pid)
-    res = _fp.scan_project_faces(p_root, force=bool(req.force))
-    ts = int(res.get("updated_at") or int(time.time()))
-    res["faces"] = _attach_face_thumb_urls(res.get("faces") or [], pid, ts)
-    return {"ok": True, "project_id": pid, **res}
+    force = bool(req.force)
+
+    if not req.background:
+        res = _fp.scan_project_faces(p_root, force=force)
+        ts = int(res.get("updated_at") or int(time.time()))
+        clip_cnt = int(res.get("clip_count") or 0)
+        res["faces"] = _attach_face_thumb_urls(res.get("faces") or [], pid, ts)
+        job_snap = {
+            "status": "done",
+            "done_clips": clip_cnt,
+            "total_clips": clip_cnt,
+            "current_clip": "",
+            "error": "",
+            "cached": bool(res.get("cached")),
+            "faces_count": len(res.get("faces") or []),
+            "updated_at": ts,
+        }
+        with FACE_SCAN_LOCK:
+            FACE_SCAN_JOBS[pid] = dict(job_snap)
+        return {"ok": True, "project_id": pid, "already_running": False, "scan_job": job_snap, **res}
+
+    with FACE_SCAN_LOCK:
+        cur_job = FACE_SCAN_JOBS.get(pid)
+        if isinstance(cur_job, dict) and cur_job.get("status") == "running":
+            return {"ok": True, "project_id": pid, "already_running": True, "scan_job": dict(cur_job)}
+        now_ts = int(time.time())
+        FACE_SCAN_JOBS[pid] = {
+            "status": "running",
+            "done_clips": 0,
+            "total_clips": 0,
+            "current_clip": "",
+            "error": "",
+            "started_at": now_ts,
+            "updated_at": now_ts,
+        }
+
+    def _bg_worker() -> None:
+        def _on_prog(done: int, total: int, clip_name: str) -> None:
+            with FACE_SCAN_LOCK:
+                job = FACE_SCAN_JOBS.get(pid)
+                if isinstance(job, dict) and job.get("status") == "running":
+                    job["done_clips"] = int(done)
+                    job["total_clips"] = int(total)
+                    job["current_clip"] = str(clip_name or "")
+                    job["updated_at"] = int(time.time())
+
+        try:
+            res = _fp.scan_project_faces(p_root, force=force, progress_cb=_on_prog)
+            clip_cnt = int(res.get("clip_count") or 0)
+            with FACE_SCAN_LOCK:
+                FACE_SCAN_JOBS[pid] = {
+                    "status": "done",
+                    "done_clips": clip_cnt,
+                    "total_clips": clip_cnt,
+                    "current_clip": "",
+                    "error": "",
+                    "cached": bool(res.get("cached")),
+                    "faces_count": len(res.get("faces") or []),
+                    "updated_at": int(time.time()),
+                }
+        except Exception as exc:
+            with FACE_SCAN_LOCK:
+                cur = FACE_SCAN_JOBS.get(pid) or {}
+                FACE_SCAN_JOBS[pid] = {
+                    "status": "error",
+                    "done_clips": int(cur.get("done_clips") or 0),
+                    "total_clips": int(cur.get("total_clips") or 0),
+                    "current_clip": str(cur.get("current_clip") or ""),
+                    "error": str(exc),
+                    "updated_at": int(time.time()),
+                }
+
+    threading.Thread(target=_bg_worker, daemon=True).start()
+    return {
+        "ok": True,
+        "project_id": pid,
+        "already_running": False,
+        "scan_job": _get_face_scan_job(pid),
+    }
 
 
 @app.post("/api/face-privacy/config")

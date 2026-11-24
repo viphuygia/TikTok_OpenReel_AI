@@ -17,7 +17,7 @@ import sys
 import threading
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 import numpy as np
 
@@ -474,8 +474,19 @@ def _sample_video_frames(cv2: Any, video_path: Path, max_samples: int = 10) -> l
     return frames
 
 
-def scan_project_faces(project_root: Path, force: bool = False) -> dict[str, Any]:
+def scan_project_faces(
+    project_root: Path,
+    force: bool = False,
+    progress_cb: Callable[[int, int, str], None] | None = None,
+) -> dict[str, Any]:
     """Scan raw clips in `02_video_tho/`, cluster unique faces, and save thumbnails + `faces.json`."""
+    def _report(done: int, total: int, clip_name: str = "") -> None:
+        if progress_cb is not None:
+            try:
+                progress_cb(int(done), int(total), str(clip_name or ""))
+            except Exception:
+                pass
+
     project_root = Path(project_root)
     raw_dir = project_root / "02_video_tho"
     p_dir = _privacy_dir(project_root)
@@ -495,6 +506,7 @@ def scan_project_faces(project_root: Path, force: bool = False) -> dict[str, Any
             if f.get("thumb_name")
         )
         if thumbs_ok:
+            _report(len(videos), len(videos), "")
             return {
                 "ok": True,
                 "cached": True,
@@ -516,6 +528,7 @@ def scan_project_faces(project_root: Path, force: bool = False) -> dict[str, Any
             "config": prev_cfg,
         }
         _write_faces_json(project_root, state_data)
+        _report(0, 0, "")
         return {
             "ok": True,
             "cached": False,
@@ -525,14 +538,16 @@ def scan_project_faces(project_root: Path, force: bool = False) -> dict[str, Any
             "config": prev_cfg,
         }
 
+    _report(0, len(videos), "")
     engine = _FaceEngine()
     cv2 = engine.cv2
     sim_threshold = 0.35 if engine.use_onnx else 0.78
 
     clusters: list[dict[str, Any]] = []
 
-    for vp in videos:
+    for idx, vp in enumerate(videos, start=1):
         rel_name = vp.relative_to(raw_dir).as_posix()
+        _report(idx - 1, len(videos), rel_name)
         sampled = _sample_video_frames(cv2, vp, max_samples=10)
         for fi, orig_frame in sampled:
             oh, ow = orig_frame.shape[:2]
@@ -601,6 +616,7 @@ def scan_project_faces(project_root: Path, force: bool = False) -> dict[str, Any
                             "avatar": av,
                         }
                     )
+        _report(idx, len(videos), rel_name)
 
     # Conservative post-merge across poses if embeddings converged and they never co-occur in the same frame
     merge_thresh = 0.42 if engine.use_onnx else 0.85
@@ -662,16 +678,18 @@ def scan_project_faces(project_root: Path, force: bool = False) -> dict[str, Any
             }
         )
 
+    # Re-read latest config so concurrent UI edits during background scan aren't overwritten
+    latest_cfg = normalize_face_config(load_face_privacy_state(project_root).get("config"))
     if prev_state.get("clip_signature") != clip_sig:
-        prev_cfg["selected_face_ids"] = []
+        latest_cfg["selected_face_ids"] = []
     else:
-        prev_cfg["selected_face_ids"] = [x for x in prev_cfg["selected_face_ids"] if x in valid_new_ids]
+        latest_cfg["selected_face_ids"] = [x for x in latest_cfg["selected_face_ids"] if x in valid_new_ids]
 
     state_data = {
         "updated_at": int(time.time()),
         "clip_signature": clip_sig,
         "faces": faces_out,
-        "config": prev_cfg,
+        "config": latest_cfg,
     }
     _write_faces_json(project_root, state_data)
     return {
@@ -680,7 +698,7 @@ def scan_project_faces(project_root: Path, force: bool = False) -> dict[str, Any
         "updated_at": state_data["updated_at"],
         "clip_count": len(videos),
         "faces": _strip_embeddings_for_ui(faces_out),
-        "config": prev_cfg,
+        "config": latest_cfg,
     }
 
 

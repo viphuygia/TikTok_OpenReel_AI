@@ -1089,6 +1089,104 @@
           </div>
 
           <div id="tab1-file-list" class="space-y-2 max-h-[540px] overflow-y-auto pr-1"></div>
+
+          <!-- Face Privacy Pre-Scan & Selection Card (per active/upload-target project) -->
+          <div id="tab1-face-privacy-card" class="rounded-2xl bg-zinc-950/75 border border-sky-500/30 p-4 space-y-3">
+            <div class="flex flex-wrap items-start justify-between gap-2">
+              <div>
+                <div class="flex flex-wrap items-center gap-2">
+                  <h3 class="text-sm font-semibold text-sky-200">🕵️ Nhận Diện &amp; Chọn Gương Mặt (Chuẩn Bị Trước)</h3>
+                  <span id="tab1-face-project-badge" class="px-2 py-0.5 rounded-full bg-zinc-900 border border-zinc-700 text-[10px] text-zinc-300 mono">--</span>
+                </div>
+                <p id="tab1-face-status" class="text-[11px] text-zinc-400 mt-0.5">Chưa quét gương mặt cho project này.</p>
+              </div>
+              <div class="flex flex-wrap items-center gap-1.5">
+                <button id="btn-tab1-scan-faces" type="button" onclick="startFaceScan(getTab1ProjectId(), true)" class="px-3 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-500 text-xs font-semibold text-white transition">
+                  🔍 Quét Gương Mặt (Chạy nền)
+                </button>
+                <button id="btn-tab1-face-toggle" type="button" onclick="toggleTab1FaceBody()" class="px-2.5 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-[11px] text-zinc-300">
+                  Thu gọn
+                </button>
+              </div>
+            </div>
+
+            <div class="flex flex-wrap items-center justify-between gap-2 text-[11px]">
+              <label class="flex items-center gap-2 text-zinc-300 cursor-pointer">
+                <input id="chk-tab1-autoscan-faces" type="checkbox" onchange="onToggleAutoScanFaces(this.checked)" class="rounded bg-zinc-800 border-sky-500 text-sky-500" />
+                <span>⚡ Tự quét nền sau khi Upload xong vào <span class="mono text-sky-300">02_video_tho</span></span>
+              </label>
+            </div>
+
+            <div id="tab1-face-progress-wrap" class="hidden space-y-1">
+              <div class="flex items-center justify-between text-[11px] text-sky-300">
+                <span id="tab1-face-progress-text">⏳ Đang quét gương mặt...</span>
+              </div>
+              <div class="h-1.5 w-full rounded-full bg-zinc-800 overflow-hidden">
+                <div id="tab1-face-progress-bar" class="h-full bg-sky-500 transition-all duration-200" style="width: 15%"></div>
+              </div>
+            </div>
+
+            <div id="tab1-face-body" class="space-y-2.5 pt-2 border-t border-zinc-800/80">
+              <div class="flex flex-wrap items-center justify-between gap-2">
+                <label class="flex items-center gap-2 text-xs text-sky-200 font-medium cursor-pointer">
+                  <input id="tab1-face-enabled" type="checkbox" onchange="onTab1FaceConfigChange()" class="rounded bg-zinc-800 border-sky-500 text-sky-500" />
+                  <span>Bật che mặt khi Render Project này</span>
+                </label>
+                <span class="text-[10px] text-zinc-500">Đồng bộ 2 chiều với mục Tạo Video Auto</span>
+              </div>
+
+              <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                <div>
+                  <label class="block text-[10px] text-zinc-400 mb-1">Chế độ lọc</label>
+                  <select id="tab1-face-mode" onchange="onTab1FaceConfigChange()" class="w-full rounded-lg bg-zinc-900 border border-zinc-700 px-2 py-1.5 text-[11px] text-zinc-100">
+                    <option value="blur_selected">🎯 Chỉ che mặt được chọn</option>
+                    <option value="keep_selected">🛡️ Giữ mặt đã chọn — Che người khác</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="block text-[10px] text-zinc-400 mb-1">Kiểu che</label>
+                  <select id="tab1-face-style" onchange="onTab1FaceConfigChange()" class="w-full rounded-lg bg-zinc-900 border border-zinc-700 px-2 py-1.5 text-[11px] text-zinc-100">
+                    <option value="gaussian">💧 Làm mờ mịn (Gaussian)</option>
+                    <option value="pixelate">🧱 Ô vuông (Mosaic)</option>
+                    <option value="emoji">😎 Dán Sticker Emoji</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="block text-[10px] text-zinc-400 mb-1">Biên vùng che</label>
+                  <select id="tab1-face-padding" onchange="onTab1FaceConfigChange()" class="w-full rounded-lg bg-zinc-900 border border-zinc-700 px-2 py-1.5 text-[11px] text-zinc-100">
+                    <option value="1.25">📐 Chuẩn (1.25x)</option>
+                    <option value="1.45">🛡️ Rộng an toàn (1.45x)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div id="wrap-tab1-face-icon" class="hidden rounded-lg bg-zinc-900/80 border border-amber-500/35 p-2 space-y-1">
+                <label class="block text-[10px] text-amber-200 font-medium">🎭 Mẫu Icon / Emoji che mặt (Noto HD 512px)</label>
+                <select id="tab1-face-icon" onchange="onTab1FaceConfigChange()" class="w-full rounded-lg bg-zinc-950 border border-zinc-700 px-2.5 py-1.5 text-[11px] text-zinc-100">
+                  <option value="cool" selected>😎 Kính râm ngầu (Mặc định)</option>
+                  <option value="disguise">🥸 Đeo kính râu giả (Ẩn danh Thám tử)</option>
+                  <option value="laugh">😂 Cười ra nước mắt (POV Hài)</option>
+                  <option value="giggle">🤭 Cười tủm tỉm che miệng</option>
+                  <option value="hearts">🥰 Mặt thả tim đáng yêu (Gia đình / Em bé)</option>
+                  <option value="cat">😸 Mèo cười tươi (Cute)</option>
+                  <option value="robot">🤖 Mặt Robot (Vui nhộn)</option>
+                  <option value="random_person">🎲 Random đổi icon theo từng người</option>
+                </select>
+              </div>
+
+              <div class="flex flex-wrap items-center justify-between gap-2 text-[11px]">
+                <span id="tab1-face-hint" class="text-rose-300">Bấm vào ảnh mặt để ĐÁNH DẤU CHE (viền đỏ).</span>
+                <div class="flex items-center gap-1.5">
+                  <button type="button" onclick="selectAllFacesForProject(getTab1ProjectId(), true)" class="px-2 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-[10px] text-zinc-200">Chọn tất cả</button>
+                  <button type="button" onclick="selectAllFacesForProject(getTab1ProjectId(), false)" class="px-2 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-[10px] text-zinc-300">Bỏ chọn</button>
+                </div>
+              </div>
+
+              <div id="tab1-face-grid" class="flex sm:grid sm:grid-cols-4 md:grid-cols-5 gap-2 overflow-x-auto pb-1">
+                <div class="col-span-full text-[11px] text-zinc-500 p-2 border border-dashed border-zinc-800 rounded-lg w-full text-center">Bấm "🔍 Quét Gương Mặt (Chạy nền)" để AI nhận diện trước các khuôn mặt trong clip thô.</div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </section>
@@ -2392,6 +2490,8 @@
       const dir = document.getElementById('dl-target-dir').value || '02_video_tho';
       const targetPid = state.pipelineRunning && state.uploadTargetProjectId ? state.uploadTargetProjectId : '';
       document.getElementById('tab1-cur-dir').textContent = targetPid ? `${dir} (Upload -> ${targetPid})` : dir;
+      const tab1Pid = getTab1ProjectId();
+      if (tab1Pid) loadFacePrivacyState(tab1Pid, false);
       try {
         const url = `/api/files?dir=${encodeURIComponent(dir)}` + (targetPid ? `&project_id=${encodeURIComponent(targetPid)}` : '');
         const data = await api(url);
@@ -3396,6 +3496,10 @@
           await loadTab1Files();
           loadOverview();
           if (typeof loadWorkshopState === 'function') loadWorkshopState();
+          if (targetDir === '02_video_tho' && document.getElementById('chk-tab1-autoscan-faces')?.checked) {
+            const upPid = getTab1ProjectId();
+            if (upPid) startFaceScan(upPid, false, true);
+          }
         }
       );
     }
@@ -4621,6 +4725,7 @@
     state.activeConfigProjId = '';
     state.facePrivacyMap = {};
     state.currentFaceBlurIds = [];
+    state.faceScanPollTimers = {};
 
     function setShortContentMode(mode) {
       const m = mode === 'story_note' ? 'story_note' : 'brand_brief';
@@ -4774,7 +4879,11 @@
     }
 
     async function ensureProjectConfigLoaded(pid, name, templateCfg) {
-      if (state.projConfigMap[pid]) return state.projConfigMap[pid];
+      if (state.projConfigMap[pid]) {
+        const fpCfg = state.facePrivacyMap[pid]?.config;
+        if (fpCfg) _syncProjConfigFaceFields(pid, fpCfg);
+        return state.projConfigMap[pid];
+      }
       const base = templateCfg ? JSON.parse(JSON.stringify(templateCfg)) : {};
       let clips = [];
       let totalDur = 0;
@@ -4914,7 +5023,8 @@
         await ensureProjectConfigLoaded(item.id, item.name, firstCfg);
       }
       applyModalConfigToDom(state.projConfigMap[state.activeConfigProjId]);
-      renderFaceBlurGrid(state.activeConfigProjId);
+      await loadFacePrivacyState(state.activeConfigProjId, true);
+      captureCurrentModalConfig(state.activeConfigProjId);
       renderMultiProjectPager(selected);
     }
 
@@ -4959,7 +5069,8 @@
         await ensureProjectConfigLoaded(item.id, item.name, p1Cfg);
       }
       applyModalConfigToDom(state.projConfigMap[state.activeConfigProjId]);
-      renderFaceBlurGrid(state.activeConfigProjId);
+      await loadFacePrivacyState(state.activeConfigProjId, true);
+      captureCurrentModalConfig(state.activeConfigProjId);
       renderMultiProjectPager(selected);
     }
 
@@ -5474,6 +5585,7 @@
         const counts = ` (${p.raw_video_count} thô / ${p.output_count} mp4)`;
         return `<option class="bg-zinc-900 text-white" value="${escapeHtml(p.id)}" ${p.id === data.active_id ? 'selected' : ''}>${escapeHtml(p.name)}${escapeHtml(extra)}${escapeHtml(counts)}</option>`;
       }).join('');
+      if (data.active_id) state.activeProjectId = data.active_id;
       if (state.pipelineRunning && state.uploadTargetProjectId) {
         sel.value = state.uploadTargetProjectId;
       } else if (data.active_id) {
@@ -6022,6 +6134,85 @@
       );
     }
 
+    function getTab1ProjectId() {
+      return (
+        (state.pipelineRunning && state.uploadTargetProjectId ? state.uploadTargetProjectId : '') ||
+        document.getElementById('project-select')?.value ||
+        state.activeProjectId ||
+        ''
+      );
+    }
+
+    function toggleTab1FaceBody() {
+      const body = document.getElementById('tab1-face-body');
+      const btn = document.getElementById('btn-tab1-face-toggle');
+      if (!body) return;
+      const hidden = body.classList.toggle('hidden');
+      if (btn) btn.textContent = hidden ? 'Mở rộng' : 'Thu gọn';
+    }
+
+    function onToggleAutoScanFaces(checked) {
+      try {
+        localStorage.setItem('openreel_autoscan_faces', checked ? '1' : '0');
+      } catch {}
+    }
+
+    function _syncProjConfigFaceFields(pid, cfg) {
+      if (!pid || !cfg || !state.projConfigMap[pid]) return;
+      state.projConfigMap[pid].face_blur_enabled = !!cfg.enabled;
+      state.projConfigMap[pid].face_blur_mode = cfg.mode || 'blur_selected';
+      state.projConfigMap[pid].face_blur_style = cfg.style || 'gaussian';
+      state.projConfigMap[pid].face_blur_icon = cfg.icon || 'cool';
+      state.projConfigMap[pid].face_blur_padding = Number(cfg.padding || 1.25) || 1.25;
+      state.projConfigMap[pid].face_blur_ids = Array.isArray(cfg.selected_face_ids) ? [...cfg.selected_face_ids] : [];
+    }
+
+    function _applyFaceConfigToModalDom(pid, c) {
+      if (!pid || !c || pid !== getActiveModalProjectId()) return;
+      const chk = document.getElementById('chk-face-blur-enabled');
+      const mEl = document.getElementById('face-blur-mode');
+      const sEl = document.getElementById('face-blur-style');
+      const iEl = document.getElementById('face-blur-icon');
+      const pEl = document.getElementById('face-blur-padding');
+      if (chk) chk.checked = !!c.enabled;
+      if (mEl && c.mode) mEl.value = c.mode;
+      if (sEl && c.style) sEl.value = c.style;
+      if (iEl && c.icon) iEl.value = c.icon;
+      if (pEl && c.padding) pEl.value = String(c.padding);
+      state.currentFaceBlurIds = Array.isArray(c.selected_face_ids) ? [...c.selected_face_ids] : [];
+      const panel = document.getElementById('face-blur-panel');
+      if (panel) panel.classList.toggle('hidden', !c.enabled);
+      syncFaceBlurIconUi();
+      captureCurrentModalConfig(pid);
+    }
+
+    function _readModalFaceConfigObj() {
+      return {
+        enabled: !!document.getElementById('chk-face-blur-enabled')?.checked,
+        mode: document.getElementById('face-blur-mode')?.value || 'blur_selected',
+        style: document.getElementById('face-blur-style')?.value || 'gaussian',
+        icon: document.getElementById('face-blur-icon')?.value || 'cool',
+        padding: parseFloat(document.getElementById('face-blur-padding')?.value || '1.25') || 1.25,
+        selected_face_ids: Array.isArray(state.currentFaceBlurIds) ? [...state.currentFaceBlurIds] : [],
+      };
+    }
+
+    async function saveFacePrivacyConfigObj(pid, cfgObj) {
+      if (!pid || !cfgObj) return;
+      state._lastFaceConfigSaveAt = state._lastFaceConfigSaveAt || {};
+      state._lastFaceConfigSaveAt[pid] = Date.now();
+      const prev = state.facePrivacyMap[pid] || { ok: true, project_id: pid, faces: [], updated_at: 0, scan_job: { status: 'idle' } };
+      state.facePrivacyMap[pid] = { ...prev, config: { ...cfgObj, selected_face_ids: [...(cfgObj.selected_face_ids || [])] } };
+      _syncProjConfigFaceFields(pid, cfgObj);
+      try {
+        await api('/api/face-privacy/config', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ project_id: pid, ...cfgObj }),
+        });
+      } catch (e) {}
+    }
+
     function toggleFaceBlurPanel(skipSave = false) {
       const enabled = !!document.getElementById('chk-face-blur-enabled')?.checked;
       const panel = document.getElementById('face-blur-panel');
@@ -6036,8 +6227,10 @@
         }
       }
       if (!skipSave && pid) {
+        const cfgObj = _readModalFaceConfigObj();
         captureCurrentModalConfig(pid);
-        saveFacePrivacyConfig(pid);
+        saveFacePrivacyConfigObj(pid, cfgObj);
+        if (pid === getTab1ProjectId()) renderTab1FacePanel(pid);
       }
     }
 
@@ -6048,36 +6241,52 @@
     function onFaceBlurOptionChange() {
       syncFaceBlurIconUi();
       const pid = getActiveModalProjectId();
-      renderFaceBlurGrid(pid);
       if (pid) {
+        const cfgObj = _readModalFaceConfigObj();
         captureCurrentModalConfig(pid);
-        saveFacePrivacyConfig(pid);
+        saveFacePrivacyConfigObj(pid, cfgObj);
+        renderFaceBlurGrid(pid);
+        if (pid === getTab1ProjectId()) renderTab1FacePanel(pid);
+      } else {
+        renderFaceBlurGrid(pid);
       }
     }
 
+    function onTab1FaceConfigChange() {
+      const pid = getTab1ProjectId();
+      if (!pid) return;
+      const prevIds = state.facePrivacyMap[pid]?.config?.selected_face_ids || [];
+      const cfgObj = {
+        enabled: !!document.getElementById('tab1-face-enabled')?.checked,
+        mode: document.getElementById('tab1-face-mode')?.value || 'blur_selected',
+        style: document.getElementById('tab1-face-style')?.value || 'gaussian',
+        icon: document.getElementById('tab1-face-icon')?.value || 'cool',
+        padding: parseFloat(document.getElementById('tab1-face-padding')?.value || '1.25') || 1.25,
+        selected_face_ids: Array.isArray(prevIds) ? [...prevIds] : [],
+      };
+      document.getElementById('wrap-tab1-face-icon')?.classList.toggle('hidden', cfgObj.style !== 'emoji');
+      saveFacePrivacyConfigObj(pid, cfgObj);
+      _applyFaceConfigToModalDom(pid, cfgObj);
+      renderTab1FacePanel(pid);
+      if (pid === getActiveModalProjectId()) renderFaceBlurGrid(pid);
+    }
+
     async function loadFacePrivacyState(projectId = '', applyToDom = false) {
-      const pid = projectId || getActiveModalProjectId();
+      const pid = projectId || getActiveModalProjectId() || getTab1ProjectId();
       if (!pid) return null;
       try {
         const res = await api(`/api/face-privacy/state?project_id=${encodeURIComponent(pid)}`);
         if (res && res.ok) {
           state.facePrivacyMap[pid] = res;
+          _syncProjConfigFaceFields(pid, res.config);
           if (applyToDom && pid === getActiveModalProjectId()) {
-            const c = res.config || {};
-            const chk = document.getElementById('chk-face-blur-enabled');
-            const mEl = document.getElementById('face-blur-mode');
-            const sEl = document.getElementById('face-blur-style');
-            const iEl = document.getElementById('face-blur-icon');
-            const pEl = document.getElementById('face-blur-padding');
-            if (chk) chk.checked = !!c.enabled;
-            if (mEl && c.mode) mEl.value = c.mode;
-            if (sEl && c.style) sEl.value = c.style;
-            if (iEl && c.icon) iEl.value = c.icon;
-            if (pEl && c.padding) pEl.value = String(c.padding);
-            state.currentFaceBlurIds = Array.isArray(c.selected_face_ids) ? [...c.selected_face_ids] : [];
-            toggleFaceBlurPanel(true);
+            _applyFaceConfigToModalDom(pid, res.config || {});
           }
-          renderFaceBlurGrid(pid);
+          if (pid === getActiveModalProjectId()) renderFaceBlurGrid(pid);
+          if (pid === getTab1ProjectId()) renderTab1FacePanel(pid);
+          if (res.scan_job?.status === 'running') {
+            pollFaceScanJob(pid, true);
+          }
           return res;
         }
       } catch (e) {}
@@ -6087,31 +6296,17 @@
     async function saveFacePrivacyConfig(projectId = '') {
       const pid = projectId || getActiveModalProjectId();
       if (!pid) return;
-      const enabled = !!document.getElementById('chk-face-blur-enabled')?.checked;
-      const mode = document.getElementById('face-blur-mode')?.value || 'blur_selected';
-      const style = document.getElementById('face-blur-style')?.value || 'gaussian';
-      const icon = document.getElementById('face-blur-icon')?.value || 'cool';
-      const padding = parseFloat(document.getElementById('face-blur-padding')?.value || '1.25') || 1.25;
-      const selected_face_ids = Array.isArray(state.currentFaceBlurIds) ? [...state.currentFaceBlurIds] : [];
-      try {
-        await api('/api/face-privacy/config', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            project_id: pid,
-            enabled,
-            mode,
-            style,
-            icon,
-            padding,
-            selected_face_ids,
-          }),
-        });
-      } catch (e) {}
+      await saveFacePrivacyConfigObj(pid, _readModalFaceConfigObj());
     }
 
     async function ensureBackendRestartedOn404(pid = '') {
-      await api('/api/system/update', { method: 'POST' });
+      try {
+        await api('/api/system/update', { method: 'POST' });
+      } catch (updErr) {
+        throw new Error(
+          `Server Python đang chạy bản cũ trên RAM (${updErr.message}). Hãy đóng cửa sổ đen Server cũ và chạy lại start_dashboard.bat hoặc start_server_24_7.bat!`
+        );
+      }
       const checkUrl = pid
         ? `/api/face-privacy/state?project_id=${encodeURIComponent(pid)}`
         : '/api/face-privacy/state';
@@ -6125,96 +6320,160 @@
       throw new Error('Server đã khởi động lại nhưng chưa kịp phản hồi, vui lòng tải lại trang (F5) rồi thử lại.');
     }
 
-    async function scanProjectFaces(force = true) {
-      const pid = getActiveModalProjectId();
-      if (!pid) return toast('Chưa xác định Project để quét gương mặt.', 'warn');
-      const btn = document.getElementById('btn-scan-faces');
-      const statusEl = document.getElementById('face-scan-status');
-      if (btn) {
-        btn.disabled = true;
-        btn.textContent = '⏳ Đang quét mặt (OpenCV)...';
+    function _formatFaceScanProgressText(job) {
+      const done = Number(job?.done_clips || 0);
+      const total = Number(job?.total_clips || 0);
+      const cur = String(job?.current_clip || '').split('/').pop();
+      if (total > 0) {
+        return `⏳ Đang quét ${done}/${total} clip${cur ? ` (${cur})` : ''}...`;
       }
-      if (statusEl) statusEl.textContent = 'AI đang lấy mẫu & gom nhóm các khuôn mặt...';
+      return '⏳ Đang khởi tạo OpenCV quét gương mặt...';
+    }
+
+    async function startFaceScan(projectId = '', force = true, silentStart = false) {
+      const pid = projectId || getTab1ProjectId() || getActiveModalProjectId();
+      if (!pid) return toast('Chưa xác định Project để quét gương mặt.', 'warn');
+
+      const curFp = state.facePrivacyMap[pid] || { ok: true, project_id: pid, faces: [], updated_at: 0, config: {} };
+      state.facePrivacyMap[pid] = {
+        ...curFp,
+        scan_job: { status: 'running', done_clips: 0, total_clips: 0, current_clip: '', error: '' },
+      };
+      if (pid === getTab1ProjectId()) renderTab1FacePanel(pid);
+      if (pid === getActiveModalProjectId()) renderFaceBlurGrid(pid);
+
       try {
-        await saveFacePrivacyConfig(pid);
+        if (pid === getActiveModalProjectId() && document.getElementById('auto-pipeline-modal')?.classList.contains('flex')) {
+          await saveFacePrivacyConfig(pid);
+        }
+        const payload = JSON.stringify({ project_id: pid, force: !!force, background: true });
         let res;
         try {
           res = await api('/api/face-privacy/scan', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ project_id: pid, force }),
+            body: payload,
           });
         } catch (firstErr) {
           const msg = String(firstErr?.message || '');
           if (!/not found|404/i.test(msg)) throw firstErr;
-          if (statusEl) statusEl.textContent = '🔄 Server đang chạy bản cũ trên RAM — đang tự động khởi động lại Server bản mới (5–10s)...';
-          toast('Server đang chạy bản cũ trên RAM — đang tự khởi động lại bản mới (5–10s)...', 'info');
+          toast('Server đang chạy bản cũ trên RAM — đang tự động khởi động lại bản mới (5–10s)...', 'info');
           await ensureBackendRestartedOn404(pid);
-          if (statusEl) statusEl.textContent = '✅ Server mới đã sẵn sàng! Đang quét lại gương mặt...';
-          await saveFacePrivacyConfig(pid);
           res = await api('/api/face-privacy/scan', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ project_id: pid, force }),
+            body: payload,
           });
         }
-        state.facePrivacyMap[pid] = res;
-        const validSet = new Set((res.faces || []).map((f) => f.id));
-        state.currentFaceBlurIds = (state.currentFaceBlurIds || []).filter((id) => validSet.has(id));
-        captureCurrentModalConfig(pid);
-        await saveFacePrivacyConfig(pid);
-        renderFaceBlurGrid(pid);
-        const n = (res.faces || []).length;
-        toast(n ? `Đã nhận diện ${n} người trong Project!` : 'Không thấy khuôn mặt rõ nét nào trong clip thô.', n ? 'success' : 'info');
-      } catch (e) {
-        if (statusEl) statusEl.textContent = 'Lỗi quét gương mặt: ' + e.message;
-        toast('Lỗi quét gương mặt: ' + e.message, 'error');
-      } finally {
-        if (btn) {
-          btn.disabled = false;
-          btn.textContent = '🔍 Quét Gương Mặt (02_video_tho)';
+
+        const job = res?.scan_job || { status: res?.faces ? 'done' : 'running', done_clips: 0, total_clips: 0 };
+        state.facePrivacyMap[pid] = {
+          ...(state.facePrivacyMap[pid] || {}),
+          ...(res?.faces ? res : {}),
+          scan_job: job,
+        };
+        if (pid === getTab1ProjectId()) renderTab1FacePanel(pid);
+        if (pid === getActiveModalProjectId()) renderFaceBlurGrid(pid);
+
+        if (job.status === 'running') {
+          if (!silentStart && !res?.already_running) {
+            toast(`Đang quét gương mặt chạy nền cho [${pid}] — bạn có thể chuyển Tab/Upload tiếp thoải mái!`, 'info');
+          }
+          pollFaceScanJob(pid, silentStart);
+        } else {
+          await loadFacePrivacyState(pid, pid === getActiveModalProjectId());
+          const n = (state.facePrivacyMap[pid]?.faces || []).length;
+          toast(n ? `Đã nhận diện ${n} người trong [${pid}]!` : 'Không thấy khuôn mặt rõ nét nào trong clip thô.', n ? 'success' : 'info');
         }
+      } catch (e) {
+        state.facePrivacyMap[pid] = {
+          ...(state.facePrivacyMap[pid] || {}),
+          scan_job: { status: 'error', done_clips: 0, total_clips: 0, current_clip: '', error: e.message },
+        };
+        if (pid === getTab1ProjectId()) renderTab1FacePanel(pid);
+        if (pid === getActiveModalProjectId()) renderFaceBlurGrid(pid);
+        toast('Lỗi quét gương mặt: ' + e.message, 'error');
       }
     }
 
-    function renderFaceBlurGrid(projectId = '') {
-      const pid = projectId || getActiveModalProjectId();
-      const grid = document.getElementById('face-blur-grid');
-      const hintEl = document.getElementById('face-blur-hint');
-      const statusEl = document.getElementById('face-scan-status');
-      if (!grid) return;
-
-      const fpData = state.facePrivacyMap[pid] || { faces: [], updated_at: 0 };
-      const faces = fpData.faces || [];
-      const mode = document.getElementById('face-blur-mode')?.value || 'blur_selected';
-      const selSet = new Set(state.currentFaceBlurIds || []);
-
-      if (hintEl) {
-        if (mode === 'blur_selected') {
-          hintEl.className = 'text-rose-300';
-          hintEl.textContent = `Bấm vào ảnh mặt để ĐÁNH DẤU CHE (viền đỏ). Đang chọn che: ${selSet.size} người.`;
-        } else {
-          hintEl.className = 'text-emerald-300';
-          hintEl.textContent = `Bấm vào ảnh mặt để GIỮ RÕ (viền xanh) — người còn lại tự động bị che. Đang giữ: ${selSet.size} người.`;
-        }
-      }
-
-      if (statusEl) {
-        if (faces.length > 0) {
-          statusEl.textContent = `Đã nhận diện ${faces.length} người${fpData.clip_count ? ` (${fpData.clip_count} clip)` : ''}.`;
-        } else if (fpData.updated_at) {
-          statusEl.textContent = 'Đã quét — chưa phát hiện khuôn mặt rõ nét nào.';
-        } else {
-          statusEl.textContent = 'Chưa quét gương mặt cho project này.';
-        }
-      }
-
-      if (!faces.length) {
-        grid.innerHTML = '<div class="col-span-full text-[11px] text-zinc-500 p-2 border border-dashed border-zinc-800 rounded-lg w-full text-center">Bấm "🔍 Quét Gương Mặt" để AI nhận diện các khuôn mặt trong clip thô.</div>';
+    function pollFaceScanJob(pid, silentDone = false) {
+      if (!pid) return;
+      state.faceScanPollTimers = state.faceScanPollTimers || {};
+      const existing = state.faceScanPollTimers[pid];
+      if (existing) {
+        if (!silentDone) existing.silent = false;
         return;
       }
+      const entry = { silent: !!silentDone, timerId: null };
+      const tick = async () => {
+        try {
+          const res = await api(`/api/face-privacy/state?project_id=${encodeURIComponent(pid)}`);
+          if (!res || !res.ok) return;
+          const recentLocalSave = (Date.now() - Number(state._lastFaceConfigSaveAt?.[pid] || 0)) < 2500;
+          if (recentLocalSave && state.facePrivacyMap[pid]?.config) {
+            res.config = state.facePrivacyMap[pid].config;
+          }
+          state.facePrivacyMap[pid] = res;
+          _syncProjConfigFaceFields(pid, res.config);
+          if (pid === getTab1ProjectId()) renderTab1FacePanel(pid);
+          if (pid === getActiveModalProjectId()) renderFaceBlurGrid(pid);
 
-      grid.innerHTML = faces.map((f) => {
+          const st = res.scan_job?.status || 'idle';
+          if (st !== 'running') {
+            clearInterval(entry.timerId);
+            delete state.faceScanPollTimers[pid];
+            if (st === 'done') {
+              const validSet = new Set((res.faces || []).map((f) => f.id));
+              const cfg = { ...(res.config || {}) };
+              const oldIds = Array.isArray(cfg.selected_face_ids) ? cfg.selected_face_ids : [];
+              const filteredIds = oldIds.filter((id) => validSet.has(id));
+              if (filteredIds.length !== oldIds.length) {
+                cfg.selected_face_ids = filteredIds;
+                await saveFacePrivacyConfigObj(pid, cfg);
+              }
+              if (pid === getActiveModalProjectId()) {
+                _applyFaceConfigToModalDom(pid, cfg);
+                renderFaceBlurGrid(pid);
+              }
+              if (pid === getTab1ProjectId()) renderTab1FacePanel(pid);
+              const n = (res.faces || []).length;
+              toast(
+                n ? `Quét nền [${pid}] xong: Nhận diện ${n} người!` : `Quét nền [${pid}] xong: Không thấy khuôn mặt rõ nét nào.`,
+                n ? 'success' : 'info'
+              );
+            } else if (st === 'error') {
+              const errMsg = res.scan_job?.error || 'Không rõ nguyên nhân';
+              toast(`Lỗi quét gương mặt [${pid}]: ${errMsg}`, 'error');
+            }
+          }
+        } catch {}
+      };
+      entry.timerId = setInterval(tick, 1200);
+      state.faceScanPollTimers[pid] = entry;
+    }
+
+    async function scanProjectFaces(force = true) {
+      return startFaceScan(getActiveModalProjectId(), force, false);
+    }
+
+    function _buildFaceHintInfo(mode, selCount) {
+      if (mode === 'blur_selected') {
+        return {
+          cls: 'text-rose-300',
+          text: `Bấm vào ảnh mặt để ĐÁNH DẤU CHE (viền đỏ). Đang chọn che: ${selCount} người.`,
+        };
+      }
+      return {
+        cls: 'text-emerald-300',
+        text: `Bấm vào ảnh mặt để GIỮ RÕ (viền xanh) — người còn lại tự động bị che. Đang giữ: ${selCount} người.`,
+      };
+    }
+
+    function _buildFaceGridHtml(pid, faces, mode, selSet, emptyMsg) {
+      if (!faces || !faces.length) {
+        return `<div class="col-span-full text-[11px] text-zinc-500 p-2 border border-dashed border-zinc-800 rounded-lg w-full text-center">${escapeHtml(emptyMsg)}</div>`;
+      }
+      return faces.map((f) => {
         const isSel = selSet.has(f.id);
         let cardCls = '';
         let badgeHtml = '';
@@ -6236,7 +6495,7 @@
           }
         }
         return `
-          <button type="button" onclick="toggleFaceSelection('${escapeHtml(f.id)}')" class="shrink-0 w-24 sm:w-auto relative flex flex-col items-center rounded-xl p-1.5 transition cursor-pointer ${cardCls}">
+          <button type="button" onclick="toggleFaceSelectionForProject('${escapeHtml(pid)}', '${escapeHtml(f.id)}')" class="shrink-0 w-24 sm:w-auto relative flex flex-col items-center rounded-xl p-1.5 transition cursor-pointer ${cardCls}">
             <div class="relative w-16 h-16 rounded-lg overflow-hidden bg-zinc-900 border border-zinc-800">
               <img src="${escapeHtml(f.thumb_url)}" alt="${escapeHtml(f.label)}" class="w-full h-full object-cover" loading="lazy" />
               ${badgeHtml}
@@ -6248,32 +6507,200 @@
       }).join('');
     }
 
-    function toggleFaceSelection(faceId) {
-      const arr = Array.isArray(state.currentFaceBlurIds) ? [...state.currentFaceBlurIds] : [];
-      const idx = arr.indexOf(faceId);
-      if (idx >= 0) {
-        arr.splice(idx, 1);
+    function renderTab1FacePanel(projectId = '') {
+      const pid = projectId || getTab1ProjectId();
+      if (!pid || pid !== getTab1ProjectId()) return;
+
+      const badge = document.getElementById('tab1-face-project-badge');
+      const statusEl = document.getElementById('tab1-face-status');
+      const btn = document.getElementById('btn-tab1-scan-faces');
+      const progWrap = document.getElementById('tab1-face-progress-wrap');
+      const progText = document.getElementById('tab1-face-progress-text');
+      const progBar = document.getElementById('tab1-face-progress-bar');
+      const hintEl = document.getElementById('tab1-face-hint');
+      const grid = document.getElementById('tab1-face-grid');
+      if (!grid) return;
+
+      if (badge) badge.textContent = pid;
+
+      const fpData = state.facePrivacyMap[pid] || { faces: [], updated_at: 0, config: {}, scan_job: { status: 'idle' } };
+      const cfg = fpData.config || {};
+      const faces = fpData.faces || [];
+      const job = fpData.scan_job || {};
+
+      const chkEn = document.getElementById('tab1-face-enabled');
+      const mEl = document.getElementById('tab1-face-mode');
+      const sEl = document.getElementById('tab1-face-style');
+      const iEl = document.getElementById('tab1-face-icon');
+      const pEl = document.getElementById('tab1-face-padding');
+      if (chkEn) chkEn.checked = !!cfg.enabled;
+      if (mEl && cfg.mode) mEl.value = cfg.mode;
+      if (sEl && cfg.style) sEl.value = cfg.style;
+      if (iEl && cfg.icon) iEl.value = cfg.icon;
+      if (pEl && cfg.padding) pEl.value = String(cfg.padding);
+      const curStyle = (sEl?.value || cfg.style || 'gaussian');
+      document.getElementById('wrap-tab1-face-icon')?.classList.toggle('hidden', curStyle !== 'emoji');
+
+      if (job.status === 'running') {
+        const done = Number(job.done_clips || 0);
+        const total = Number(job.total_clips || 0);
+        const pct = total > 0 ? Math.min(100, Math.max(8, Math.round((done / total) * 100))) : 15;
+        if (btn) {
+          btn.disabled = true;
+          btn.textContent = '⏳ Đang quét nền...';
+        }
+        if (progWrap) progWrap.classList.remove('hidden');
+        if (progText) progText.textContent = _formatFaceScanProgressText(job);
+        if (progBar) progBar.style.width = `${pct}%`;
+        if (statusEl) statusEl.textContent = 'AI OpenCV đang quét nền các khuôn mặt (có thể thao tác tiếp)...';
       } else {
-        arr.push(faceId);
+        if (btn) {
+          btn.disabled = false;
+          btn.textContent = '🔍 Quét Gương Mặt (Chạy nền)';
+        }
+        if (progWrap) progWrap.classList.add('hidden');
+        if (statusEl) {
+          if (job.status === 'error' && job.error) {
+            statusEl.textContent = 'Lỗi quét gương mặt: ' + job.error;
+          } else if (faces.length > 0) {
+            statusEl.textContent = `Đã nhận diện ${faces.length} người${fpData.clip_count ? ` (${fpData.clip_count} clip)` : ''}.`;
+          } else if (fpData.updated_at) {
+            statusEl.textContent = 'Đã quét — chưa phát hiện khuôn mặt rõ nét nào.';
+          } else {
+            statusEl.textContent = 'Chưa quét gương mặt cho project này.';
+          }
+        }
       }
-      state.currentFaceBlurIds = arr;
-      const pid = getActiveModalProjectId();
-      renderFaceBlurGrid(pid);
-      if (pid) {
-        captureCurrentModalConfig(pid);
-        saveFacePrivacyConfig(pid);
+
+      const mode = mEl?.value || cfg.mode || 'blur_selected';
+      const selSet = new Set(Array.isArray(cfg.selected_face_ids) ? cfg.selected_face_ids : []);
+      if (hintEl) {
+        const hInfo = _buildFaceHintInfo(mode, selSet.size);
+        hintEl.className = hInfo.cls;
+        hintEl.textContent = hInfo.text;
       }
+
+      grid.innerHTML = _buildFaceGridHtml(
+        pid,
+        faces,
+        mode,
+        selSet,
+        'Bấm "🔍 Quét Gương Mặt (Chạy nền)" để AI nhận diện trước các khuôn mặt trong clip thô.'
+      );
+    }
+
+    function renderFaceBlurGrid(projectId = '') {
+      const pid = projectId || getActiveModalProjectId();
+      const grid = document.getElementById('face-blur-grid');
+      const hintEl = document.getElementById('face-blur-hint');
+      const statusEl = document.getElementById('face-scan-status');
+      const btn = document.getElementById('btn-scan-faces');
+      if (!grid) return;
+
+      const fpData = state.facePrivacyMap[pid] || { faces: [], updated_at: 0, scan_job: { status: 'idle' } };
+      const faces = fpData.faces || [];
+      const job = fpData.scan_job || {};
+      const mode = document.getElementById('face-blur-mode')?.value || 'blur_selected';
+      const selSet = new Set(state.currentFaceBlurIds || []);
+
+      if (hintEl) {
+        const hInfo = _buildFaceHintInfo(mode, selSet.size);
+        hintEl.className = hInfo.cls;
+        hintEl.textContent = hInfo.text;
+      }
+
+      if (job.status === 'running') {
+        if (btn) {
+          btn.disabled = true;
+          btn.textContent = '⏳ Đang quét mặt (OpenCV)...';
+        }
+        if (statusEl) statusEl.textContent = _formatFaceScanProgressText(job);
+      } else {
+        if (btn) {
+          btn.disabled = false;
+          btn.textContent = '🔍 Quét Gương Mặt (02_video_tho)';
+        }
+        if (statusEl) {
+          if (job.status === 'error' && job.error) {
+            statusEl.textContent = 'Lỗi quét gương mặt: ' + job.error;
+          } else if (faces.length > 0) {
+            statusEl.textContent = `Đã nhận diện ${faces.length} người${fpData.clip_count ? ` (${fpData.clip_count} clip)` : ''}.`;
+          } else if (fpData.updated_at) {
+            statusEl.textContent = 'Đã quét — chưa phát hiện khuôn mặt rõ nét nào.';
+          } else {
+            statusEl.textContent = 'Chưa quét gương mặt cho project này.';
+          }
+        }
+      }
+
+      grid.innerHTML = _buildFaceGridHtml(
+        pid,
+        faces,
+        mode,
+        selSet,
+        'Bấm "🔍 Quét Gương Mặt" để AI nhận diện các khuôn mặt trong clip thô.'
+      );
+    }
+
+    function toggleFaceSelectionForProject(pid, faceId) {
+      const targetPid = pid || getActiveModalProjectId() || getTab1ProjectId();
+      if (!targetPid) return;
+      const fpData = state.facePrivacyMap[targetPid] || { faces: [], config: {} };
+      const curCfg = { ...(fpData.config || {}) };
+      const baseArr = (targetPid === getActiveModalProjectId() && document.getElementById('auto-pipeline-modal')?.classList.contains('flex'))
+        ? (Array.isArray(state.currentFaceBlurIds) ? state.currentFaceBlurIds : [])
+        : (Array.isArray(curCfg.selected_face_ids) ? curCfg.selected_face_ids : []);
+      const arr = [...baseArr];
+      const idx = arr.indexOf(faceId);
+      if (idx >= 0) arr.splice(idx, 1);
+      else arr.push(faceId);
+
+      const nextCfg = {
+        enabled: !!curCfg.enabled,
+        mode: curCfg.mode || 'blur_selected',
+        style: curCfg.style || 'gaussian',
+        icon: curCfg.icon || 'cool',
+        padding: Number(curCfg.padding || 1.25) || 1.25,
+        selected_face_ids: arr,
+      };
+      if (targetPid === getActiveModalProjectId()) {
+        state.currentFaceBlurIds = [...arr];
+        captureCurrentModalConfig(targetPid);
+      }
+      saveFacePrivacyConfigObj(targetPid, nextCfg);
+      if (targetPid === getTab1ProjectId()) renderTab1FacePanel(targetPid);
+      if (targetPid === getActiveModalProjectId()) renderFaceBlurGrid(targetPid);
+    }
+
+    function selectAllFacesForProject(pid, selectAll = true) {
+      const targetPid = pid || getActiveModalProjectId() || getTab1ProjectId();
+      if (!targetPid) return;
+      const fpData = state.facePrivacyMap[targetPid] || { faces: [], config: {} };
+      const curCfg = { ...(fpData.config || {}) };
+      const nextIds = selectAll ? (fpData.faces || []).map((f) => f.id) : [];
+      const nextCfg = {
+        enabled: !!curCfg.enabled,
+        mode: curCfg.mode || 'blur_selected',
+        style: curCfg.style || 'gaussian',
+        icon: curCfg.icon || 'cool',
+        padding: Number(curCfg.padding || 1.25) || 1.25,
+        selected_face_ids: nextIds,
+      };
+      if (targetPid === getActiveModalProjectId()) {
+        state.currentFaceBlurIds = [...nextIds];
+        captureCurrentModalConfig(targetPid);
+      }
+      saveFacePrivacyConfigObj(targetPid, nextCfg);
+      if (targetPid === getTab1ProjectId()) renderTab1FacePanel(targetPid);
+      if (targetPid === getActiveModalProjectId()) renderFaceBlurGrid(targetPid);
+    }
+
+    function toggleFaceSelection(faceId) {
+      return toggleFaceSelectionForProject(getActiveModalProjectId(), faceId);
     }
 
     function selectAllFaces(selectAll = true) {
-      const pid = getActiveModalProjectId();
-      const fpData = state.facePrivacyMap[pid] || { faces: [] };
-      state.currentFaceBlurIds = selectAll ? (fpData.faces || []).map((f) => f.id) : [];
-      renderFaceBlurGrid(pid);
-      if (pid) {
-        captureCurrentModalConfig(pid);
-        saveFacePrivacyConfig(pid);
-      }
+      return selectAllFacesForProject(getActiveModalProjectId(), selectAll);
     }
 
     state._galleryOutputsMap = {};
@@ -6620,6 +7047,10 @@
 
     // Boot
     (async () => {
+      try {
+        const autoScanChk = document.getElementById('chk-tab1-autoscan-faces');
+        if (autoScanChk) autoScanChk.checked = localStorage.getItem('openreel_autoscan_faces') === '1';
+      } catch {}
       const hashParams = new URLSearchParams((window.location.hash || '').replace(/^#/, ''));
       const queryParams = new URLSearchParams(window.location.search || '');
       const initTab = hashParams.get('tab') || queryParams.get('tab') || 'tab1';
