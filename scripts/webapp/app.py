@@ -8,7 +8,9 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import ctypes
 import gc
+import getpass
 import json
 import os
 import random
@@ -7486,6 +7488,153 @@ def api_system_update(request: Request):
         "new_commit": new_h.splitlines()[0].strip() if new_h else "",
         "log": full_log[-1500:],
     }
+
+
+SMB_SHARE_NAME = "OpenReel_Projects"
+
+
+class SmbShareToggleReq(BaseModel):
+    enabled: bool
+    project_id: str = ""
+
+
+def _is_windows_admin() -> bool:
+    if os.name != "nt":
+        return False
+    try:
+        return bool(ctypes.windll.shell32.IsUserAnAdmin() != 0)
+    except Exception:
+        return False
+
+
+def _get_smb_host_ip(request: Request) -> str:
+    raw_host = str(request.headers.get("host") or "").strip()
+    if raw_host.startswith("["):
+        host_only = raw_host[1:].split("]", 1)[0].strip()
+    else:
+        host_only = raw_host.split(":", 1)[0].strip()
+    if host_only and host_only.lower() not in ("localhost", "127.0.0.1", "0.0.0.0", "::1", "testserver"):
+        return host_only
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect(("8.8.8.8", 80))
+            ip = str(s.getsockname()[0] or "").strip()
+            if ip:
+                return ip
+    except Exception:
+        pass
+    return "127.0.0.1"
+
+
+def _query_smb_share_path(share_name: str = SMB_SHARE_NAME) -> str:
+    if os.name != "nt":
+        return ""
+    try:
+        proc = subprocess.run(
+            [
+                "powershell",
+                "-NoProfile",
+                "-Command",
+                f"(Get-SmbShare -Name '{share_name}' -ErrorAction SilentlyContinue).Path",
+            ],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=10,
+        )
+        if proc.returncode == 0:
+            return str(proc.stdout or "").strip()
+    except Exception:
+        pass
+    return ""
+
+
+def _get_smb_share_info(request: Request, project_id: str = "") -> dict[str, Any]:
+    projects_dir = (PROJECT_ROOT / "projects").resolve()
+    cur_path = _query_smb_share_path(SMB_SHARE_NAME)
+    pid = str(project_id or "").strip() or ACTIVE_PROJECT_ID
+    project_subpath = f"{pid}/02_video_tho" if (pid and (projects_dir / pid).exists()) else ""
+    host_ip = _get_smb_host_ip(request)
+    win_user = getpass.getuser()
+    smb_url = f"smb://{host_ip}/{SMB_SHARE_NAME}"
+    project_smb_url = f"{smb_url}/{project_subpath}" if project_subpath else smb_url
+    return {
+        "ok": True,
+        "supported": os.name == "nt",
+        "enabled": bool(cur_path),
+        "share_name": SMB_SHARE_NAME,
+        "share_path": cur_path,
+        "expected_path": str(projects_dir),
+        "is_admin": _is_windows_admin(),
+        "host_ip": host_ip,
+        "win_user": win_user,
+        "smb_url": smb_url,
+        "project_smb_url": project_smb_url,
+        "project_subpath": project_subpath,
+    }
+
+
+@app.get("/api/system/smb-share")
+def api_get_smb_share(request: Request, project_id: str = Query(default="")):
+    return _get_smb_share_info(request, project_id)
+
+
+@app.post("/api/system/smb-share")
+def api_toggle_smb_share(req: SmbShareToggleReq, request: Request):
+    if os.name != "nt":
+        raise HTTPException(status_code=400, detail="Tính năng SMB Share chỉ hỗ trợ trên Windows.")
+    if not _is_windows_admin():
+        raise HTTPException(
+            status_code=403,
+            detail="Cần chạy Server bằng quyền Administrator (chuột phải start_dashboard.bat hoặc start_server_24_7.bat -> Run as administrator) để Bật/Tắt SMB Share.",
+        )
+    projects_dir = (PROJECT_ROOT / "projects").resolve()
+    if req.enabled:
+        projects_dir.mkdir(parents=True, exist_ok=True)
+        win_user = getpass.getuser()
+        win_domain = str(os.environ.get("USERDOMAIN") or "").strip()
+        full_acc = f"{win_domain}\\{win_user}" if win_domain else win_user
+        ps_cmd = (
+            "$name = $env:OPENREEL_SMB_NAME; "
+            "$path = $env:OPENREEL_SMB_PATH; "
+            "$acc = $env:OPENREEL_SMB_ACC; "
+            "Remove-SmbShare -Name $name -Force -ErrorAction SilentlyContinue | Out-Null; "
+            "New-SmbShare -Name $name -Path $path -FullAccess $acc -Description 'TikTok OpenReel AI Projects' | Out-Null"
+        )
+        proc = subprocess.run(
+            ["powershell", "-NoProfile", "-Command", ps_cmd],
+            env={
+                **os.environ,
+                "OPENREEL_SMB_NAME": SMB_SHARE_NAME,
+                "OPENREEL_SMB_PATH": str(projects_dir),
+                "OPENREEL_SMB_ACC": full_acc,
+            },
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=15,
+        )
+        if proc.returncode != 0:
+            err = (proc.stderr or proc.stdout or "Không thể bật SMB Share.").strip()
+            raise HTTPException(status_code=500, detail=f"Lỗi bật SMB Share: {err[-400:]}")
+    else:
+        ps_cmd = "Remove-SmbShare -Name $env:OPENREEL_SMB_NAME -Force -ErrorAction SilentlyContinue | Out-Null"
+        proc = subprocess.run(
+            ["powershell", "-NoProfile", "-Command", ps_cmd],
+            env={**os.environ, "OPENREEL_SMB_NAME": SMB_SHARE_NAME},
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=15,
+        )
+        if proc.returncode != 0:
+            err = (proc.stderr or proc.stdout or "Không thể tắt SMB Share.").strip()
+            raise HTTPException(status_code=500, detail=f"Lỗi tắt SMB Share: {err[-400:]}")
+
+    return _get_smb_share_info(request, req.project_id)
 
 
 @app.get("/api/files/download")
