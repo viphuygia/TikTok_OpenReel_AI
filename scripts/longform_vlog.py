@@ -354,11 +354,61 @@ VIBE_EDITING_PROFILES: dict[str, dict[str, Any]] = {
 }
 
 
-def get_vibe_editing_profile(content_vibe: str | None) -> dict[str, Any]:
+PACING_PRESET_OVERRIDES: dict[str, dict[str, Any]] = {
+    "auto": {},
+    "chill": {
+        "shot_sec": 6.0,
+        "sentence_pause_sec": 0.90,
+        "voice_rate_offset": "-4%",
+        "word_multiplier": 1.0,
+        "blocks_per_chap": 2,
+        "tight_pacing": False,
+        "pacing_preset": "chill",
+    },
+    "fast": {
+        "shot_sec": 2.8,
+        "sentence_pause_sec": 0.22,
+        "voice_rate_offset": "+6%",
+        "word_multiplier": 2.25,
+        "blocks_per_chap": 6,
+        "tight_pacing": True,
+        "max_block_gap_sec": 0.70,
+        "lead_gap_cap_sec": 0.45,
+        "tail_reserve_ratio": 0.03,
+        "pacing_preset": "fast",
+    },
+    "turbo": {
+        "shot_sec": 2.1,
+        "sentence_pause_sec": 0.15,
+        "voice_rate_offset": "+10%",
+        "word_multiplier": 2.75,
+        "blocks_per_chap": 7,
+        "tight_pacing": True,
+        "max_block_gap_sec": 0.30,
+        "lead_gap_cap_sec": 0.25,
+        "tail_reserve_ratio": 0.01,
+        "pacing_preset": "turbo",
+    },
+}
+
+
+def get_vibe_editing_profile(
+    content_vibe: str | None,
+    pacing_preset: str | None = "auto",
+) -> dict[str, Any]:
     key = str(content_vibe or "outdoor_picnic").strip()
     if key == "learned_dna":
         key = "outdoor_picnic"
-    return dict(VIBE_EDITING_PROFILES.get(key) or VIBE_EDITING_PROFILES["outdoor_picnic"])
+    prof = dict(VIBE_EDITING_PROFILES.get(key) or VIBE_EDITING_PROFILES["outdoor_picnic"])
+    p_key = str(pacing_preset or "auto").strip().lower()
+    if p_key in PACING_PRESET_OVERRIDES and p_key != "auto":
+        prof.update(PACING_PRESET_OVERRIDES[p_key])
+        prof["pacing_preset"] = p_key
+        prof["force_pacing"] = True
+    else:
+        prof["pacing_preset"] = "auto"
+        prof["force_pacing"] = False
+    return prof
 
 
 def build_longform_timeline_plan(
@@ -396,8 +446,8 @@ def build_longform_timeline_plan(
             usable_end = max(usable_start + 1.0, c_dur - edge_trim)
             usable_span = usable_end - usable_start
 
-            shot_step = max(2.2, min(9.0, float(target_shot_sec or 6.2)))
-            min_shot = max(2.0, shot_step * 0.65)
+            shot_step = max(1.8, min(9.0, float(target_shot_sec or 6.2)))
+            min_shot = max(1.6, shot_step * 0.65)
             max_shot = max(4.2, shot_step * 1.35)
             if alloc_dur <= max(6.5, shot_step * 1.4):
                 n_shots = 1
@@ -418,9 +468,10 @@ def build_longform_timeline_plan(
                     if jitter > 0.05:
                         st = min(usable_end - per_shot, usable_start + si * slot + jitter)
                     dur_s = min(per_shot, usable_end - st)
-                dur_s = round(max(2.5, dur_s), 2)
+                min_clip_sec = 1.8 if shot_step < 2.6 else 2.5
+                dur_s = round(max(min_clip_sec, dur_s), 2)
                 en = round(min(c_dur, st + dur_s), 2)
-                if en - st < 1.8:
+                if en - st < 1.5:
                     continue
                 segments.append(
                     {
@@ -717,22 +768,41 @@ def generate_longform_chapter_script(
     preferred_title_style: str = "",
     preferred_subtitle_style: str = "",
     preferred_accent_color: str = "",
+    pacing_preset: str = "auto",
 ) -> dict[str, Any]:
     """Generate structured non-repeating Vlog chapters with Intro/Chapter cards/Outro & breathing narration."""
     vibe_meta = _sd.get_content_vibe_meta(content_vibe if content_vibe != "learned_dna" else "outdoor_picnic")
-    vp_prof = get_vibe_editing_profile(content_vibe)
+    vp_prof = get_vibe_editing_profile(content_vibe, pacing_preset=pacing_preset)
     topic = (topic_note or "").strip() or "Chuyến dã ngoại trải nghiệm thiên nhiên cuối tuần"
     chapters_plan = plan.get("chapters") or [
         {"index": 1, "start_sec": 0.0, "end_sec": float(plan.get("target_duration_sec") or 300.0)}
     ]
     n_chap = len(chapters_plan)
     total_dur = float(plan.get("target_duration_sec") or 300.0)
-    # Scale narration density by Vibe Editing Profile (e.g. +30% for Detective/Field Report, calm for Camping)
+    # Scale narration density by Vibe Editing Profile & Pacing Preset
     word_mult = float(vp_prof.get("word_multiplier") or 1.0)
-    target_total_words = max(120, min(2200, int(round(total_dur * 1.05 * word_mult))))
+    target_total_words = max(120, min(3400, int(round(total_dur * 1.05 * word_mult))))
     words_per_chap = max(38, int(round(target_total_words / max(1, n_chap))))
     blocks_per_chap = int(vp_prof.get("blocks_per_chap") or (4 if word_mult >= 1.35 else 2))
     director_rules = _build_vibe_director_rules(content_vibe, n_chap)
+    eff_pacing = str(vp_prof.get("pacing_preset") or "auto").strip().lower()
+    pacing_prompt_rule = ""
+    word_range_hint = "18-28 từ/đoạn"
+    if eff_pacing == "fast":
+        word_range_hint = "24-32 từ/đoạn"
+        pacing_prompt_rule = (
+            f"- MẬT ĐỘ THOẠI NHANH & DÀY (FAST): BẮT BUỘC viết đủ {blocks_per_chap} đoạn (`narration_blocks`) cho MỖI chương, mỗi đoạn dài {word_range_hint}, câu văn cuốn hút liên tiếp nhau, hạn chế tối đa khoảng trống im lặng.\n"
+        )
+    elif eff_pacing == "turbo":
+        word_range_hint = "26-34 từ/đoạn"
+        pacing_prompt_rule = (
+            f"- MẬT ĐỘ THOẠI DỒN DẬP KÍN CLIP (TURBO): BẮT BUỘC viết đủ {blocks_per_chap} đoạn (`narration_blocks`) cho MỖI chương, mỗi đoạn dài {word_range_hint} theo phong cách review phim / kể chuyện TikTok tốc độ cao, nối tiếp liền mạch phủ kín ~90-95% thời lượng, TUYỆT ĐỐI không bỏ trống cảnh.\n"
+        )
+    elif eff_pacing == "chill":
+        word_range_hint = "16-22 từ/đoạn"
+        pacing_prompt_rule = (
+            f"- MẬT ĐỘ THOẠI CHẬM RÃI (CHILL): Viết {blocks_per_chap} đoạn gọn tinh tế ({word_range_hint}) mỗi chương để nhường khoảng thở B-roll và âm thanh môi trường.\n"
+        )
 
     segments_plan = plan.get("segments") or []
     clip_summary = ", ".join(
@@ -824,7 +894,8 @@ def generate_longform_chapter_script(
         "- ĐÚNG NGỮ CẢNH TỪNG CHƯƠNG: Lời bình của Chương nào CHỈ được mô tả đúng hình ảnh thực tế của Chương đó (dựa trên các khung hình được gắn nhãn [Chương X]). TUYỆT ĐỐI không kể trước sự việc của Chương sau (ví dụ chưa đốt lửa thì không được nói lửa tắt).\n"
         "- PHONG CÁCH ĐẠO DIỄN: Nếu Chủ đề/Ghi chú có chỉ định vai diễn đột phá (như Thám tử điều tra, POV Hài hước, Phóng sự kịch tính...), hãy nhập vai TRIỆT ĐỂ giọng điệu đó (đặt câu hỏi bí ẩn, châm biếm duyên dáng hoặc dẫn dắt hồi hộp); nếu không chỉ định thì giữ giọng kể chuyện tự nhiên.\n"
         f"{director_rules}"
-        f"- Tổng lời thoại toàn video khoảng {target_total_words} từ (~{words_per_chap} từ mỗi chương, chia thành {blocks_per_chap} đoạn ngắn 18-28 từ/đoạn rải đều trong chương).\n"
+        f"{pacing_prompt_rule}"
+        f"- Tổng lời thoại toàn video khoảng {target_total_words} từ (~{words_per_chap} từ mỗi chương, chia thành {blocks_per_chap} đoạn ngắn {word_range_hint} rải đều trong chương).\n"
         "- Viết dàn trải đều cho TẤT CẢ các chương từ đầu tới cuối video, không dồn chữ vào đầu video.\n"
         "- TUYỆT ĐỐI KHÔNG lặp lại câu văn hoặc ý diễn đạt giữa các chương.\n"
         "- TUYỆT ĐỐI KHÔNG nhắc giỏ hàng, chốt đơn, freeship hay bán hàng.\n"
@@ -1481,6 +1552,52 @@ def _build_audio_cues(
     return {"bgm_drops": merged_drops, "punch_zooms": punch_zooms}
 
 
+def _atempo_pcm_24k(pcm: np.ndarray, sr: int, ratio: float, ffmpeg_bin: str) -> tuple[np.ndarray, float]:
+    """Time-compress a mono float32 narration block cleanly with FFmpeg pitch-preserving atempo."""
+    arr = np.asarray(pcm, dtype=np.float32).reshape(-1)
+    r = float(ratio or 1.0)
+    if len(arr) < int(sr * 0.25) or r <= 1.01:
+        return arr, 1.0
+    eff_r = min(1.25, max(1.01, r))
+    try:
+        with tempfile.TemporaryDirectory() as td:
+            td_p = Path(td)
+            in_w = td_p / "in.wav"
+            out_w = td_p / "out.wav"
+            sf.write(str(in_w), np.clip(arr, -0.98, 0.98), int(sr))
+            subprocess.run(
+                [
+                    ffmpeg_bin,
+                    "-y",
+                    "-hide_banner",
+                    "-loglevel",
+                    "error",
+                    "-i",
+                    str(in_w),
+                    "-af",
+                    f"atempo={eff_r:.4f}",
+                    "-ar",
+                    str(int(sr)),
+                    "-ac",
+                    "1",
+                    "-c:a",
+                    "pcm_s16le",
+                    str(out_w),
+                ],
+                capture_output=True,
+                check=True,
+                timeout=30,
+            )
+            new_pcm, _ = sf.read(str(out_w), dtype="float32")
+            new_arr = np.asarray(new_pcm, dtype=np.float32).reshape(-1)
+            if len(new_arr) >= int(sr * 0.15):
+                actual_scale = float(len(new_arr)) / float(max(1, len(arr)))
+                return new_arr, actual_scale
+    except Exception:
+        pass
+    return arr, 1.0
+
+
 def build_longform_voice_and_srt(
     chapter_script: dict[str, Any],
     plan: dict[str, Any],
@@ -1491,6 +1608,7 @@ def build_longform_voice_and_srt(
     voice_rate_override: str = "",
     phonetic_overrides: str | dict[str, str] | None = None,
     content_vibe: str = "outdoor_picnic",
+    pacing_preset: str = "auto",
     progress_cb: Any = None,
 ) -> dict[str, Any]:
     """Synthesize calm sentence-spaced vlog narration distributed evenly across the entire video."""
@@ -1508,7 +1626,7 @@ def build_longform_voice_and_srt(
 
     ffmpeg_bin = find_binary("ffmpeg")
     srt_entries: list[tuple[float, float, str]] = []
-    sentence_pause_sec = max(0.2, min(2.5, float(sentence_pause_sec if sentence_pause_sec is not None else 0.85)))
+    sentence_pause_sec = max(0.12, min(2.5, float(sentence_pause_sec if sentence_pause_sec is not None else 0.85)))
     phonetic_pairs = _parse_phonetic_overrides(phonetic_overrides)
 
     piper_voice_obj = None
@@ -1520,7 +1638,8 @@ def build_longform_voice_and_srt(
     base_f5 = float(preset.get("speed") or 1.0) * 0.94
     if str(voice_rate_override or "").strip():
         base_f5 = 1.0 + (rate_pct / 100.0)
-    vlog_f5_speed = max(0.80, min(1.15, base_f5))
+    # Keep F5-TTS Clone crisp <= 1.14 so high-rate pacing stays intelligible
+    vlog_f5_speed = max(0.80, min(1.14, base_f5))
 
     def _ensure_f5_model_and_ref(explicit_ref: str | None = None) -> bool:
         nonlocal f5_model, f5_ref_wav, f5_ref_text, f5_tmp_dir_obj
@@ -1794,7 +1913,7 @@ def build_longform_voice_and_srt(
             pass
 
     # Pass 2: Chapter-Locked Placement — keep each chapter's narration inside [start_sec .. end_sec]
-    vp_prof = get_vibe_editing_profile(content_vibe)
+    vp_prof = get_vibe_editing_profile(content_vibe, pacing_preset=pacing_preset)
     tight_mode = bool(vp_prof.get("tight_pacing"))
     safe_start = (4.4 if tight_mode else 4.8) if total_dur >= 20.0 else 0.3
     safe_end = max(safe_start + 3.0, total_dur - ((5.2 if tight_mode else 6.5) if total_dur >= 20.0 else 0.4))
@@ -1829,6 +1948,21 @@ def build_longform_voice_and_srt(
     for ch_idx in sorted(blocks_by_chap.keys()):
         ch_blocks = blocks_by_chap[ch_idx]
         win_st, win_en = chap_windows.get(ch_idx, (safe_start, safe_end))
+        ch_span = max(1.0, win_en - win_st)
+        ch_speech = sum(float(b["duration"]) for b in ch_blocks)
+        n_c = len(ch_blocks)
+        if ch_speech > ch_span:
+            fit_ratio = min(1.15, (ch_speech + 0.18 * max(0, n_c - 1)) / ch_span)
+            if fit_ratio > 1.02:
+                for b_info in ch_blocks:
+                    new_pcm, scale_t = _atempo_pcm_24k(b_info["pcm"], sr, fit_ratio, ffmpeg_bin)
+                    if scale_t < 0.995:
+                        b_info["pcm"] = new_pcm
+                        b_info["duration"] = len(new_pcm) / float(sr)
+                        b_info["sent_offsets"] = [
+                            (st_o * scale_t, en_o * scale_t, disp_o)
+                            for st_o, en_o, disp_o in (b_info.get("sent_offsets") or [])
+                        ]
         lead_gap, gap_after_each = _compute_chapter_pacing(win_st, win_en, ch_blocks, vp_prof)
         cursor_t = win_st + lead_gap
 
@@ -2622,10 +2756,11 @@ def render_longform_ffmpeg_vlog(
     project_root: Path | None = None,
     subtitle_lang: str = "vi",
     audio_cues: dict[str, Any] | None = None,
+    pacing_preset: str = "auto",
     progress_cb: Any = None,
 ) -> dict[str, Any]:
     """Render 4K/2K/1080p Vlog master with Remotion transparent overlays, sidechain ducking, & crisp ASS subs."""
-    vp_prof = get_vibe_editing_profile(content_vibe)
+    vp_prof = get_vibe_editing_profile(content_vibe, pacing_preset=pacing_preset)
     use_zoom = bool(enable_motion_zoom) and bool(vp_prof.get("motion_zoom"))
     use_vignette = (not bool(disable_vibe_filter)) and bool(vp_prof.get("vignette"))
     use_grain = (not bool(disable_vibe_filter)) and bool(vp_prof.get("film_grain"))

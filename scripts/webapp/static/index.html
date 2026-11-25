@@ -458,6 +458,7 @@
               </select>
             </div>
           </div>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 items-end">
           <div class="min-w-0">
             <label class="block text-[11px] text-cyan-300 font-medium mb-1 truncate">🎙️ Giọng Đọc AI <span class="hidden sm:inline">(F5-TTS Giọng Mẫu &amp; Edge Chuẩn)</span></label>
             <select id="auto-tts-engine" class="w-full rounded-lg bg-zinc-950 border border-zinc-700 px-2.5 py-2 text-xs text-zinc-100">
@@ -470,6 +471,16 @@
               <option value="random_all">🎲 Random: Mix F5-TTS + Edge Chuẩn</option>
               <option value="piper_vais1000">🎙️ Piper · VAIS1000 (Offline dự phòng)</option>
             </select>
+          </div>
+            <div class="min-w-0">
+              <label class="block text-[11px] text-amber-300 font-medium mb-1 truncate">⚡ Tiết tấu &amp; Độ dày thoại <span class="hidden md:inline text-zinc-400">(Điều chỉnh nhịp)</span></label>
+              <select id="auto-pacing-preset" class="w-full rounded-lg bg-zinc-950 border border-zinc-700 px-2.5 py-2 text-xs text-zinc-100">
+                <option value="auto" selected>✨ Tự động theo Vibe (Mặc định)</option>
+                <option value="chill">🌿 Chậm rãi / Nhiều khoảng thở (Chill)</option>
+                <option value="fast">⚡ Nhanh &amp; Dày thoại (~145 từ/phút)</option>
+                <option value="turbo">🔥 Dồn dập / Đọc kín toàn clip (~180 từ/phút)</option>
+              </select>
+            </div>
           </div>
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 items-end">
             <div id="wrap-auto-sfx" class="min-w-0">
@@ -4784,6 +4795,7 @@
         mix_engines: !!document.getElementById('chk-batch-mix-engines')?.checked,
         aspect_ratio: document.getElementById('auto-aspect-ratio')?.value || '16:9',
         content_vibe: document.getElementById('auto-content-vibe')?.value || 'outdoor_picnic',
+        pacing_preset: document.getElementById('auto-pacing-preset')?.value || 'auto',
         voice_preset: document.getElementById('auto-tts-engine')?.value || 'f5_clone_default',
         sfx_level: document.getElementById('auto-sfx-level')?.value || 'off',
         transition_level: document.getElementById('auto-transition-level')?.value || 'gentle',
@@ -4849,6 +4861,7 @@
 
       setVal('auto-aspect-ratio', cfg.aspect_ratio);
       setVal('auto-content-vibe', cfg.content_vibe);
+      setVal('auto-pacing-preset', cfg.pacing_preset || 'auto');
       setVal('auto-tts-engine', cfg.voice_preset);
       setVal('auto-sfx-level', cfg.sfx_level);
       setVal('auto-transition-level', cfg.transition_level);
@@ -4914,6 +4927,7 @@
         product_note: savedCfg.product_note || '',
         target_duration_sec: savedCfg.target_duration_sec || base.target_duration_sec || 300,
         quality_preset: savedCfg.quality_preset || base.quality_preset || 'auto_source',
+        pacing_preset: savedCfg.pacing_preset || base.pacing_preset || 'auto',
         auto_fit_duration: savedCfg.auto_fit_duration !== undefined ? !!savedCfg.auto_fit_duration : !!base.auto_fit_duration,
         keep_clip_audio: savedCfg.keep_clip_audio !== undefined ? !!savedCfg.keep_clip_audio : (base.keep_clip_audio !== undefined ? !!base.keep_clip_audio : true),
         face_blur_enabled: fpCfg.enabled !== undefined ? !!fpCfg.enabled : false,
@@ -5476,6 +5490,7 @@
       const sfx_level = document.getElementById('auto-sfx-level')?.value || 'subtle';
       const aspect_ratio = document.getElementById('auto-aspect-ratio')?.value || '9:16';
       const content_vibe = document.getElementById('auto-content-vibe')?.value || 'learned_dna';
+      const pacing_preset = document.getElementById('auto-pacing-preset')?.value || 'auto';
       const quality_preset = isLongVlog ? (document.getElementById('longform-quality')?.value || 'auto_source') : 'auto_source';
       const vlog_title = isLongVlog ? (document.getElementById('longform-title')?.value?.trim() || '') : '';
       const longform_random_mode = isLongVlog ? !!document.getElementById('chk-longform-random')?.checked : false;
@@ -5554,6 +5569,7 @@
             sfx_level,
             aspect_ratio,
             content_vibe,
+            pacing_preset,
             short_content_mode: shortContentMode,
             pipeline_category: state.pipelineCategory || 'short_tiktok',
             ordered_clips,

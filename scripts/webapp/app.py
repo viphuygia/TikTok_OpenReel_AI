@@ -1224,6 +1224,7 @@ class OneClickPipelineReq(BaseModel):
     mute_voice: bool = False
     hide_subtitles: bool = False
     subtitle_lang: str = "vi"
+    pacing_preset: str = "auto"
     enable_motion_zoom: bool = False
     disable_vibe_filter: bool = False
     disclaimer_enabled: bool = False
@@ -5755,7 +5756,10 @@ def _execute_longform_vlog_pipeline(
     req_vibe = str(getattr(req, "content_vibe", "outdoor_picnic") or "outdoor_picnic").strip()
     if req_vibe == "learned_dna":
         req_vibe = "outdoor_picnic"
-    vp_prof = _lf.get_vibe_editing_profile(req_vibe)
+    req_pacing = str(getattr(req, "pacing_preset", "auto") or "auto").strip().lower()
+    if req_pacing not in ("auto", "chill", "fast", "turbo"):
+        req_pacing = "auto"
+    vp_prof = _lf.get_vibe_editing_profile(req_vibe, pacing_preset=req_pacing)
     req_quality = str(getattr(req, "quality_preset", "auto_source") or "auto_source").strip()
     req_vlog_title = str(getattr(req, "vlog_title", "") or "").strip()
 
@@ -5768,13 +5772,14 @@ def _execute_longform_vlog_pipeline(
             {"id": 5, "tab": "tab5", "label": f"Bước 5: Xuất MP4 Chất Lượng Cao vào Kho Video", "status": "idle", "detail": ""},
         ]
 
+    pacing_log = f" [Tiết tấu: {req_pacing.upper()}]" if req_pacing != "auto" else ""
     _update_pipeline(
         current_step=1,
         current_tab="tab4",
         percent=10,
         message="Bước 1/5 (Timeline Vlog): Quét video thô 4K & chia shot highlight theo đúng thứ tự...",
         step_status=(1, "running", "Chia shot Highlight"),
-        log_line="[Clip Dài > 90s] Quét clip 02_video_tho/ & chia nhịp highlight 4.5-8.5s theo thứ tự thời gian...",
+        log_line=f"[Clip Dài > 90s]{pacing_log} Quét clip 02_video_tho/ & chia nhịp {float(vp_prof.get('shot_sec') or 6.2):.1f}s/cảnh theo thứ tự thời gian...",
     )
     ordered = _lf.collect_ordered_raw_clips(DIR_VIDEO_THO, ordered_names=req.ordered_clips or None)
     if not ordered:
@@ -5874,6 +5879,7 @@ def _execute_longform_vlog_pipeline(
             preferred_title_style=pref_ts,
             preferred_subtitle_style=pref_ss,
             preferred_accent_color=pref_ac,
+            pacing_preset=req_pacing,
         )
     ch_json_path.write_text(
         json.dumps(ch_script, ensure_ascii=False, indent=2), encoding="utf-8"
@@ -5890,6 +5896,7 @@ def _execute_longform_vlog_pipeline(
         "ordered_clips": [c["rel_path"] for c in ordered],
         "aspect_ratio": req_aspect,
         "content_vibe": req_vibe,
+        "pacing_preset": req_pacing,
         "last_title_style": str(vd_saved.get("title_style") or ""),
         "last_subtitle_style": str(vd_saved.get("subtitle_style") or ""),
     }
@@ -5936,8 +5943,9 @@ def _execute_longform_vlog_pipeline(
                 step_status=(3, "running", msg_lbl),
             )
 
-        eff_pause = float(vp_prof.get("sentence_pause_sec") or 0.85) if vp_prof.get("force_vfx") else float(prev_lf_cfg.get("sentence_pause_sec") or vp_prof.get("sentence_pause_sec") or 0.85)
-        eff_vrate = str(vp_prof.get("voice_rate_offset") or "") if vp_prof.get("force_vfx") else str(prev_lf_cfg.get("voice_rate_offset") or vp_prof.get("voice_rate_offset") or "")
+        force_pace_or_vfx = bool(vp_prof.get("force_pacing") or vp_prof.get("force_vfx"))
+        eff_pause = float(vp_prof.get("sentence_pause_sec") or 0.85) if force_pace_or_vfx else float(prev_lf_cfg.get("sentence_pause_sec") or vp_prof.get("sentence_pause_sec") or 0.85)
+        eff_vrate = str(vp_prof.get("voice_rate_offset") or "") if force_pace_or_vfx else str(prev_lf_cfg.get("voice_rate_offset") or vp_prof.get("voice_rate_offset") or "")
         voice_res = _lf.build_longform_voice_and_srt(
             chapter_script=ch_script,
             plan=plan,
@@ -5948,6 +5956,7 @@ def _execute_longform_vlog_pipeline(
             voice_rate_override=eff_vrate,
             phonetic_overrides=prev_lf_cfg.get("phonetic_overrides") or "",
             content_vibe=req_vibe,
+            pacing_preset=req_pacing,
             progress_cb=_lf_voice_progress,
         )
         sfx_cnt = int(voice_res.get("sfx_count") or 0)
@@ -6046,6 +6055,7 @@ def _execute_longform_vlog_pipeline(
             project_root=ACTIVE_PROJECT_ROOT,
             subtitle_lang=req_sub_lang,
             audio_cues=(voice_res.get("audio_cues") if (not req_mute_voice and isinstance(voice_res, dict)) else None),
+            pacing_preset=req_pacing,
             keep_clip_audio=bool(getattr(req, "keep_clip_audio", False)),
         )
         lf_meta = _attach_output_assets(
@@ -6065,6 +6075,7 @@ def _execute_longform_vlog_pipeline(
                 "subtitle_style": str(vd.get("subtitle_style") or "editorial_clean"),
                 "color_preset": eff_color_preset,
                 "content_vibe": req_vibe,
+                "pacing_preset": req_pacing,
                 "accent_color": str(vd.get("accent_color") or "#F59E0B"),
                 "sticker_density": str(req.sticker_density or "normal"),
                 "stickers_count": stk_rendered,
@@ -6940,7 +6951,7 @@ def _req_for_project(req: OneClickPipelineReq, pid: str, multi_projects: bool) -
         if isinstance(pc.get("ordered_clips"), list):
             upd["ordered_clips"] = [str(x) for x in pc["ordered_clips"] if str(x).strip()]
         str_fields = (
-            "vlog_title", "product_note", "quality_preset", "aspect_ratio", "content_vibe",
+            "vlog_title", "product_note", "quality_preset", "aspect_ratio", "content_vibe", "pacing_preset",
             "short_content_mode", "voice_preset", "tts_engine", "edge_voice", "bgm_track", "sticker_density", "sticker_style",
             "render_engine", "innovation_preset", "sfx_level", "transition_level",
             "icon_density", "visual_theme", "subtitle_lang", "disclaimer_text", "face_blur_mode", "face_blur_style", "face_blur_icon",
