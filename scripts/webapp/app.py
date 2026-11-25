@@ -1810,6 +1810,128 @@ async def api_upload_files(
     }
 
 
+UPLOAD_ID_RE = re.compile(r"^[a-zA-Z0-9_-]{6,80}$")
+
+
+class UploadAbortReq(BaseModel):
+    upload_id: str
+    project_id: str = ""
+
+
+def _get_upload_tmp_dir(project_id: str = "") -> Path:
+    pid = str(project_id or "").strip()
+    if pid:
+        proj_root = get_project_root(pid)
+        if not proj_root.exists():
+            raise HTTPException(status_code=404, detail=f"Không tìm thấy Project `{pid}`.")
+    else:
+        proj_root = ACTIVE_PROJECT_ROOT
+    tmp_dir = (proj_root / "04_workspace" / "_upload_tmp").resolve()
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+    return tmp_dir
+
+
+def _cleanup_stale_upload_parts(tmp_dir: Path, max_age_sec: float = 7200.0) -> int:
+    """Remove leftover `.part` temp files older than `max_age_sec`."""
+    if not tmp_dir.exists() or not tmp_dir.is_dir():
+        return 0
+    now = time.time()
+    removed = 0
+    for item in tmp_dir.glob("*.part"):
+        try:
+            if not item.is_file():
+                continue
+            age = now - float(item.stat().st_mtime)
+            if age >= float(max_age_sec):
+                item.unlink(missing_ok=True)
+                removed += 1
+        except Exception:
+            pass
+    return removed
+
+
+@app.post("/api/files/upload-chunk")
+async def api_upload_file_chunk(
+    upload_id: str = Form(...),
+    filename: str = Form(...),
+    target_dir: str = Form("02_video_tho"),
+    project_id: str = Form(""),
+    offset: int = Form(0),
+    total_size: int = Form(0),
+    chunk_index: int = Form(0),
+    total_chunks: int = Form(1),
+    chunk: UploadFile = File(...),
+):
+    uid = str(upload_id or "").strip()
+    if not UPLOAD_ID_RE.fullmatch(uid):
+        raise HTTPException(status_code=400, detail="upload_id không hợp lệ.")
+    if offset < 0 or total_size <= 0 or total_chunks < 1 or chunk_index < 0 or chunk_index >= total_chunks:
+        raise HTTPException(status_code=400, detail="Tham số phân mảnh upload không hợp lệ.")
+
+    orig_name = Path(str(filename or "video.mp4")).name
+    ext = Path(orig_name).suffix.lower()
+    if ext not in MEDIA_EXTENSIONS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Định dạng không hỗ trợ ({orig_name}). Chỉ nhận video/audio ({', '.join(sorted(MEDIA_EXTENSIONS))}).",
+        )
+
+    dest_dir = _resolve_project_scoped_dir(target_dir, project_id)
+    assert_mutable_path(dest_dir)
+    dest_dir.mkdir(parents=True, exist_ok=True)
+
+    tmp_dir = _get_upload_tmp_dir(project_id)
+    if chunk_index == 0:
+        _cleanup_stale_upload_parts(tmp_dir, max_age_sec=7200.0)
+
+    part_path = (tmp_dir / f"{uid}.part").resolve()
+    if part_path.parent != tmp_dir:
+        raise HTTPException(status_code=400, detail="Đường dẫn tạm không hợp lệ.")
+
+    data = await chunk.read()
+    mode = "wb" if (chunk_index == 0 and offset == 0) or not part_path.exists() else "r+b"
+    with open(part_path, mode) as f:
+        f.seek(offset)
+        f.write(data)
+
+    if chunk_index + 1 < total_chunks:
+        return {
+            "ok": True,
+            "done": False,
+            "upload_id": uid,
+            "received_bytes": offset + len(data),
+        }
+
+    if not part_path.exists() or part_path.stat().st_size < total_size:
+        part_path.unlink(missing_ok=True)
+        raise HTTPException(status_code=400, detail="Tệp ghép mảnh chưa đủ dung lượng. Vui lòng thử tải lại.")
+
+    safe_stem = sanitize_filename(Path(orig_name).stem, fallback="upload")
+    out_path = dest_dir / f"{safe_stem}{ext}"
+    if out_path.exists():
+        out_path = dest_dir / f"{safe_stem}_{int(time.time())}{ext}"
+    os.replace(str(part_path), str(out_path))
+    return {
+        "ok": True,
+        "done": True,
+        "count": 1,
+        "target_dir": to_rel_posix(dest_dir),
+        "file": probe_media(out_path),
+    }
+
+
+@app.post("/api/files/upload-abort")
+def api_upload_file_abort(req: UploadAbortReq):
+    uid = str(req.upload_id or "").strip()
+    if not UPLOAD_ID_RE.fullmatch(uid):
+        raise HTTPException(status_code=400, detail="upload_id không hợp lệ.")
+    tmp_dir = _get_upload_tmp_dir(req.project_id)
+    part_path = (tmp_dir / f"{uid}.part").resolve()
+    if part_path.parent == tmp_dir and part_path.exists():
+        part_path.unlink(missing_ok=True)
+    return {"ok": True}
+
+
 @app.post("/api/files/mkdir")
 def api_mkdir(req: MkdirReq):
     parent = resolve_safe_path(req.parent_dir)

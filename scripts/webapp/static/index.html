@@ -1090,7 +1090,7 @@
             </div>
           </div>
 
-          <input id="tab1-upload-input" type="file" multiple accept="video/*,.mp4,.mov,.m4v,.mkv,.avi,.webm,audio/*,.wav,.mp3,.m4a" class="hidden" onchange="uploadTab1Files(this.files); this.value='';" />
+          <input id="tab1-upload-input" type="file" multiple accept="video/*,.mp4,.mov,.m4v,.mkv,.avi,.webm,audio/*,.wav,.mp3,.m4a" class="hidden" onchange="uploadTab1Files(this.files, this)" />
           <div id="tab1-dropzone" onclick="document.getElementById('tab1-upload-input').click()" class="cursor-pointer rounded-xl border-2 border-dashed border-indigo-500/40 hover:border-indigo-400 bg-indigo-950/20 px-4 py-3 text-center transition">
             <div class="text-xs font-medium text-indigo-200">📱 Chạm để chọn video từ Thư viện ảnh iPhone / Tệp máy tính (hoặc kéo thả vào đây)</div>
             <div id="tab1-upload-status" class="text-[11px] text-zinc-400 mt-1">Hỗ trợ nhiều file .MOV, .MP4 cùng lúc · Lưu thẳng vào thư mục đích đang chọn</div>
@@ -1474,7 +1474,7 @@
           </div>
         </div>
 
-        <input id="ws-upload-input" type="file" multiple accept="video/*,audio/*,.mp4,.mov,.mkv,.avi,.webm,.m4v,.wav,.mp3,.m4a" class="hidden" onchange="uploadWorkshopFiles(this.files); this.value='';" />
+        <input id="ws-upload-input" type="file" multiple accept="video/*,audio/*,.mp4,.mov,.mkv,.avi,.webm,.m4v,.wav,.mp3,.m4a" class="hidden" onchange="uploadWorkshopFiles(this.files, this)" />
         <div id="ws-dropzone" onclick="document.getElementById('ws-upload-input').click()" class="cursor-pointer rounded-xl border-2 border-dashed border-zinc-700 hover:border-indigo-500/70 bg-zinc-900/50 px-4 py-4 text-center transition">
           <div class="text-xs font-medium text-zinc-200">Kéo thả nhiều video thô (.mp4, .mov, .mkv...) vào đây hoặc bấm để chọn tệp</div>
           <div id="ws-upload-status" class="text-[11px] text-zinc-400 mt-1">Tệp sẽ được lưu trực tiếp vào thư mục đích đã chọn ở trên</div>
@@ -3429,51 +3429,177 @@
       }
     }
 
-    async function uploadMediaFilesWithProgress(fileList, targetDir, statusEl, barWrapEl, barEl, onSuccess) {
-      if (!fileList || !fileList.length) return;
-      const fd = new FormData();
-      fd.append('target_dir', targetDir);
-      if (state.uploadTargetProjectId) {
-        fd.append('project_id', state.uploadTargetProjectId);
+    function _xhrSendFormData(url, fd, onProgress, timeoutMs = 180000) {
+      return new Promise((resolve, reject) => {
+        const xhr = new XMLHttpRequest();
+        xhr.open('POST', url);
+        xhr.timeout = timeoutMs;
+        xhr.upload.onprogress = (ev) => {
+          if (ev.lengthComputable && typeof onProgress === 'function') {
+            onProgress(ev.loaded, ev.total);
+          }
+        };
+        xhr.onload = () => {
+          let data = {};
+          try {
+            data = JSON.parse(xhr.responseText || '{}');
+          } catch {}
+          if (xhr.status >= 200 && xhr.status < 300) {
+            resolve(data);
+          } else {
+            const err = new Error(data.detail || `HTTP ${xhr.status}`);
+            err.httpStatus = xhr.status;
+            reject(err);
+          }
+        };
+        xhr.onerror = () => reject(new Error('Lỗi kết nối mạng khi upload'));
+        xhr.onabort = () => reject(new Error('Kết nối upload bị trình duyệt ngắt giữa chừng (iOS/Mạng)'));
+        xhr.ontimeout = () => reject(new Error('Upload bị quá thời gian chờ phản hồi'));
+        xhr.send(fd);
+      });
+    }
+
+    async function uploadMediaFilesWithProgress(fileList, targetDir, statusEl, barWrapEl, barEl, onSuccess, inputEl = null) {
+      const files = Array.from(fileList || []);
+      if (!files.length) {
+        if (inputEl) inputEl.value = '';
+        return;
       }
-      for (const file of fileList) {
-        fd.append('files', file);
-      }
-      if (statusEl) statusEl.textContent = `Đang tải lên ${fileList.length} tệp vào ${targetDir}... 0%`;
+
+      const CHUNK_SIZE = 16 * 1024 * 1024;
+      const retryDelays = [1200, 2500, 4000];
+      const targetPid = state.uploadTargetProjectId || '';
+      const totalBytesAll = files.reduce((acc, f) => acc + Math.max(0, Number(f.size || 0)), 0);
+      let completedBytes = 0;
+      let wakeLock = null;
+
+      try {
+        if (navigator.wakeLock?.request) {
+          wakeLock = await navigator.wakeLock.request('screen');
+        }
+      } catch {}
+
+      if (statusEl) statusEl.textContent = `Đang chuẩn bị tải lên ${files.length} tệp vào ${targetDir}... 0%`;
       if (barWrapEl) barWrapEl.classList.remove('hidden');
       if (barEl) barEl.style.width = '0%';
+
+      const updateOverallProgress = (fileIdx, fileName, fileLoaded, fileSize) => {
+        const curLoaded = completedBytes + Math.min(fileSize, fileLoaded);
+        const pct = totalBytesAll > 0 ? Math.min(100, Math.round((curLoaded / totalBytesAll) * 100)) : 0;
+        const mbLoaded = (curLoaded / (1024 * 1024)).toFixed(1);
+        const mbTotal = (totalBytesAll / (1024 * 1024)).toFixed(1);
+        if (barEl) barEl.style.width = `${pct}%`;
+        if (statusEl) {
+          statusEl.textContent = `Đang tải tệp ${fileIdx + 1}/${files.length} (${fileName}): ${pct}% (${mbLoaded}/${mbTotal} MB)...`;
+        }
+      };
+
       try {
-        const res = await new Promise((resolve, reject) => {
-          const xhr = new XMLHttpRequest();
-          xhr.open('POST', '/api/files/upload');
-          xhr.upload.onprogress = (ev) => {
-            if (ev.lengthComputable) {
-              const pct = Math.min(100, Math.round((ev.loaded / ev.total) * 100));
-              const mbLoaded = (ev.loaded / (1024 * 1024)).toFixed(1);
-              const mbTotal = (ev.total / (1024 * 1024)).toFixed(1);
-              if (barEl) barEl.style.width = `${pct}%`;
-              if (statusEl) statusEl.textContent = `Đang tải lên ${fileList.length} tệp vào ${targetDir}: ${pct}% (${mbLoaded}/${mbTotal} MB)...`;
+        for (let fi = 0; fi < files.length; fi++) {
+          const file = files[fi];
+          const fSize = Math.max(0, Number(file.size || 0));
+
+          if (fSize <= CHUNK_SIZE) {
+            let lastErr = null;
+            for (let attempt = 0; attempt <= 2; attempt++) {
+              const fd = new FormData();
+              fd.append('target_dir', targetDir);
+              if (targetPid) fd.append('project_id', targetPid);
+              fd.append('files', file);
+              try {
+                await _xhrSendFormData(
+                  '/api/files/upload',
+                  fd,
+                  (loaded, total) => {
+                    const scaled = total > 0 ? Math.round((loaded / total) * fSize) : loaded;
+                    updateOverallProgress(fi, file.name, scaled, fSize);
+                  },
+                  180000
+                );
+                lastErr = null;
+                break;
+              } catch (e) {
+                lastErr = e;
+                if ((e.httpStatus >= 400 && e.httpStatus < 500) || attempt >= 2) break;
+                if (statusEl) statusEl.textContent = `Tệp ${fi + 1}/${files.length} bị gián đoạn — đang thử lại (${attempt + 1}/2)...`;
+                await new Promise((r) => setTimeout(r, retryDelays[attempt] || 1500));
+              }
             }
-          };
-          xhr.onload = () => {
-            try {
-              const data = JSON.parse(xhr.responseText || '{}');
-              if (xhr.status >= 200 && xhr.status < 300) resolve(data);
-              else reject(new Error(data.detail || `HTTP ${xhr.status}`));
-            } catch {
-              reject(new Error(`HTTP ${xhr.status}`));
+            if (lastErr) throw lastErr;
+            completedBytes += fSize;
+            updateOverallProgress(fi, file.name, fSize, fSize);
+            continue;
+          }
+
+          const uploadId = `up_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+          const totalChunks = Math.ceil(fSize / CHUNK_SIZE);
+          let fileFailed = false;
+          try {
+            for (let ci = 0; ci < totalChunks; ci++) {
+              const offset = ci * CHUNK_SIZE;
+              const end = Math.min(fSize, offset + CHUNK_SIZE);
+              const slice = file.slice(offset, end);
+              const chunkBytes = Math.max(1, end - offset);
+              let chunkErr = null;
+              for (let attempt = 0; attempt <= 3; attempt++) {
+                const fd = new FormData();
+                fd.append('upload_id', uploadId);
+                fd.append('filename', file.name || `video_${fi + 1}.mp4`);
+                fd.append('target_dir', targetDir);
+                if (targetPid) fd.append('project_id', targetPid);
+                fd.append('offset', String(offset));
+                fd.append('total_size', String(fSize));
+                fd.append('chunk_index', String(ci));
+                fd.append('total_chunks', String(totalChunks));
+                fd.append('chunk', slice, file.name || 'chunk.bin');
+                try {
+                  await _xhrSendFormData(
+                    '/api/files/upload-chunk',
+                    fd,
+                    (loaded, total) => {
+                      const inChunk = total > 0 ? Math.round((loaded / total) * chunkBytes) : loaded;
+                      updateOverallProgress(fi, file.name, offset + inChunk, fSize);
+                    },
+                    180000
+                  );
+                  chunkErr = null;
+                  break;
+                } catch (e) {
+                  chunkErr = e;
+                  if ((e.httpStatus >= 400 && e.httpStatus < 500) || attempt >= 3) break;
+                  if (statusEl) statusEl.textContent = `Mảnh ${ci + 1}/${totalChunks} (${file.name}) chớp mạng — thử lại (${attempt + 1}/3)...`;
+                  await new Promise((r) => setTimeout(r, retryDelays[attempt] || 2000));
+                }
+              }
+              if (chunkErr) {
+                fileFailed = true;
+                throw chunkErr;
+              }
             }
-          };
-          xhr.onerror = () => reject(new Error('Lỗi kết nối mạng khi upload'));
-          xhr.send(fd);
-        });
-        if (statusEl) statusEl.textContent = `Đã tải lên ${res.count} tệp vào ${res.target_dir}.`;
-        toast(`Đã thêm ${res.count} tệp vào ${res.target_dir}`, 'success');
-        if (onSuccess) await onSuccess(res);
+            completedBytes += fSize;
+            updateOverallProgress(fi, file.name, fSize, fSize);
+          } finally {
+            if (fileFailed) {
+              fetch('/api/files/upload-abort', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ upload_id: uploadId, project_id: targetPid }),
+              }).catch(() => {});
+            }
+          }
+        }
+
+        if (statusEl) statusEl.textContent = `Đã tải lên ${files.length} tệp vào ${targetDir}.`;
+        toast(`Đã thêm ${files.length} tệp vào ${targetDir}`, 'success');
+        if (onSuccess) await onSuccess({ ok: true, count: files.length, target_dir: targetDir });
       } catch (e) {
         if (statusEl) statusEl.textContent = `Lỗi tải lên: ${e.message}`;
         toast(e.message, 'error');
       } finally {
+        try {
+          if (wakeLock) await wakeLock.release();
+        } catch {}
+        if (inputEl) inputEl.value = '';
         if (barWrapEl) setTimeout(() => barWrapEl.classList.add('hidden'), 1200);
       }
     }
@@ -3495,7 +3621,7 @@
       });
     }
 
-    async function uploadTab1Files(fileList) {
+    async function uploadTab1Files(fileList, inputEl = null) {
       const targetDir = document.getElementById('dl-target-dir')?.value || '02_video_tho';
       return uploadMediaFilesWithProgress(
         fileList,
@@ -3511,11 +3637,12 @@
             const upPid = getTab1ProjectId();
             if (upPid) startFaceScan(upPid, false, true);
           }
-        }
+        },
+        inputEl
       );
     }
 
-    async function uploadWorkshopFiles(fileList) {
+    async function uploadWorkshopFiles(fileList, inputEl = null) {
       const targetDir = document.getElementById('ws-upload-dir')?.value || '02_video_tho';
       return uploadMediaFilesWithProgress(
         fileList,
@@ -3527,7 +3654,8 @@
           await loadWorkshopState();
           loadOverview();
           loadTab1Files();
-        }
+        },
+        inputEl
       );
     }
 
