@@ -236,13 +236,22 @@ def _collect_source_videos(project_root: Path, selected_clips: list[str] | None 
     raw_dir = Path(project_root) / "02_video_tho"
     if not raw_dir.exists():
         return []
-    wanted = {str(x).replace("\\", "/").strip() for x in (selected_clips or []) if str(x).strip()}
+    wanted_norm: set[str] = set()
+    for x in (selected_clips or []):
+        s = str(x).replace("\\", "/").strip().strip("/")
+        if not s:
+            continue
+        low = s.lower()
+        if low.startswith("02_video_tho/"):
+            low = low[len("02_video_tho/"):]
+        if low:
+            wanted_norm.add(low)
     out: list[tuple[Path, str]] = []
     for p in raw_dir.rglob("*"):
         if not p.is_file() or p.suffix.lower() not in MEDIA_VIDEO_EXTS:
             continue
         rel = p.relative_to(raw_dir).as_posix()
-        if wanted and rel not in wanted and p.name not in wanted:
+        if wanted_norm and rel.lower() not in wanted_norm and p.name.lower() not in wanted_norm:
             continue
         out.append((p, rel))
     out.sort(key=lambda item: item[1].lower())
