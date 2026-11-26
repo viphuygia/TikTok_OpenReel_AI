@@ -671,15 +671,43 @@
               <div class="flex flex-wrap items-center justify-between gap-2 pt-1">
                 <label class="flex items-center gap-2 text-amber-200 font-medium cursor-pointer">
                   <input id="chk-plate-blur-enabled" type="checkbox" onchange="onFaceBlurOptionChange()" class="rounded bg-zinc-800 border-amber-500 text-amber-500" />
-                  <span>🚗 Tự động che Biển số xe (Ô tô &amp; Xe máy VN · Không cần quét)</span>
+                  <span>🚗 Bật che Biển số xe (Ô tô &amp; Xe máy VN)</span>
                 </label>
-                <div id="wrap-plate-blur-style" class="hidden flex items-center gap-1.5">
-                  <span class="text-[10px] text-zinc-400">Kiểu che biển:</span>
-                  <select id="plate-blur-style" onchange="onFaceBlurOptionChange()" class="rounded-lg bg-zinc-900 border border-amber-500/40 px-2 py-1 text-[11px] text-zinc-100">
-                    <option value="pixelate" selected>🧱 Ô vuông Mosaic (Khuyên dùng)</option>
-                    <option value="gaussian">💧 Làm mờ mạnh (Gaussian)</option>
-                    <option value="solid">⬛ Khối tối che kín (Solid)</option>
-                  </select>
+                <div id="wrap-plate-blur-style" class="hidden flex flex-wrap items-center gap-2">
+                  <div class="flex items-center gap-1.5">
+                    <span class="text-[10px] text-zinc-400">Chế độ:</span>
+                    <select id="plate-blur-mode" onchange="onFaceBlurOptionChange()" class="rounded-lg bg-zinc-900 border border-amber-500/40 px-2 py-1 text-[11px] text-zinc-100">
+                      <option value="blur_all" selected>🌐 Che tất cả (Nhanh · Không cần quét)</option>
+                      <option value="blur_selected">🎯 Chỉ che biển được chọn</option>
+                      <option value="keep_selected">🛡️ Giữ biển đã chọn — Che biển khác</option>
+                    </select>
+                  </div>
+                  <div class="flex items-center gap-1.5">
+                    <span class="text-[10px] text-zinc-400">Kiểu che:</span>
+                    <select id="plate-blur-style" onchange="onFaceBlurOptionChange()" class="rounded-lg bg-zinc-900 border border-amber-500/40 px-2 py-1 text-[11px] text-zinc-100">
+                      <option value="pixelate" selected>🧱 Ô vuông Mosaic (Khuyên dùng)</option>
+                      <option value="gaussian">💧 Làm mờ mạnh (Gaussian)</option>
+                      <option value="solid">⬛ Khối tối che kín (Solid)</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+              <div id="plate-blur-panel" class="hidden rounded-xl bg-zinc-950/80 border border-amber-500/35 p-3 space-y-2.5">
+                <div class="flex flex-wrap items-center justify-between gap-2">
+                  <button id="btn-scan-plates" type="button" onclick="startPlateScan(getActiveModalProjectId(), true)" class="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-[11px] font-semibold text-white transition">
+                    🔍 Quét Biển Số Xe (02_video_tho)
+                  </button>
+                  <span id="plate-scan-status" class="text-[11px] text-zinc-400">Chưa quét biển số cho project này.</span>
+                </div>
+                <div class="flex flex-wrap items-center justify-between gap-2 text-[11px]">
+                  <span id="plate-blur-hint" class="text-rose-300">Bấm vào ảnh biển số để ĐÁNH DẤU CHE (viền đỏ).</span>
+                  <div class="flex items-center gap-1.5">
+                    <button type="button" onclick="selectAllPlatesForProject(getActiveModalProjectId(), true)" class="px-2 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-[10px] text-zinc-200">Chọn tất cả</button>
+                    <button type="button" onclick="selectAllPlatesForProject(getActiveModalProjectId(), false)" class="px-2 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-[10px] text-zinc-300">Bỏ chọn</button>
+                  </div>
+                </div>
+                <div id="plate-blur-grid" class="flex sm:grid sm:grid-cols-3 md:grid-cols-4 gap-2 overflow-x-auto pb-1">
+                  <div class="col-span-full text-[11px] text-zinc-500 p-2 border border-dashed border-zinc-800 rounded-lg w-full text-center">Bấm "🔍 Quét Biển Số Xe" để AI trích ảnh &amp; đọc ký tự biển số trong clip thô.</div>
                 </div>
               </div>
             </div>
@@ -1245,18 +1273,56 @@
                 <div class="col-span-full text-[11px] text-zinc-500 p-2 border border-dashed border-zinc-800 rounded-lg w-full text-center">Bấm "🔍 Quét Gương Mặt (Chạy nền)" để AI nhận diện trước các khuôn mặt trong clip thô.</div>
               </div>
 
-              <div class="pt-2 border-t border-zinc-800/80 flex flex-wrap items-center justify-between gap-2">
-                <label class="flex items-center gap-2 text-xs text-amber-200 font-medium cursor-pointer">
-                  <input id="tab1-plate-enabled" type="checkbox" onchange="onTab1FaceConfigChange()" class="rounded bg-zinc-800 border-amber-500 text-amber-500" />
-                  <span>🚗 Tự động che Biển số xe (Ô tô &amp; Xe máy VN)</span>
-                </label>
-                <div id="wrap-tab1-plate-style" class="hidden flex items-center gap-1.5">
-                  <span class="text-[10px] text-zinc-400">Kiểu che biển:</span>
-                  <select id="tab1-plate-style" onchange="onTab1FaceConfigChange()" class="rounded-lg bg-zinc-900 border border-amber-500/40 px-2 py-1 text-[11px] text-zinc-100">
-                    <option value="pixelate" selected>🧱 Ô vuông Mosaic (Khuyên dùng)</option>
-                    <option value="gaussian">💧 Làm mờ mạnh (Gaussian)</option>
-                    <option value="solid">⬛ Khối tối che kín (Solid)</option>
-                  </select>
+              <div class="pt-2 border-t border-zinc-800/80 space-y-2.5">
+                <div class="flex flex-wrap items-center justify-between gap-2">
+                  <label class="flex items-center gap-2 text-xs text-amber-200 font-medium cursor-pointer">
+                    <input id="tab1-plate-enabled" type="checkbox" onchange="onTab1FaceConfigChange()" class="rounded bg-zinc-800 border-amber-500 text-amber-500" />
+                    <span>🚗 Bật che Biển số xe (Ô tô &amp; Xe máy VN)</span>
+                  </label>
+                  <div id="wrap-tab1-plate-style" class="hidden flex flex-wrap items-center gap-2">
+                    <div class="flex items-center gap-1.5">
+                      <span class="text-[10px] text-zinc-400">Chế độ:</span>
+                      <select id="tab1-plate-mode" onchange="onTab1FaceConfigChange()" class="rounded-lg bg-zinc-900 border border-amber-500/40 px-2 py-1 text-[11px] text-zinc-100">
+                        <option value="blur_all" selected>🌐 Che tất cả (Nhanh · Không cần quét)</option>
+                        <option value="blur_selected">🎯 Chỉ che biển được chọn</option>
+                        <option value="keep_selected">🛡️ Giữ biển đã chọn — Che biển khác</option>
+                      </select>
+                    </div>
+                    <div class="flex items-center gap-1.5">
+                      <span class="text-[10px] text-zinc-400">Kiểu che:</span>
+                      <select id="tab1-plate-style" onchange="onTab1FaceConfigChange()" class="rounded-lg bg-zinc-900 border border-amber-500/40 px-2 py-1 text-[11px] text-zinc-100">
+                        <option value="pixelate" selected>🧱 Ô vuông Mosaic (Khuyên dùng)</option>
+                        <option value="gaussian">💧 Làm mờ mạnh (Gaussian)</option>
+                        <option value="solid">⬛ Khối tối che kín (Solid)</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+                <div id="tab1-plate-panel" class="hidden rounded-xl bg-zinc-900/60 border border-amber-500/30 p-3 space-y-2.5">
+                  <div class="flex flex-wrap items-center justify-between gap-2">
+                    <button id="btn-tab1-scan-plates" type="button" onclick="startPlateScan(getTab1ProjectId(), true)" class="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-[11px] font-semibold text-white transition">
+                      🔍 Quét Biển Số Xe (Chạy nền)
+                    </button>
+                    <span id="tab1-plate-status" class="text-[11px] text-zinc-400">Chưa quét biển số cho project này.</span>
+                  </div>
+                  <div id="tab1-plate-progress-wrap" class="hidden space-y-1">
+                    <div class="flex items-center justify-between text-[11px] text-amber-300">
+                      <span id="tab1-plate-progress-text">⏳ Đang quét biển số...</span>
+                    </div>
+                    <div class="h-1.5 w-full rounded-full bg-zinc-800 overflow-hidden">
+                      <div id="tab1-plate-progress-bar" class="h-full bg-amber-500 transition-all duration-200" style="width: 15%"></div>
+                    </div>
+                  </div>
+                  <div class="flex flex-wrap items-center justify-between gap-2 text-[11px]">
+                    <span id="tab1-plate-hint" class="text-rose-300">Bấm vào ảnh biển số để ĐÁNH DẤU CHE (viền đỏ).</span>
+                    <div class="flex items-center gap-1.5">
+                      <button type="button" onclick="selectAllPlatesForProject(getTab1ProjectId(), true)" class="px-2 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-[10px] text-zinc-200">Chọn tất cả</button>
+                      <button type="button" onclick="selectAllPlatesForProject(getTab1ProjectId(), false)" class="px-2 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-[10px] text-zinc-300">Bỏ chọn</button>
+                    </div>
+                  </div>
+                  <div id="tab1-plate-grid" class="flex sm:grid sm:grid-cols-3 md:grid-cols-4 gap-2 overflow-x-auto pb-1">
+                    <div class="col-span-full text-[11px] text-zinc-500 p-2 border border-dashed border-zinc-800 rounded-lg w-full text-center">Bấm "🔍 Quét Biển Số Xe (Chạy nền)" để AI trích ảnh &amp; đọc ký tự biển số.</div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -5014,7 +5080,9 @@
         face_blur_hold_sec: parseFloat(document.getElementById('face-blur-hold-sec')?.value || '0.65') || 0.65,
         face_blur_ids: Array.isArray(state.currentFaceBlurIds) ? [...state.currentFaceBlurIds] : [],
         plate_blur_enabled: !!document.getElementById('chk-plate-blur-enabled')?.checked,
+        plate_blur_mode: document.getElementById('plate-blur-mode')?.value || 'blur_all',
         plate_blur_style: document.getElementById('plate-blur-style')?.value || 'pixelate',
+        plate_blur_ids: Array.isArray(state.currentPlateBlurIds) ? [...state.currentPlateBlurIds] : [],
       };
       state.projConfigMap[pid] = cfg;
       return cfg;
@@ -5085,7 +5153,9 @@
       setVal('face-blur-hold-sec', String(cfg.face_blur_hold_sec || '0.65'));
       state.currentFaceBlurIds = Array.isArray(cfg.face_blur_ids) ? [...cfg.face_blur_ids] : [];
       setChk('chk-plate-blur-enabled', !!cfg.plate_blur_enabled);
+      setVal('plate-blur-mode', cfg.plate_blur_mode || 'blur_all');
       setVal('plate-blur-style', cfg.plate_blur_style || 'pixelate');
+      state.currentPlateBlurIds = Array.isArray(cfg.plate_blur_ids) ? [...cfg.plate_blur_ids] : [];
       toggleFaceBlurPanel(true);
     }
 
@@ -5136,7 +5206,9 @@
         face_blur_hold_sec: fpCfg.hold_sec || base.face_blur_hold_sec || 0.65,
         face_blur_ids: Array.isArray(fpCfg.selected_face_ids) ? [...fpCfg.selected_face_ids] : [],
         plate_blur_enabled: fpCfg.plate_blur_enabled !== undefined ? !!fpCfg.plate_blur_enabled : !!base.plate_blur_enabled,
+        plate_blur_mode: fpCfg.plate_blur_mode || base.plate_blur_mode || 'blur_all',
         plate_blur_style: fpCfg.plate_blur_style || base.plate_blur_style || 'pixelate',
+        plate_blur_ids: Array.isArray(fpCfg.selected_plate_ids) ? [...fpCfg.selected_plate_ids] : [],
       };
       return state.projConfigMap[pid];
     }
@@ -5170,6 +5242,7 @@
       const cfg = await ensureProjectConfigLoaded(pid, item?.name || pid, firstCfg);
       applyModalConfigToDom(cfg);
       renderFaceBlurGrid(pid);
+      renderPlateBlurGrid(pid);
       renderMultiProjectPager(selected);
     }
 
@@ -5183,6 +5256,7 @@
         product_note: targetCfg.product_note,
         face_blur_enabled: !!targetCfg.face_blur_enabled,
         face_blur_ids: Array.isArray(targetCfg.face_blur_ids) ? [...targetCfg.face_blur_ids] : [],
+        plate_blur_ids: Array.isArray(targetCfg.plate_blur_ids) ? [...targetCfg.plate_blur_ids] : [],
       };
       return { ...JSON.parse(JSON.stringify(p1Cfg)), ...keepFields };
     }
@@ -5712,7 +5786,9 @@
       const face_blur_hold_sec = parseFloat(document.getElementById('face-blur-hold-sec')?.value || '0.65') || 0.65;
       const face_blur_ids = Array.isArray(state.currentFaceBlurIds) ? [...state.currentFaceBlurIds] : [];
       const plate_blur_enabled = !!document.getElementById('chk-plate-blur-enabled')?.checked;
+      const plate_blur_mode = document.getElementById('plate-blur-mode')?.value || 'blur_all';
       const plate_blur_style = document.getElementById('plate-blur-style')?.value || 'pixelate';
+      const plate_blur_ids = Array.isArray(state.currentPlateBlurIds) ? [...state.currentPlateBlurIds] : [];
       const project_configs = {};
       const pidList = (projectIds && projectIds.length) ? projectIds : getCheckedAutoProjectIds().map((x) => x.id);
       for (const pid of pidList) {
@@ -5767,7 +5843,9 @@
             face_blur_hold_sec,
             face_blur_ids,
             plate_blur_enabled,
+            plate_blur_mode,
             plate_blur_style,
+            plate_blur_ids,
             disable_flash_shake,
             mix_engines,
             tts_engine,
@@ -6308,8 +6386,11 @@
       const wrap = document.getElementById('wrap-face-blur-icon');
       if (wrap) wrap.classList.toggle('hidden', style !== 'emoji');
       const plateOn = !!document.getElementById('chk-plate-blur-enabled')?.checked;
+      const plateMode = document.getElementById('plate-blur-mode')?.value || 'blur_all';
       const plateWrap = document.getElementById('wrap-plate-blur-style');
       if (plateWrap) plateWrap.classList.toggle('hidden', !plateOn);
+      const platePanel = document.getElementById('plate-blur-panel');
+      if (platePanel) platePanel.classList.toggle('hidden', !plateOn || plateMode === 'blur_all');
     }
 
     function toggleLongformRandomUi() {
@@ -6393,7 +6474,9 @@
       state.projConfigMap[pid].face_blur_hold_sec = Number(cfg.hold_sec || 0.65) || 0.65;
       state.projConfigMap[pid].face_blur_ids = Array.isArray(cfg.selected_face_ids) ? [...cfg.selected_face_ids] : [];
       state.projConfigMap[pid].plate_blur_enabled = !!cfg.plate_blur_enabled;
+      state.projConfigMap[pid].plate_blur_mode = cfg.plate_blur_mode || 'blur_all';
       state.projConfigMap[pid].plate_blur_style = cfg.plate_blur_style || 'pixelate';
+      state.projConfigMap[pid].plate_blur_ids = Array.isArray(cfg.selected_plate_ids) ? [...cfg.selected_plate_ids] : [];
     }
 
     function _applyFaceConfigToModalDom(pid, c) {
@@ -6405,6 +6488,7 @@
       const pEl = document.getElementById('face-blur-padding');
       const hEl = document.getElementById('face-blur-hold-sec');
       const chkPlate = document.getElementById('chk-plate-blur-enabled');
+      const pmEl = document.getElementById('plate-blur-mode');
       const psEl = document.getElementById('plate-blur-style');
       if (chk) chk.checked = !!c.enabled;
       if (mEl && c.mode) mEl.value = c.mode;
@@ -6413,8 +6497,10 @@
       if (pEl && c.padding) pEl.value = String(c.padding);
       if (hEl && c.hold_sec) hEl.value = String(c.hold_sec);
       if (chkPlate) chkPlate.checked = !!c.plate_blur_enabled;
+      if (pmEl && c.plate_blur_mode) pmEl.value = c.plate_blur_mode;
       if (psEl && c.plate_blur_style) psEl.value = c.plate_blur_style;
       state.currentFaceBlurIds = Array.isArray(c.selected_face_ids) ? [...c.selected_face_ids] : [];
+      state.currentPlateBlurIds = Array.isArray(c.selected_plate_ids) ? [...c.selected_plate_ids] : [];
       const panel = document.getElementById('face-blur-panel');
       if (panel) panel.classList.toggle('hidden', !c.enabled);
       syncFaceBlurIconUi();
@@ -6431,7 +6517,9 @@
         hold_sec: parseFloat(document.getElementById('face-blur-hold-sec')?.value || '0.65') || 0.65,
         selected_face_ids: Array.isArray(state.currentFaceBlurIds) ? [...state.currentFaceBlurIds] : [],
         plate_blur_enabled: !!document.getElementById('chk-plate-blur-enabled')?.checked,
+        plate_blur_mode: document.getElementById('plate-blur-mode')?.value || 'blur_all',
         plate_blur_style: document.getElementById('plate-blur-style')?.value || 'pixelate',
+        selected_plate_ids: Array.isArray(state.currentPlateBlurIds) ? [...state.currentPlateBlurIds] : [],
       };
     }
 
@@ -6484,9 +6572,11 @@
         captureCurrentModalConfig(pid);
         saveFacePrivacyConfigObj(pid, cfgObj);
         renderFaceBlurGrid(pid);
+        renderPlateBlurGrid(pid);
         if (pid === getTab1ProjectId()) renderTab1FacePanel(pid);
       } else {
         renderFaceBlurGrid(pid);
+        renderPlateBlurGrid(pid);
       }
     }
 
@@ -6494,6 +6584,7 @@
       const pid = getTab1ProjectId();
       if (!pid) return;
       const prevIds = state.facePrivacyMap[pid]?.config?.selected_face_ids || [];
+      const prevPlateIds = state.facePrivacyMap[pid]?.config?.selected_plate_ids || [];
       const cfgObj = {
         enabled: !!document.getElementById('tab1-face-enabled')?.checked,
         mode: document.getElementById('tab1-face-mode')?.value || 'blur_selected',
@@ -6503,14 +6594,20 @@
         hold_sec: parseFloat(document.getElementById('tab1-face-hold-sec')?.value || '0.65') || 0.65,
         selected_face_ids: Array.isArray(prevIds) ? [...prevIds] : [],
         plate_blur_enabled: !!document.getElementById('tab1-plate-enabled')?.checked,
+        plate_blur_mode: document.getElementById('tab1-plate-mode')?.value || 'blur_all',
         plate_blur_style: document.getElementById('tab1-plate-style')?.value || 'pixelate',
+        selected_plate_ids: Array.isArray(prevPlateIds) ? [...prevPlateIds] : [],
       };
       document.getElementById('wrap-tab1-face-icon')?.classList.toggle('hidden', cfgObj.style !== 'emoji');
       document.getElementById('wrap-tab1-plate-style')?.classList.toggle('hidden', !cfgObj.plate_blur_enabled);
+      document.getElementById('tab1-plate-panel')?.classList.toggle('hidden', !cfgObj.plate_blur_enabled || cfgObj.plate_blur_mode === 'blur_all');
       saveFacePrivacyConfigObj(pid, cfgObj);
       _applyFaceConfigToModalDom(pid, cfgObj);
       renderTab1FacePanel(pid);
-      if (pid === getActiveModalProjectId()) renderFaceBlurGrid(pid);
+      if (pid === getActiveModalProjectId()) {
+        renderFaceBlurGrid(pid);
+        renderPlateBlurGrid(pid);
+      }
     }
 
     async function loadFacePrivacyState(projectId = '', applyToDom = false) {
@@ -6524,10 +6621,16 @@
           if (applyToDom && pid === getActiveModalProjectId()) {
             _applyFaceConfigToModalDom(pid, res.config || {});
           }
-          if (pid === getActiveModalProjectId()) renderFaceBlurGrid(pid);
+          if (pid === getActiveModalProjectId()) {
+            renderFaceBlurGrid(pid);
+            renderPlateBlurGrid(pid);
+          }
           if (pid === getTab1ProjectId()) renderTab1FacePanel(pid);
           if (res.scan_job?.status === 'running') {
             pollFaceScanJob(pid, true);
+          }
+          if (res.plate_scan_job?.status === 'running') {
+            pollPlateScanJob(pid, true);
           }
           return res;
         }
@@ -6777,6 +6880,7 @@
       const pEl = document.getElementById('tab1-face-padding');
       const hEl = document.getElementById('tab1-face-hold-sec');
       const chkPlate = document.getElementById('tab1-plate-enabled');
+      const pmEl = document.getElementById('tab1-plate-mode');
       const psEl = document.getElementById('tab1-plate-style');
       if (chkEn) chkEn.checked = !!cfg.enabled;
       if (mEl && cfg.mode) mEl.value = cfg.mode;
@@ -6785,10 +6889,13 @@
       if (pEl && cfg.padding) pEl.value = String(cfg.padding);
       if (hEl && cfg.hold_sec) hEl.value = String(cfg.hold_sec);
       if (chkPlate) chkPlate.checked = !!cfg.plate_blur_enabled;
+      if (pmEl && cfg.plate_blur_mode) pmEl.value = cfg.plate_blur_mode;
       if (psEl && cfg.plate_blur_style) psEl.value = cfg.plate_blur_style;
       const curStyle = (sEl?.value || cfg.style || 'gaussian');
+      const curPlateMode = pmEl?.value || cfg.plate_blur_mode || 'blur_all';
       document.getElementById('wrap-tab1-face-icon')?.classList.toggle('hidden', curStyle !== 'emoji');
       document.getElementById('wrap-tab1-plate-style')?.classList.toggle('hidden', !cfg.plate_blur_enabled);
+      document.getElementById('tab1-plate-panel')?.classList.toggle('hidden', !cfg.plate_blur_enabled || curPlateMode === 'blur_all');
 
       if (job.status === 'running') {
         const done = Number(job.done_clips || 0);
@@ -6836,6 +6943,7 @@
         selSet,
         'Bấm "🔍 Quét Gương Mặt (Chạy nền)" để AI nhận diện trước các khuôn mặt trong clip thô.'
       );
+      renderTab1PlatePanel(pid);
     }
 
     function renderFaceBlurGrid(projectId = '') {
@@ -6905,11 +7013,13 @@
       else arr.push(faceId);
 
       const nextCfg = {
+        ...curCfg,
         enabled: !!curCfg.enabled,
         mode: curCfg.mode || 'blur_selected',
         style: curCfg.style || 'gaussian',
         icon: curCfg.icon || 'cool',
         padding: Number(curCfg.padding || 1.25) || 1.25,
+        hold_sec: Number(curCfg.hold_sec || 0.65) || 0.65,
         selected_face_ids: arr,
       };
       if (targetPid === getActiveModalProjectId()) {
@@ -6928,11 +7038,13 @@
       const curCfg = { ...(fpData.config || {}) };
       const nextIds = selectAll ? (fpData.faces || []).map((f) => f.id) : [];
       const nextCfg = {
+        ...curCfg,
         enabled: !!curCfg.enabled,
         mode: curCfg.mode || 'blur_selected',
         style: curCfg.style || 'gaussian',
         icon: curCfg.icon || 'cool',
         padding: Number(curCfg.padding || 1.25) || 1.25,
+        hold_sec: Number(curCfg.hold_sec || 0.65) || 0.65,
         selected_face_ids: nextIds,
       };
       if (targetPid === getActiveModalProjectId()) {
@@ -6950,6 +7062,359 @@
 
     function selectAllFaces(selectAll = true) {
       return selectAllFacesForProject(getActiveModalProjectId(), selectAll);
+    }
+
+    function _formatPlateScanProgressText(job) {
+      const done = Number(job?.done_clips || 0);
+      const total = Number(job?.total_clips || 0);
+      const cur = String(job?.current_clip || '').split('/').pop();
+      if (total > 0) {
+        return `⏳ Đang quét biển số ${done}/${total} clip${cur ? ` (${cur})` : ''}...`;
+      }
+      return '⏳ Đang khởi tạo AI quét biển số...';
+    }
+
+    function _buildPlateHintInfo(mode, selCount) {
+      if (mode === 'blur_selected') {
+        return {
+          cls: 'text-rose-300',
+          text: `Bấm vào biển số để ĐÁNH DẤU CHE (viền đỏ). Đang chọn che: ${selCount} biển.`,
+        };
+      }
+      return {
+        cls: 'text-emerald-300',
+        text: `Bấm vào biển số để GIỮ RÕ (viền xanh) — biển khác hoặc biển mờ tự động bị che. Đang giữ: ${selCount} biển.`,
+      };
+    }
+
+    function _buildPlateGridHtml(pid, plates, mode, selSet, emptyMsg) {
+      if (!plates || !plates.length) {
+        return `<div class="col-span-full text-[11px] text-zinc-500 p-2 border border-dashed border-zinc-800 rounded-lg w-full text-center">${escapeHtml(emptyMsg)}</div>`;
+      }
+      return plates.map((pl) => {
+        const isSel = selSet.has(pl.id);
+        let cardCls = '';
+        let badgeHtml = '';
+        if (mode === 'blur_selected') {
+          if (isSel) {
+            cardCls = 'border-2 border-rose-500 bg-rose-950/35 shadow';
+            badgeHtml = '<span class="absolute top-1 right-1 px-1.5 py-0.5 rounded bg-rose-600 text-[9px] font-bold text-white shadow">🚫 CHE</span>';
+          } else {
+            cardCls = 'border border-zinc-700 bg-zinc-900/75 hover:border-zinc-500';
+            badgeHtml = '<span class="absolute top-1 right-1 px-1.5 py-0.5 rounded bg-zinc-800/90 text-[9px] text-zinc-300">Rõ</span>';
+          }
+        } else {
+          if (isSel) {
+            cardCls = 'border-2 border-emerald-500 bg-emerald-950/35 shadow';
+            badgeHtml = '<span class="absolute top-1 right-1 px-1.5 py-0.5 rounded bg-emerald-600 text-[9px] font-bold text-white shadow">✅ GIỮ</span>';
+          } else {
+            cardCls = 'border border-rose-500/55 bg-rose-950/20 hover:border-emerald-400/70';
+            badgeHtml = '<span class="absolute top-1 right-1 px-1.5 py-0.5 rounded bg-rose-600/85 text-[9px] font-semibold text-white">🚫 CHE</span>';
+          }
+        }
+        return `
+          <button type="button" onclick="togglePlateSelectionForProject('${escapeHtml(pid)}', '${escapeHtml(pl.id)}')" class="shrink-0 w-32 sm:w-auto relative flex flex-col items-center rounded-xl p-1.5 transition cursor-pointer ${cardCls}">
+            <div class="relative w-full h-14 rounded-lg overflow-hidden bg-zinc-950 border border-zinc-800 flex items-center justify-center">
+              <img src="${escapeHtml(pl.thumb_url)}" alt="${escapeHtml(pl.label)}" class="w-full h-full object-contain" loading="lazy" />
+              ${badgeHtml}
+            </div>
+            <div class="mt-1 text-[11px] font-semibold mono text-zinc-100 truncate w-full text-center">${escapeHtml(pl.label)}</div>
+            <div class="text-[9px] text-zinc-400 truncate w-full text-center">${Number(pl.clip_count || 0)} clip · ${Number(pl.appearances || 0)}x</div>
+          </button>
+        `;
+      }).join('');
+    }
+
+    function renderTab1PlatePanel(projectId = '') {
+      const pid = projectId || getTab1ProjectId();
+      if (!pid || pid !== getTab1ProjectId()) return;
+      const grid = document.getElementById('tab1-plate-grid');
+      if (!grid) return;
+
+      const statusEl = document.getElementById('tab1-plate-status');
+      const btn = document.getElementById('btn-tab1-scan-plates');
+      const progWrap = document.getElementById('tab1-plate-progress-wrap');
+      const progText = document.getElementById('tab1-plate-progress-text');
+      const progBar = document.getElementById('tab1-plate-progress-bar');
+      const hintEl = document.getElementById('tab1-plate-hint');
+
+      const fpData = state.facePrivacyMap[pid] || { plates: [], plate_updated_at: 0, config: {}, plate_scan_job: { status: 'idle' } };
+      const cfg = fpData.config || {};
+      const plates = fpData.plates || [];
+      const job = fpData.plate_scan_job || {};
+
+      if (job.status === 'running') {
+        const done = Number(job.done_clips || 0);
+        const total = Number(job.total_clips || 0);
+        const pct = total > 0 ? Math.min(100, Math.max(8, Math.round((done / total) * 100))) : 15;
+        if (btn) {
+          btn.disabled = true;
+          btn.textContent = '⏳ Đang quét nền...';
+        }
+        if (progWrap) progWrap.classList.remove('hidden');
+        if (progText) progText.textContent = _formatPlateScanProgressText(job);
+        if (progBar) progBar.style.width = `${pct}%`;
+        if (statusEl) statusEl.textContent = 'AI đang quét biển số chạy nền...';
+      } else {
+        if (btn) {
+          btn.disabled = false;
+          btn.textContent = '🔍 Quét Biển Số Xe (Chạy nền)';
+        }
+        if (progWrap) progWrap.classList.add('hidden');
+        if (statusEl) {
+          if (job.status === 'error' && job.error) {
+            statusEl.textContent = 'Lỗi quét biển số: ' + job.error;
+          } else if (plates.length > 0) {
+            statusEl.textContent = `Đã nhận diện ${plates.length} biển số${fpData.plate_clip_count ? ` (${fpData.plate_clip_count} clip)` : ''}.`;
+          } else if (fpData.plate_updated_at) {
+            statusEl.textContent = 'Đã quét — không thấy biển số xe nào trong clip thô.';
+          } else {
+            statusEl.textContent = 'Chưa quét biển số cho project này.';
+          }
+        }
+      }
+
+      const mode = document.getElementById('tab1-plate-mode')?.value || cfg.plate_blur_mode || 'blur_all';
+      const selSet = new Set(Array.isArray(cfg.selected_plate_ids) ? cfg.selected_plate_ids : []);
+      if (hintEl) {
+        const hInfo = _buildPlateHintInfo(mode, selSet.size);
+        hintEl.className = hInfo.cls;
+        hintEl.textContent = hInfo.text;
+      }
+
+      grid.innerHTML = _buildPlateGridHtml(
+        pid,
+        plates,
+        mode,
+        selSet,
+        'Bấm "🔍 Quét Biển Số Xe (Chạy nền)" để AI trích ảnh & đọc ký tự biển số.'
+      );
+    }
+
+    function renderPlateBlurGrid(projectId = '') {
+      const pid = projectId || getActiveModalProjectId();
+      const grid = document.getElementById('plate-blur-grid');
+      const hintEl = document.getElementById('plate-blur-hint');
+      const statusEl = document.getElementById('plate-scan-status');
+      const btn = document.getElementById('btn-scan-plates');
+      if (!grid) return;
+
+      const fpData = state.facePrivacyMap[pid] || { plates: [], plate_updated_at: 0, plate_scan_job: { status: 'idle' } };
+      const plates = fpData.plates || [];
+      const job = fpData.plate_scan_job || {};
+      const mode = document.getElementById('plate-blur-mode')?.value || 'blur_all';
+      const selSet = new Set(state.currentPlateBlurIds || []);
+
+      if (hintEl) {
+        const hInfo = _buildPlateHintInfo(mode, selSet.size);
+        hintEl.className = hInfo.cls;
+        hintEl.textContent = hInfo.text;
+      }
+
+      if (job.status === 'running') {
+        if (btn) {
+          btn.disabled = true;
+          btn.textContent = '⏳ Đang quét biển số...';
+        }
+        if (statusEl) statusEl.textContent = _formatPlateScanProgressText(job);
+      } else {
+        if (btn) {
+          btn.disabled = false;
+          btn.textContent = '🔍 Quét Biển Số Xe (02_video_tho)';
+        }
+        if (statusEl) {
+          if (job.status === 'error' && job.error) {
+            statusEl.textContent = 'Lỗi quét biển số: ' + job.error;
+          } else if (plates.length > 0) {
+            statusEl.textContent = `Đã nhận diện ${plates.length} biển số${fpData.plate_clip_count ? ` (${fpData.plate_clip_count} clip)` : ''}.`;
+          } else if (fpData.plate_updated_at) {
+            statusEl.textContent = 'Đã quét — không thấy biển số xe nào trong clip thô.';
+          } else {
+            statusEl.textContent = 'Chưa quét biển số cho project này.';
+          }
+        }
+      }
+
+      grid.innerHTML = _buildPlateGridHtml(
+        pid,
+        plates,
+        mode,
+        selSet,
+        'Bấm "🔍 Quét Biển Số Xe" để AI trích ảnh & đọc ký tự biển số trong clip thô.'
+      );
+    }
+
+    async function startPlateScan(projectId = '', force = true, silentStart = false) {
+      const pid = projectId || getTab1ProjectId() || getActiveModalProjectId();
+      if (!pid) return toast('Chưa xác định Project để quét biển số.', 'warn');
+
+      const curFp = state.facePrivacyMap[pid] || { ok: true, project_id: pid, faces: [], plates: [], updated_at: 0, plate_updated_at: 0, config: {} };
+      state.facePrivacyMap[pid] = {
+        ...curFp,
+        plate_scan_job: { status: 'running', done_clips: 0, total_clips: 0, current_clip: '', error: '' },
+      };
+      if (pid === getTab1ProjectId()) renderTab1FacePanel(pid);
+      if (pid === getActiveModalProjectId()) renderPlateBlurGrid(pid);
+
+      try {
+        if (pid === getActiveModalProjectId() && document.getElementById('auto-pipeline-modal')?.classList.contains('flex')) {
+          await saveFacePrivacyConfig(pid);
+        }
+        const payload = JSON.stringify({ project_id: pid, force: !!force, background: true });
+        let res;
+        try {
+          res = await api('/api/face-privacy/scan-plates', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: payload,
+          });
+        } catch (firstErr) {
+          const msg = String(firstErr?.message || '');
+          if (!/not found|404/i.test(msg)) throw firstErr;
+          toast('Server đang chạy bản cũ trên RAM — đang tự động khởi động lại bản mới (5–10s)...', 'info');
+          await ensureBackendRestartedOn404(pid);
+          res = await api('/api/face-privacy/scan-plates', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: payload,
+          });
+        }
+
+        const job = res?.scan_job || { status: res?.plates ? 'done' : 'running', done_clips: 0, total_clips: 0 };
+        state.facePrivacyMap[pid] = {
+          ...(state.facePrivacyMap[pid] || {}),
+          ...(res?.plates ? res : {}),
+          plate_scan_job: job,
+        };
+        if (pid === getTab1ProjectId()) renderTab1FacePanel(pid);
+        if (pid === getActiveModalProjectId()) renderPlateBlurGrid(pid);
+
+        if (job.status === 'running') {
+          if (!silentStart && !res?.already_running) {
+            toast(`Đang quét biển số chạy nền cho [${pid}]...`, 'info');
+          }
+          pollPlateScanJob(pid, silentStart);
+        } else {
+          await loadFacePrivacyState(pid, pid === getActiveModalProjectId());
+          const n = (state.facePrivacyMap[pid]?.plates || []).length;
+          toast(n ? `Đã nhận diện ${n} biển số trong [${pid}]!` : 'Không thấy biển số xe nào trong clip thô.', n ? 'success' : 'info');
+        }
+      } catch (e) {
+        state.facePrivacyMap[pid] = {
+          ...(state.facePrivacyMap[pid] || {}),
+          plate_scan_job: { status: 'error', done_clips: 0, total_clips: 0, current_clip: '', error: e.message },
+        };
+        if (pid === getTab1ProjectId()) renderTab1FacePanel(pid);
+        if (pid === getActiveModalProjectId()) renderPlateBlurGrid(pid);
+        toast('Lỗi quét biển số: ' + e.message, 'error');
+      }
+    }
+
+    function pollPlateScanJob(pid, silentDone = false) {
+      if (!pid) return;
+      state.plateScanPollTimers = state.plateScanPollTimers || {};
+      const existing = state.plateScanPollTimers[pid];
+      if (existing) {
+        if (!silentDone) existing.silent = false;
+        return;
+      }
+      const entry = { silent: !!silentDone, timerId: null };
+      const tick = async () => {
+        try {
+          const res = await api(`/api/face-privacy/state?project_id=${encodeURIComponent(pid)}`);
+          if (!res || !res.ok) return;
+          const recentLocalSave = (Date.now() - Number(state._lastFaceConfigSaveAt?.[pid] || 0)) < 2500;
+          if (recentLocalSave && state.facePrivacyMap[pid]?.config) {
+            res.config = state.facePrivacyMap[pid].config;
+          }
+          state.facePrivacyMap[pid] = res;
+          _syncProjConfigFaceFields(pid, res.config);
+          if (pid === getTab1ProjectId()) renderTab1FacePanel(pid);
+          if (pid === getActiveModalProjectId()) renderPlateBlurGrid(pid);
+
+          const st = res.plate_scan_job?.status || 'idle';
+          if (st !== 'running') {
+            clearInterval(entry.timerId);
+            delete state.plateScanPollTimers[pid];
+            if (st === 'done') {
+              const validSet = new Set((res.plates || []).map((pl) => pl.id));
+              const cfg = { ...(res.config || {}) };
+              const oldIds = Array.isArray(cfg.selected_plate_ids) ? cfg.selected_plate_ids : [];
+              const filteredIds = oldIds.filter((id) => validSet.has(id));
+              if (filteredIds.length !== oldIds.length) {
+                cfg.selected_plate_ids = filteredIds;
+                await saveFacePrivacyConfigObj(pid, cfg);
+              }
+              if (pid === getActiveModalProjectId()) {
+                _applyFaceConfigToModalDom(pid, cfg);
+                renderPlateBlurGrid(pid);
+              }
+              if (pid === getTab1ProjectId()) renderTab1FacePanel(pid);
+              const n = (res.plates || []).length;
+              toast(
+                n ? `Quét biển số [${pid}] xong: Nhận diện ${n} biển số!` : `Quét biển số [${pid}] xong: Không thấy biển số xe nào.`,
+                n ? 'success' : 'info'
+              );
+            } else if (st === 'error') {
+              const errMsg = res.plate_scan_job?.error || 'Không rõ nguyên nhân';
+              toast(`Lỗi quét biển số [${pid}]: ${errMsg}`, 'error');
+            }
+          }
+        } catch {}
+      };
+      entry.timerId = setInterval(tick, 1200);
+      state.plateScanPollTimers[pid] = entry;
+    }
+
+    function togglePlateSelectionForProject(pid, plateId) {
+      const targetPid = pid || getActiveModalProjectId() || getTab1ProjectId();
+      if (!targetPid) return;
+      const fpData = state.facePrivacyMap[targetPid] || { plates: [], config: {} };
+      const curCfg = { ...(fpData.config || {}) };
+      const baseArr = (targetPid === getActiveModalProjectId() && document.getElementById('auto-pipeline-modal')?.classList.contains('flex'))
+        ? (Array.isArray(state.currentPlateBlurIds) ? state.currentPlateBlurIds : [])
+        : (Array.isArray(curCfg.selected_plate_ids) ? curCfg.selected_plate_ids : []);
+      const arr = [...baseArr];
+      const idx = arr.indexOf(plateId);
+      if (idx >= 0) arr.splice(idx, 1);
+      else arr.push(plateId);
+
+      const nextCfg = {
+        ...curCfg,
+        plate_blur_enabled: !!curCfg.plate_blur_enabled,
+        plate_blur_mode: curCfg.plate_blur_mode || 'blur_all',
+        plate_blur_style: curCfg.plate_blur_style || 'pixelate',
+        selected_plate_ids: arr,
+      };
+      if (targetPid === getActiveModalProjectId()) {
+        state.currentPlateBlurIds = [...arr];
+        captureCurrentModalConfig(targetPid);
+      }
+      saveFacePrivacyConfigObj(targetPid, nextCfg);
+      if (targetPid === getTab1ProjectId()) renderTab1FacePanel(targetPid);
+      if (targetPid === getActiveModalProjectId()) renderPlateBlurGrid(targetPid);
+    }
+
+    function selectAllPlatesForProject(pid, selectAll = true) {
+      const targetPid = pid || getActiveModalProjectId() || getTab1ProjectId();
+      if (!targetPid) return;
+      const fpData = state.facePrivacyMap[targetPid] || { plates: [], config: {} };
+      const curCfg = { ...(fpData.config || {}) };
+      const nextIds = selectAll ? (fpData.plates || []).map((pl) => pl.id) : [];
+      const nextCfg = {
+        ...curCfg,
+        plate_blur_enabled: !!curCfg.plate_blur_enabled,
+        plate_blur_mode: curCfg.plate_blur_mode || 'blur_all',
+        plate_blur_style: curCfg.plate_blur_style || 'pixelate',
+        selected_plate_ids: nextIds,
+      };
+      if (targetPid === getActiveModalProjectId()) {
+        state.currentPlateBlurIds = [...nextIds];
+        captureCurrentModalConfig(targetPid);
+      }
+      saveFacePrivacyConfigObj(targetPid, nextCfg);
+      if (targetPid === getTab1ProjectId()) renderTab1FacePanel(targetPid);
+      if (targetPid === getActiveModalProjectId()) renderPlateBlurGrid(targetPid);
     }
 
     state._galleryOutputsMap = {};

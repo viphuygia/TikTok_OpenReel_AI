@@ -8,9 +8,11 @@ and per-project face clusters / config / thumbnails in `<project_root>/04_worksp
 
 from __future__ import annotations
 
+import difflib
 import importlib
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -28,6 +30,7 @@ MEDIA_VIDEO_EXTS = (".mp4", ".mov", ".mkv", ".avi", ".webm", ".m4v")
 YUNET_MODEL_NAME = "face_detection_yunet_2023mar.onnx"
 SFACE_MODEL_NAME = "face_recognition_sface_2021dec.onnx"
 PLATE_MODEL_NAME = "license_plate_yolo.onnx"
+PLATE_OCR_MODEL_NAME = "cct_xs_v1_global.onnx"
 
 YUNET_URLS = [
     "https://github.com/opencv/opencv_zoo/raw/main/models/face_detection_yunet/face_detection_yunet_2023mar.onnx",
@@ -42,6 +45,10 @@ PLATE_URLS = [
     "https://huggingface.co/joker5914/yolov8n-license-plate/resolve/main/best.onnx",
     "https://huggingface.co/ml-debi/yolov8-license-plate-detection/resolve/main/best.onnx",
 ]
+PLATE_OCR_URLS = [
+    "https://github.com/ankandrew/fast-plate-ocr/releases/download/arg-plates/cct_xs_v1_global.onnx",
+]
+PLATE_OCR_ALPHABET = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ_"
 
 FACE_EMOJI_CATALOG: dict[str, str] = {
     "cool": "1f60e.webp",
@@ -62,7 +69,9 @@ DEFAULT_FACE_PRIVACY_CONFIG: dict[str, Any] = {
     "hold_sec": 0.65,
     "selected_face_ids": [],
     "plate_blur_enabled": False,
+    "plate_blur_mode": "blur_all",   # "blur_all" | "blur_selected" | "keep_selected"
     "plate_blur_style": "pixelate",  # "pixelate" | "gaussian" | "solid"
+    "selected_plate_ids": [],
 }
 
 _CV2_MOD: Any = None
@@ -70,6 +79,8 @@ _CV2_LOCK = threading.Lock()
 _MODEL_LOCK = threading.Lock()
 _PLATE_ENGINE_LOCK = threading.Lock()
 _PLATE_ENGINE_CACHE: "_PlateEngine | None" = None
+_PLATE_OCR_LOCK = threading.Lock()
+_PLATE_OCR_CACHE: "_PlateOcrEngine | None" = None
 _HW_ENC_CACHE: tuple[str, list[str]] | None = None
 _EMOJI_BGRA_CACHE: np.ndarray | None = None
 _EMOJI_ICON_CACHE: dict[str, np.ndarray] = {}
@@ -303,6 +314,175 @@ def _get_plate_engine() -> _PlateEngine | None:
             return None
 
 
+def _ensure_plate_ocr_model() -> Path | None:
+    with _MODEL_LOCK:
+        ocr_p = FACE_MODEL_DIR / PLATE_OCR_MODEL_NAME
+        ok = _download_file(PLATE_OCR_URLS, ocr_p, min_bytes=500_000)
+        return ocr_p if ok else None
+
+
+class _PlateOcrEngine:
+    """Lightweight ONNX license plate OCR recognizer (`cct_xs_v1_global.onnx`)."""
+
+    def __init__(self, model_path: Path) -> None:
+        import onnxruntime as ort  # type: ignore
+
+        self.cv2 = _ensure_cv2()
+        self._run_lock = threading.Lock()
+        avail = ort.get_available_providers()
+        providers = ["CUDAExecutionProvider", "CPUExecutionProvider"] if "CUDAExecutionProvider" in avail else ["CPUExecutionProvider"]
+        try:
+            self.session = ort.InferenceSession(str(model_path), providers=providers)
+        except Exception:
+            self.session = ort.InferenceSession(str(model_path), providers=["CPUExecutionProvider"])
+
+        inp = self.session.get_inputs()[0]
+        self.input_name = inp.name
+        self.input_type = str(inp.type or "")
+        shape = inp.shape
+        # Check NHWC (B, 64, 128, 3) vs NCHW (B, 3, 64, 128)
+        self.nchw = bool(len(shape) == 4 and shape[1] in (1, 3))
+        if self.nchw:
+            self.in_h = int(shape[2]) if isinstance(shape[2], (int, np.integer)) and int(shape[2]) > 0 else 64
+            self.in_w = int(shape[3]) if isinstance(shape[3], (int, np.integer)) and int(shape[3]) > 0 else 128
+            self.channels = int(shape[1]) if isinstance(shape[1], (int, np.integer)) and int(shape[1]) > 0 else 3
+        else:
+            self.in_h = int(shape[1]) if len(shape) == 4 and isinstance(shape[1], (int, np.integer)) and int(shape[1]) > 0 else 64
+            self.in_w = int(shape[2]) if len(shape) == 4 and isinstance(shape[2], (int, np.integer)) and int(shape[2]) > 0 else 128
+            self.channels = int(shape[3]) if len(shape) == 4 and isinstance(shape[3], (int, np.integer)) and int(shape[3]) > 0 else 3
+        self.expect_uint8 = "uint8" in self.input_type.lower()
+
+    def read_text(self, bgr_crop: np.ndarray) -> str:
+        if bgr_crop is None or bgr_crop.size == 0:
+            return ""
+        cv2 = self.cv2
+        resized = cv2.resize(bgr_crop, (self.in_w, self.in_h), interpolation=cv2.INTER_LINEAR)
+        if self.channels == 1:
+            arr_img = cv2.cvtColor(resized, cv2.COLOR_BGR2GRAY)[..., None]
+        else:
+            arr_img = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB)
+
+        if self.expect_uint8:
+            tensor = arr_img.astype(np.uint8)
+        else:
+            tensor = arr_img.astype(np.float32) * (1.0 / 255.0)
+
+        if self.nchw:
+            tensor = np.transpose(tensor, (2, 0, 1))
+        batch = tensor[None, ...]
+
+        with self._run_lock:
+            outputs = self.session.run(None, {self.input_name: batch})
+        if not outputs:
+            return ""
+
+        raw = np.asarray(outputs[0], dtype=np.float32)
+        if raw.ndim >= 3:
+            raw = raw[0]
+        if raw.ndim == 2 and raw.shape[1] == len(PLATE_OCR_ALPHABET):
+            logits = raw
+        else:
+            flat = raw.reshape(-1)
+            n_alpha = len(PLATE_OCR_ALPHABET)
+            if flat.size == 0 or flat.size % n_alpha != 0:
+                return ""
+            logits = flat.reshape(-1, n_alpha)
+
+        idxs = np.argmax(logits, axis=1)
+        chars: list[str] = []
+        for idx in idxs:
+            ii = int(idx)
+            if 0 <= ii < len(PLATE_OCR_ALPHABET):
+                ch = PLATE_OCR_ALPHABET[ii]
+                if ch != "_" and ch.isalnum():
+                    chars.append(ch)
+        return "".join(chars).upper()
+
+
+def _get_plate_ocr_engine() -> _PlateOcrEngine | None:
+    global _PLATE_OCR_CACHE
+    if _PLATE_OCR_CACHE is not None:
+        return _PLATE_OCR_CACHE
+    with _PLATE_OCR_LOCK:
+        if _PLATE_OCR_CACHE is not None:
+            return _PLATE_OCR_CACHE
+        ocr_p = _ensure_plate_ocr_model()
+        if ocr_p is None:
+            print("[PlatePrivacy WARN] Không tải được model OCR biển số ONNX.")
+            return None
+        try:
+            _PLATE_OCR_CACHE = _PlateOcrEngine(ocr_p)
+            return _PLATE_OCR_CACHE
+        except Exception as exc:
+            print(f"[PlatePrivacy WARN] Không khởi tạo được OCR biển số ({exc}).")
+            return None
+
+
+def _plate_visual_embed(cv2: Any, crop: np.ndarray) -> np.ndarray:
+    if crop is None or crop.size == 0:
+        return np.zeros((160,), dtype=np.float32)
+    small = cv2.resize(crop, (48, 24), interpolation=cv2.INTER_AREA)
+    gray = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
+    patch = cv2.resize(gray, (12, 6), interpolation=cv2.INTER_AREA).astype(np.float32).flatten() / 255.0
+    patch = patch - float(patch.mean())
+    gx = cv2.Sobel(gray, cv2.CV_32F, 1, 0, ksize=3)
+    gy = cv2.Sobel(gray, cv2.CV_32F, 0, 1, ksize=3)
+    mag = np.sqrt(gx * gx + gy * gy)
+    edge_patch = cv2.resize(mag, (8, 4), interpolation=cv2.INTER_AREA).flatten()
+    edge_patch = edge_patch / (float(edge_patch.max()) + 1e-6)
+    hsv = cv2.cvtColor(small, cv2.COLOR_BGR2HSV)
+    hist_h = cv2.calcHist([hsv], [0], None, [24], [0, 180]).flatten()
+    hist_s = cv2.calcHist([hsv], [1], None, [32], [0, 256]).flatten()
+    vec = np.concatenate(
+        [
+            patch,
+            edge_patch,
+            hist_h / (hist_h.sum() + 1e-6),
+            hist_s / (hist_s.sum() + 1e-6),
+        ]
+    ).astype(np.float32)
+    return _l2_norm(vec)
+
+
+def _plate_text_similarity(a: str, b: str) -> float:
+    sa = re.sub(r"[^A-Z0-9]", "", str(a or "").upper())
+    sb = re.sub(r"[^A-Z0-9]", "", str(b or "").upper())
+    if len(sa) < 4 or len(sb) < 4:
+        return 0.0
+    ratio = difflib.SequenceMatcher(None, sa, sb).ratio()
+    if len(sa) >= 5 and len(sb) >= 5 and sa[-4:] == sb[-4:]:
+        ratio = max(ratio, 0.82)
+    return float(ratio)
+
+
+def _match_plate_cluster_id(
+    text: str,
+    emb: np.ndarray,
+    plate_items: list[dict[str, Any]],
+    text_thresh: float = 0.68,
+    vis_thresh: float = 0.86,
+) -> tuple[str | None, float]:
+    best_id: str | None = None
+    best_score = -1.0
+    clean_t = re.sub(r"[^A-Z0-9]", "", str(text or "").upper())
+    for item in plate_items:
+        pid = str(item.get("id") or "")
+        ptxt = str(item.get("plate_text") or "")
+        pemb = item.get("emb")
+        if len(clean_t) >= 4 and len(ptxt) >= 4:
+            sc = _plate_text_similarity(clean_t, ptxt)
+            ok = sc >= text_thresh
+        elif isinstance(pemb, np.ndarray) and pemb.size == emb.size and emb.size > 0:
+            sc = _cosine_sim(emb, pemb)
+            ok = sc >= vis_thresh
+        else:
+            continue
+        if ok and sc > best_score:
+            best_score = sc
+            best_id = pid
+    return best_id, best_score
+
+
 def _l2_norm(vec: np.ndarray) -> np.ndarray:
     norm = float(np.linalg.norm(vec))
     if norm <= 1e-8:
@@ -462,6 +642,10 @@ def normalize_face_config(cfg: dict[str, Any] | None) -> dict[str, Any]:
         hold_sec = 0.65
     hold_sec = round(max(0.15, min(2.5, hold_sec)), 2)
 
+    plate_mode = str(raw.get("plate_blur_mode") or "blur_all").strip()
+    if plate_mode not in ("blur_all", "blur_selected", "keep_selected"):
+        plate_mode = "blur_all"
+
     plate_style = str(raw.get("plate_blur_style") or "pixelate").strip()
     if plate_style not in ("pixelate", "gaussian", "solid"):
         plate_style = "pixelate"
@@ -477,6 +661,17 @@ def normalize_face_config(cfg: dict[str, Any] | None) -> dict[str, Any]:
             seen.add(sx)
             sel_ids.append(sx)
 
+    raw_plate_ids = raw.get("selected_plate_ids")
+    if not isinstance(raw_plate_ids, list):
+        raw_plate_ids = []
+    seen_p: set[str] = set()
+    sel_plate_ids: list[str] = []
+    for x in raw_plate_ids:
+        sx = str(x or "").strip()
+        if sx and sx not in seen_p:
+            seen_p.add(sx)
+            sel_plate_ids.append(sx)
+
     return {
         "enabled": bool(raw.get("enabled", False)),
         "mode": mode,
@@ -486,7 +681,9 @@ def normalize_face_config(cfg: dict[str, Any] | None) -> dict[str, Any]:
         "hold_sec": hold_sec,
         "selected_face_ids": sel_ids,
         "plate_blur_enabled": bool(raw.get("plate_blur_enabled", False)),
+        "plate_blur_mode": plate_mode,
         "plate_blur_style": plate_style,
+        "selected_plate_ids": sel_plate_ids,
     }
 
 
@@ -509,6 +706,26 @@ def _strip_embeddings_for_ui(faces: list[dict[str, Any]]) -> list[dict[str, Any]
     return out
 
 
+def _strip_plates_for_ui(plates: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for pl in plates:
+        if not isinstance(pl, dict):
+            continue
+        out.append(
+            {
+                "id": str(pl.get("id") or ""),
+                "label": str(pl.get("label") or ""),
+                "plate_text": str(pl.get("plate_text") or ""),
+                "appearances": int(pl.get("appearances") or 0),
+                "clip_count": int(pl.get("clip_count") or 0),
+                "clip_names": list(pl.get("clip_names") or []),
+                "thumb_name": str(pl.get("thumb_name") or ""),
+                "score": float(pl.get("score") or 0.0),
+            }
+        )
+    return out
+
+
 def load_face_privacy_state(project_root: Path) -> dict[str, Any]:
     p_dir = _privacy_dir(project_root)
     json_p = p_dir / "faces.json"
@@ -517,6 +734,9 @@ def load_face_privacy_state(project_root: Path) -> dict[str, Any]:
             "updated_at": 0,
             "clip_signature": [],
             "faces": [],
+            "plate_updated_at": 0,
+            "plate_clip_signature": [],
+            "plates": [],
             "config": dict(DEFAULT_FACE_PRIVACY_CONFIG),
         }
     try:
@@ -528,12 +748,18 @@ def load_face_privacy_state(project_root: Path) -> dict[str, Any]:
             "updated_at": 0,
             "clip_signature": [],
             "faces": [],
+            "plate_updated_at": 0,
+            "plate_clip_signature": [],
+            "plates": [],
             "config": dict(DEFAULT_FACE_PRIVACY_CONFIG),
         }
     return {
         "updated_at": int(data.get("updated_at") or 0),
         "clip_signature": data.get("clip_signature") if isinstance(data.get("clip_signature"), list) else [],
         "faces": data.get("faces") if isinstance(data.get("faces"), list) else [],
+        "plate_updated_at": int(data.get("plate_updated_at") or 0),
+        "plate_clip_signature": data.get("plate_clip_signature") if isinstance(data.get("plate_clip_signature"), list) else [],
+        "plates": data.get("plates") if isinstance(data.get("plates"), list) else [],
         "config": normalize_face_config(data.get("config")),
     }
 
@@ -556,6 +782,9 @@ def save_face_privacy_config(project_root: Path, cfg_patch: dict[str, Any]) -> d
         "updated_at": cur["updated_at"],
         "clip_signature": cur["clip_signature"],
         "faces": _strip_embeddings_for_ui(cur["faces"]),
+        "plate_updated_at": cur["plate_updated_at"],
+        "plate_clip_signature": cur["plate_clip_signature"],
+        "plates": _strip_plates_for_ui(cur["plates"]),
         "config": merged_cfg,
     }
 
@@ -706,7 +935,7 @@ def scan_project_faces(
             }
 
     if not videos:
-        for old_img in thumbs_dir.glob("*.jpg"):
+        for old_img in thumbs_dir.glob("face_*.jpg"):
             old_img.unlink(missing_ok=True)
         if prev_state.get("clip_signature") != clip_sig:
             prev_cfg["selected_face_ids"] = []
@@ -714,6 +943,9 @@ def scan_project_faces(
             "updated_at": int(time.time()),
             "clip_signature": clip_sig,
             "faces": [],
+            "plate_updated_at": prev_state.get("plate_updated_at", 0),
+            "plate_clip_signature": prev_state.get("plate_clip_signature", []),
+            "plates": prev_state.get("plates", []),
             "config": prev_cfg,
         }
         _write_faces_json(project_root, state_data)
@@ -840,7 +1072,7 @@ def scan_project_faces(
         reverse=True,
     )
 
-    for old_img in thumbs_dir.glob("*.jpg"):
+    for old_img in thumbs_dir.glob("face_*.jpg"):
         old_img.unlink(missing_ok=True)
 
     faces_out: list[dict[str, Any]] = []
@@ -867,8 +1099,9 @@ def scan_project_faces(
             }
         )
 
-    # Re-read latest config so concurrent UI edits during background scan aren't overwritten
-    latest_cfg = normalize_face_config(load_face_privacy_state(project_root).get("config"))
+    # Re-read latest config so concurrent UI edits / plate scans aren't overwritten
+    latest_state = load_face_privacy_state(project_root)
+    latest_cfg = normalize_face_config(latest_state.get("config"))
     if prev_state.get("clip_signature") != clip_sig:
         latest_cfg["selected_face_ids"] = []
     else:
@@ -878,6 +1111,9 @@ def scan_project_faces(
         "updated_at": int(time.time()),
         "clip_signature": clip_sig,
         "faces": faces_out,
+        "plate_updated_at": latest_state.get("plate_updated_at", 0),
+        "plate_clip_signature": latest_state.get("plate_clip_signature", []),
+        "plates": latest_state.get("plates", []),
         "config": latest_cfg,
     }
     _write_faces_json(project_root, state_data)
@@ -887,6 +1123,305 @@ def scan_project_faces(
         "updated_at": state_data["updated_at"],
         "clip_count": len(videos),
         "faces": _strip_embeddings_for_ui(faces_out),
+        "config": latest_cfg,
+    }
+
+
+def _crop_plate_thumb(cv2: Any, orig_frame: np.ndarray, cx: float, cy: float, bw: float, bh: float) -> np.ndarray | None:
+    oh, ow = orig_frame.shape[:2]
+    ew = bw * 1.24
+    eh = bh * 1.32
+    x1 = max(0, int(round(cx - ew * 0.5)))
+    y1 = max(0, int(round(cy - eh * 0.5)))
+    x2 = min(ow, int(round(cx + ew * 0.5)))
+    y2 = min(oh, int(round(cy + eh * 0.5)))
+    if x2 - x1 < 8 or y2 - y1 < 6:
+        return None
+    crop = orig_frame[y1:y2, x1:x2]
+    tw, th = 180, 96
+    ch, cw = crop.shape[:2]
+    ratio = min(float(tw) / float(cw), float(th) / float(ch))
+    nw = max(1, int(round(cw * ratio)))
+    nh = max(1, int(round(ch * ratio)))
+    resized = cv2.resize(crop, (nw, nh), interpolation=cv2.INTER_AREA if ratio < 1.0 else cv2.INTER_CUBIC)
+    canvas = np.full((th, tw, 3), 18, dtype=np.uint8)
+    xo = (tw - nw) // 2
+    yo = (th - nh) // 2
+    canvas[yo : yo + nh, xo : xo + nw] = resized
+    return canvas
+
+
+def _extract_plate_crop(orig_frame: np.ndarray, cx: float, cy: float, bw: float, bh: float) -> np.ndarray | None:
+    oh, ow = orig_frame.shape[:2]
+    ew = bw * 1.06
+    eh = bh * 1.08
+    x1 = max(0, int(round(cx - ew * 0.5)))
+    y1 = max(0, int(round(cy - eh * 0.5)))
+    x2 = min(ow, int(round(cx + ew * 0.5)))
+    y2 = min(oh, int(round(cy + eh * 0.5)))
+    if x2 - x1 < 10 or y2 - y1 < 6:
+        return None
+    return orig_frame[y1:y2, x1:x2]
+
+
+def scan_project_plates(
+    project_root: Path,
+    force: bool = False,
+    progress_cb: Callable[[int, int, str], None] | None = None,
+) -> dict[str, Any]:
+    """Scan raw clips in `02_video_tho/`, detect + OCR + cluster unique license plates, and save thumbs into `faces.json`."""
+    def _report(done: int, total: int, clip_name: str = "") -> None:
+        if progress_cb is not None:
+            try:
+                progress_cb(int(done), int(total), str(clip_name or ""))
+            except Exception:
+                pass
+
+    project_root = Path(project_root)
+    raw_dir = project_root / "02_video_tho"
+    p_dir = _privacy_dir(project_root)
+    thumbs_dir = p_dir / "thumbs"
+    thumbs_dir.mkdir(parents=True, exist_ok=True)
+
+    videos = _collect_raw_videos(project_root)
+    clip_sig = _build_clip_signature(videos, raw_dir)
+    prev_state = load_face_privacy_state(project_root)
+    prev_cfg = normalize_face_config(prev_state.get("config"))
+
+    if not force and prev_state.get("plate_clip_signature") == clip_sig and prev_state.get("plate_updated_at"):
+        plates_prev = prev_state.get("plates") or []
+        thumbs_ok = all(
+            (thumbs_dir / str(pl.get("thumb_name") or "")).exists()
+            for pl in plates_prev
+            if pl.get("thumb_name")
+        )
+        if thumbs_ok:
+            _report(len(videos), len(videos), "")
+            return {
+                "ok": True,
+                "cached": True,
+                "plate_updated_at": prev_state["plate_updated_at"],
+                "clip_count": len(videos),
+                "plates": _strip_plates_for_ui(plates_prev),
+                "config": prev_cfg,
+            }
+
+    if not videos:
+        for old_img in thumbs_dir.glob("plate_*.jpg"):
+            old_img.unlink(missing_ok=True)
+        latest_state = load_face_privacy_state(project_root)
+        latest_cfg = normalize_face_config(latest_state.get("config"))
+        if prev_state.get("plate_clip_signature") != clip_sig:
+            latest_cfg["selected_plate_ids"] = []
+        state_data = {
+            "updated_at": int(latest_state.get("updated_at") or 0),
+            "clip_signature": latest_state.get("clip_signature") or [],
+            "faces": latest_state.get("faces") or [],
+            "plate_updated_at": int(time.time()),
+            "plate_clip_signature": clip_sig,
+            "plates": [],
+            "config": latest_cfg,
+        }
+        _write_faces_json(project_root, state_data)
+        _report(0, 0, "")
+        return {
+            "ok": True,
+            "cached": False,
+            "plate_updated_at": state_data["plate_updated_at"],
+            "clip_count": 0,
+            "plates": [],
+            "config": latest_cfg,
+        }
+
+    _report(0, len(videos), "")
+    plate_engine = _get_plate_engine()
+    if plate_engine is None:
+        raise RuntimeError("Không khởi tạo được model nhận diện biển số ONNX.")
+    ocr_engine = _get_plate_ocr_engine()
+    cv2 = plate_engine.cv2
+
+    clusters: list[dict[str, Any]] = []
+
+    def _pick_cluster_text(cl_item: dict[str, Any]) -> str:
+        votes: dict[str, int] = cl_item.get("text_votes") or {}
+        if not votes:
+            return ""
+        # Prefer longest/most frequent clean OCR text
+        return max(votes.items(), key=lambda kv: (kv[1], len(kv[0])))[0]
+
+    for idx, vp in enumerate(videos, start=1):
+        rel_name = vp.relative_to(raw_dir).as_posix()
+        _report(idx - 1, len(videos), rel_name)
+        sampled = _sample_video_frames(cv2, vp, max_samples=12)
+        for fi, orig_frame in sampled:
+            oh, ow = orig_frame.shape[:2]
+            if oh <= 0 or ow <= 0:
+                continue
+            dets = plate_engine.detect(orig_frame, conf_threshold=0.35, nms_threshold=0.45)
+            if not dets:
+                continue
+
+            used_cidx: set[int] = set()
+            dets_sorted = sorted(dets, key=lambda d: float(d["score"]) * (d["w"] * d["h"]), reverse=True)
+            for d in dets_sorted:
+                cx, cy, bw, bh, score = float(d["cx"]), float(d["cy"]), float(d["w"]), float(d["h"]), float(d["score"])
+                crop = _extract_plate_crop(orig_frame, cx, cy, bw, bh)
+                if crop is None:
+                    continue
+                text = ocr_engine.read_text(crop) if ocr_engine is not None else ""
+                emb = _plate_visual_embed(cv2, crop)
+                area_bonus = min(1.0, (bw * bh) / float(max(1, (min(ow, oh) * 0.16) ** 2)))
+                q = float(score * (0.55 + 0.30 * area_bonus + (0.15 if len(text) >= 5 else 0.0)))
+
+                best_ci = -1
+                best_sc = -1.0
+                for ci, cl in enumerate(clusters):
+                    if ci in used_cidx:
+                        continue
+                    cl_text = _pick_cluster_text(cl)
+                    if len(text) >= 4 and len(cl_text) >= 4:
+                        sc = _plate_text_similarity(text, cl_text)
+                        ok = sc >= 0.68
+                    else:
+                        sc = _cosine_sim(emb, cl["emb"])
+                        ok = sc >= 0.86
+                    if ok and sc > best_sc:
+                        best_sc = sc
+                        best_ci = ci
+
+                f_key = (rel_name, fi)
+                if best_ci >= 0:
+                    used_cidx.add(best_ci)
+                    cl = clusters[best_ci]
+                    cl["count"] += 1
+                    cl["clips"].add(rel_name)
+                    cl["frame_keys"].add(f_key)
+                    cl["emb_sum"] = cl["emb_sum"] + emb
+                    cl["emb"] = _l2_norm(cl["emb_sum"])
+                    cl["best_score"] = max(cl["best_score"], score)
+                    if len(text) >= 4:
+                        cl["text_votes"][text] = cl["text_votes"].get(text, 0) + 1
+                    if q > cl["best_quality"] or cl["thumb"] is None:
+                        th_img = _crop_plate_thumb(cv2, orig_frame, cx, cy, bw, bh)
+                        if th_img is not None:
+                            cl["best_quality"] = q
+                            cl["thumb"] = th_img
+                else:
+                    th_img = _crop_plate_thumb(cv2, orig_frame, cx, cy, bw, bh)
+                    if th_img is None:
+                        continue
+                    new_idx = len(clusters)
+                    used_cidx.add(new_idx)
+                    votes = {text: 1} if len(text) >= 4 else {}
+                    clusters.append(
+                        {
+                            "emb_sum": emb.copy(),
+                            "emb": emb.copy(),
+                            "text_votes": votes,
+                            "count": 1,
+                            "clips": {rel_name},
+                            "frame_keys": {f_key},
+                            "best_score": score,
+                            "best_quality": q,
+                            "thumb": th_img,
+                        }
+                    )
+        _report(idx, len(videos), rel_name)
+
+    # Post-merge clusters sharing strong OCR text and never co-occurring in the same frame
+    merged = True
+    while merged and len(clusters) > 1:
+        merged = False
+        best_pair: tuple[int, int, float] | None = None
+        for i in range(len(clusters)):
+            ti = _pick_cluster_text(clusters[i])
+            for j in range(i + 1, len(clusters)):
+                if clusters[i]["frame_keys"] & clusters[j]["frame_keys"]:
+                    continue
+                tj = _pick_cluster_text(clusters[j])
+                if len(ti) >= 4 and len(tj) >= 4:
+                    sc = _plate_text_similarity(ti, tj)
+                    ok = sc >= 0.72
+                else:
+                    sc = _cosine_sim(clusters[i]["emb"], clusters[j]["emb"])
+                    ok = sc >= 0.90
+                if ok and (best_pair is None or sc > best_pair[2]):
+                    best_pair = (i, j, sc)
+        if best_pair is not None:
+            i, j, _ = best_pair
+            ci, cj = clusters[i], clusters[j]
+            ci["count"] += cj["count"]
+            ci["clips"] |= cj["clips"]
+            ci["frame_keys"] |= cj["frame_keys"]
+            ci["emb_sum"] = ci["emb_sum"] + cj["emb_sum"]
+            ci["emb"] = _l2_norm(ci["emb_sum"])
+            ci["best_score"] = max(ci["best_score"], cj["best_score"])
+            for k_txt, k_cnt in cj["text_votes"].items():
+                ci["text_votes"][k_txt] = ci["text_votes"].get(k_txt, 0) + k_cnt
+            if cj["best_quality"] > ci["best_quality"] and cj["thumb"] is not None:
+                ci["best_quality"] = cj["best_quality"]
+                ci["thumb"] = cj["thumb"]
+            clusters.pop(j)
+            merged = True
+
+    clusters.sort(
+        key=lambda c: (len(c["clips"]), c["count"], c["best_quality"]),
+        reverse=True,
+    )
+
+    for old_img in thumbs_dir.glob("plate_*.jpg"):
+        old_img.unlink(missing_ok=True)
+
+    plates_out: list[dict[str, Any]] = []
+    valid_new_ids: set[str] = set()
+    for idx, cl in enumerate(clusters, start=1):
+        pid = f"plate_{idx:02d}"
+        thumb_name = f"{pid}.jpg"
+        th_img = cl.get("thumb")
+        if th_img is not None:
+            ok_enc, buf = cv2.imencode(".jpg", th_img, [int(cv2.IMWRITE_JPEG_QUALITY), 92])
+            if ok_enc:
+                (thumbs_dir / thumb_name).write_bytes(buf.tobytes())
+        valid_new_ids.add(pid)
+        best_text = _pick_cluster_text(cl)
+        label = best_text if best_text else f"Biển #{idx}"
+        plates_out.append(
+            {
+                "id": pid,
+                "label": label,
+                "plate_text": best_text,
+                "appearances": int(cl["count"]),
+                "clip_count": len(cl["clips"]),
+                "clip_names": sorted(cl["clips"]),
+                "thumb_name": thumb_name,
+                "score": round(float(cl["best_score"]), 3),
+                "embedding": [round(float(v), 6) for v in cl["emb"].tolist()],
+            }
+        )
+
+    latest_state = load_face_privacy_state(project_root)
+    latest_cfg = normalize_face_config(latest_state.get("config"))
+    if prev_state.get("plate_clip_signature") != clip_sig:
+        latest_cfg["selected_plate_ids"] = []
+    else:
+        latest_cfg["selected_plate_ids"] = [x for x in latest_cfg["selected_plate_ids"] if x in valid_new_ids]
+
+    state_data = {
+        "updated_at": int(latest_state.get("updated_at") or 0),
+        "clip_signature": latest_state.get("clip_signature") or [],
+        "faces": latest_state.get("faces") or [],
+        "plate_updated_at": int(time.time()),
+        "plate_clip_signature": clip_sig,
+        "plates": plates_out,
+        "config": latest_cfg,
+    }
+    _write_faces_json(project_root, state_data)
+    return {
+        "ok": True,
+        "cached": False,
+        "plate_updated_at": state_data["plate_updated_at"],
+        "clip_count": len(videos),
+        "plates": _strip_plates_for_ui(plates_out),
         "config": latest_cfg,
     }
 
@@ -1144,35 +1679,39 @@ def _apply_plate_mask(
 
 
 def _build_plate_frame_boxes(
-    plate_keyframes: list[tuple[int, list[dict[str, float]]]],
+    plate_keyframes: list[tuple[int, list[dict[str, Any]]]],
     *,
     orig_w: int,
     orig_h: int,
     fps: float,
     total_frames: int,
     hold_sec: float = 0.65,
+    mode: str = "blur_all",
+    selected_ids: set[str] | None = None,
 ) -> dict[int, list[tuple[int, int, int, int]]]:
-    """Link detected license plates into spatial tracks and interpolate per frame."""
+    """Link detected license plates into spatial tracks, filter by mode if selective, and interpolate per frame."""
     if not plate_keyframes:
         return {}
 
     max_gap_frames = max(8, int(round(fps * max(0.55, hold_sec * 0.90))))
     pad_edge_frames = max(3, int(round(fps * min(0.80, max(0.30, hold_sec * 0.70)))))
+    id_hold_frames = max(10, int(round(fps * max(0.90, hold_sec * 1.40))))
+    sel_set = set(selected_ids or set())
 
-    tracks: list[list[dict[str, float]]] = []
+    tracks: list[list[dict[str, Any]]] = []
     for f_idx, dets in plate_keyframes:
         unmatched = set(range(len(tracks)))
         candidates: list[tuple[float, int, int]] = []
         for di, d in enumerate(dets):
-            dcx, dcy, dw, dh = d["cx"], d["cy"], d["w"], d["h"]
+            dcx, dcy, dw, dh = float(d["cx"]), float(d["cy"]), float(d["w"]), float(d["h"])
             diag = max(24.0, (dw + dh) * 0.5)
             for ti in unmatched:
                 last = tracks[ti][-1]
                 f_gap = f_idx - int(last["frame"])
                 if f_gap <= 0 or f_gap > max_gap_frames:
                     continue
-                dist = float(np.hypot(dcx - last["cx"], dcy - last["cy"]))
-                ref_size = max(diag, (last["w"] + last["h"]) * 0.5)
+                dist = float(np.hypot(dcx - float(last["cx"]), dcy - float(last["cy"])))
+                ref_size = max(diag, (float(last["w"]) + float(last["h"])) * 0.5)
                 allowed_dist = ref_size * (1.65 + 0.30 * (f_gap / max(1.0, fps * 0.15)))
                 if dist <= allowed_dist:
                     candidates.append((dist / ref_size, di, ti))
@@ -1191,6 +1730,41 @@ def _build_plate_frame_boxes(
             if di not in matched_d:
                 tracks.append([{"frame": float(f_idx), **d}])
 
+    target_segments: list[list[dict[str, Any]]] = []
+    if mode == "blur_all":
+        target_segments = tracks
+    else:
+        for trk in tracks:
+            cur_seg: list[dict[str, Any]] = []
+            for node in trk:
+                pid = node.get("best_id")
+                if pid is None:
+                    best_neighbor_dist = id_hold_frames + 1
+                    for other in trk:
+                        opid = other.get("best_id")
+                        if opid is not None:
+                            fdist = abs(int(other["frame"]) - int(node["frame"]))
+                            if fdist < best_neighbor_dist:
+                                best_neighbor_dist = fdist
+                                pid = opid
+                if mode == "blur_selected":
+                    should_mask = bool(pid is not None and pid in sel_set)
+                else:
+                    # keep_selected: keep ONLY matched selected plates; mask everything else including unrecognized/blurry plates
+                    should_mask = True if not sel_set else not (pid is not None and pid in sel_set)
+
+                if should_mask:
+                    cur_seg.append(node)
+                else:
+                    if cur_seg:
+                        target_segments.append(cur_seg)
+                        cur_seg = []
+            if cur_seg:
+                target_segments.append(cur_seg)
+
+    if not target_segments:
+        return {}
+
     frame_boxes: dict[int, list[tuple[int, int, int, int]]] = {}
     max_frame_idx = max(0, total_frames - 1) if total_frames > 0 else 10**7
 
@@ -1204,11 +1778,11 @@ def _build_plate_frame_boxes(
         if x2 - x1 >= 8 and y2 - y1 >= 6:
             frame_boxes.setdefault(fi, []).append((x1, y1, x2, y2))
 
-    for trk in tracks:
+    for trk in target_segments:
         first = trk[0]
         f0 = int(first["frame"])
         for fi in range(max(0, f0 - pad_edge_frames), f0):
-            _add_pbox(fi, first["cx"], first["cy"], first["w"], first["h"])
+            _add_pbox(fi, float(first["cx"]), float(first["cy"]), float(first["w"]), float(first["h"]))
         for k in range(len(trk) - 1):
             a = trk[k]
             b = trk[k + 1]
@@ -1219,16 +1793,16 @@ def _build_plate_frame_boxes(
                 alpha = (fi - fa) / float(span)
                 _add_pbox(
                     fi,
-                    a["cx"] * (1.0 - alpha) + b["cx"] * alpha,
-                    a["cy"] * (1.0 - alpha) + b["cy"] * alpha,
-                    a["w"] * (1.0 - alpha) + b["w"] * alpha,
-                    a["h"] * (1.0 - alpha) + b["h"] * alpha,
+                    float(a["cx"]) * (1.0 - alpha) + float(b["cx"]) * alpha,
+                    float(a["cy"]) * (1.0 - alpha) + float(b["cy"]) * alpha,
+                    float(a["w"]) * (1.0 - alpha) + float(b["w"]) * alpha,
+                    float(a["h"]) * (1.0 - alpha) + float(b["h"]) * alpha,
                 )
         last = trk[-1]
         fl = int(last["frame"])
-        _add_pbox(fl, last["cx"], last["cy"], last["w"], last["h"])
+        _add_pbox(fl, float(last["cx"]), float(last["cy"]), float(last["w"]), float(last["h"]))
         for fi in range(fl + 1, min(max_frame_idx + 1, fl + 1 + pad_edge_frames)):
-            _add_pbox(fi, last["cx"], last["cy"], last["w"], last["h"])
+            _add_pbox(fi, float(last["cx"]), float(last["cy"]), float(last["w"]), float(last["h"]))
 
     return frame_boxes
 
@@ -1443,6 +2017,8 @@ def apply_face_privacy_to_clip(
             merged_raw["hold_sec"] = override_cfg["face_blur_hold_sec"]
         if "face_blur_ids" in override_cfg:
             merged_raw["selected_face_ids"] = override_cfg["face_blur_ids"]
+        if "plate_blur_ids" in override_cfg:
+            merged_raw["selected_plate_ids"] = override_cfg["plate_blur_ids"]
         for k in (
             "enabled",
             "mode",
@@ -1452,7 +2028,9 @@ def apply_face_privacy_to_clip(
             "hold_sec",
             "selected_face_ids",
             "plate_blur_enabled",
+            "plate_blur_mode",
             "plate_blur_style",
+            "selected_plate_ids",
         ):
             if k in override_cfg:
                 merged_raw[k] = override_cfg[k]
@@ -1467,8 +2045,10 @@ def apply_face_privacy_to_clip(
     style = cfg["style"]
     padding = float(cfg["padding"])
     hold_sec = float(cfg["hold_sec"])
+    plate_mode = cfg["plate_blur_mode"]
     plate_style = cfg["plate_blur_style"]
     selected_ids = set(cfg["selected_face_ids"])
+    selected_plate_ids = set(cfg["selected_plate_ids"])
 
     cluster_items: list[tuple[str, np.ndarray]] = []
     if face_active:
@@ -1486,6 +2066,20 @@ def apply_face_privacy_to_clip(
                 if not (selected_ids & cluster_ids_present):
                     face_active = False
 
+    plate_clusters: list[dict[str, Any]] = []
+    if plate_active and plate_mode != "blur_all":
+        for pl in state.get("plates") or []:
+            pid = str(pl.get("id") or "").strip()
+            ptxt = re.sub(r"[^A-Z0-9]", "", str(pl.get("plate_text") or "").upper())
+            emb_list = pl.get("embedding")
+            emb_vec = _l2_norm(np.array(emb_list, dtype=np.float32)) if isinstance(emb_list, list) and emb_list else np.zeros((0,), dtype=np.float32)
+            if pid and (len(ptxt) >= 4 or emb_vec.size > 0):
+                plate_clusters.append({"id": pid, "plate_text": ptxt, "emb": emb_vec})
+        if plate_mode == "blur_selected":
+            plate_ids_present = {str(x["id"]) for x in plate_clusters}
+            if not (selected_plate_ids & plate_ids_present):
+                plate_active = False
+
     if not face_active and not plate_active:
         return False
 
@@ -1493,6 +2087,7 @@ def apply_face_privacy_to_clip(
     plate_engine = _get_plate_engine() if plate_active else None
     if plate_engine is None:
         plate_active = False
+    plate_ocr_engine = _get_plate_ocr_engine() if (plate_active and plate_mode != "blur_all") else None
     if not face_active and not plate_active:
         return False
 
@@ -1508,7 +2103,7 @@ def apply_face_privacy_to_clip(
     fps = 30.0
     total_frames = 0
     keyframes: list[tuple[int, list[dict[str, Any]]]] = []
-    plate_keyframes: list[tuple[int, list[dict[str, float]]]] = []
+    plate_keyframes: list[tuple[int, list[dict[str, Any]]]] = []
     try:
         orig_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH) or 0)
         orig_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT) or 0)
@@ -1558,7 +2153,17 @@ def apply_face_privacy_to_clip(
             if plate_active and plate_engine is not None:
                 p_dets = plate_engine.detect(frame, conf_threshold=0.35, nms_threshold=0.45)
                 if p_dets:
-                    plate_keyframes.append((fi, p_dets))
+                    if plate_mode != "blur_all" and plate_clusters:
+                        enriched: list[dict[str, Any]] = []
+                        for pd in p_dets:
+                            pcrop = _extract_plate_crop(frame, pd["cx"], pd["cy"], pd["w"], pd["h"])
+                            ptxt = plate_ocr_engine.read_text(pcrop) if (plate_ocr_engine is not None and pcrop is not None) else ""
+                            pemb = _plate_visual_embed(cv2, pcrop) if pcrop is not None else np.zeros((0,), dtype=np.float32)
+                            pid, _ = _match_plate_cluster_id(ptxt, pemb, plate_clusters)
+                            enriched.append({**pd, "best_id": pid})
+                        plate_keyframes.append((fi, enriched))
+                    else:
+                        plate_keyframes.append((fi, p_dets))
 
             fi += 1
         total_frames = fi
@@ -1593,6 +2198,8 @@ def apply_face_privacy_to_clip(
             fps=fps,
             total_frames=total_frames,
             hold_sec=hold_sec,
+            mode=plate_mode,
+            selected_ids=selected_plate_ids,
         )
         if (plate_active and plate_keyframes)
         else {}

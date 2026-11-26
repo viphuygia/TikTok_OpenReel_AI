@@ -1239,7 +1239,9 @@ class OneClickPipelineReq(BaseModel):
     face_blur_hold_sec: float = 0.65
     face_blur_ids: list[str] = Field(default_factory=list)
     plate_blur_enabled: bool = False
+    plate_blur_mode: str = "blur_all"
     plate_blur_style: str = "pixelate"
+    plate_blur_ids: list[str] = Field(default_factory=list)
     project_ids: list[str] = Field(default_factory=list)
     project_configs: dict[str, dict[str, Any]] = Field(default_factory=dict)
     sync: bool = False
@@ -5002,6 +5004,8 @@ def _resolve_effective_disclaimer(req: OneClickPipelineReq, cur_vibe: str, is_ra
 
 FACE_SCAN_LOCK = threading.Lock()
 FACE_SCAN_JOBS: dict[str, dict[str, Any]] = {}
+PLATE_SCAN_LOCK = threading.Lock()
+PLATE_SCAN_JOBS: dict[str, dict[str, Any]] = {}
 
 
 def _default_face_scan_job() -> dict[str, Any]:
@@ -5021,6 +5025,12 @@ def _get_face_scan_job(pid: str) -> dict[str, Any]:
         return dict(job) if isinstance(job, dict) else _default_face_scan_job()
 
 
+def _get_plate_scan_job(pid: str) -> dict[str, Any]:
+    with PLATE_SCAN_LOCK:
+        job = PLATE_SCAN_JOBS.get(pid)
+        return dict(job) if isinstance(job, dict) else _default_face_scan_job()
+
+
 class FacePrivacyScanReq(BaseModel):
     project_id: str = ""
     force: bool = True
@@ -5037,7 +5047,9 @@ class FacePrivacyConfigReq(BaseModel):
     hold_sec: float = 0.65
     selected_face_ids: list[str] = Field(default_factory=list)
     plate_blur_enabled: bool = False
+    plate_blur_mode: str = "blur_all"
     plate_blur_style: str = "pixelate"
+    selected_plate_ids: list[str] = Field(default_factory=list)
 
 
 def _attach_face_thumb_urls(faces: list[dict[str, Any]], pid: str, updated_at: int) -> list[dict[str, Any]]:
@@ -5065,7 +5077,9 @@ def _req_face_privacy_dict(req: OneClickPipelineReq) -> dict[str, Any]:
         "hold_sec": float(getattr(req, "face_blur_hold_sec", 0.65) or 0.65),
         "selected_face_ids": list(getattr(req, "face_blur_ids", None) or []),
         "plate_blur_enabled": bool(getattr(req, "plate_blur_enabled", False)),
+        "plate_blur_mode": str(getattr(req, "plate_blur_mode", "blur_all") or "blur_all"),
         "plate_blur_style": str(getattr(req, "plate_blur_style", "pixelate") or "pixelate"),
+        "selected_plate_ids": list(getattr(req, "plate_blur_ids", None) or []),
     }
 
 
@@ -5077,16 +5091,23 @@ def api_face_privacy_state(project_id: str | None = None):
     p_root = get_project_root(pid)
     st = _fp.load_face_privacy_state(p_root)
     faces_ui = _fp._strip_embeddings_for_ui(st.get("faces") or [])
+    plates_ui = _fp._strip_plates_for_ui(st.get("plates") or [])
     ts = int(st.get("updated_at") or 0)
+    plate_ts = int(st.get("plate_updated_at") or 0)
     clip_sig = st.get("clip_signature") or []
+    plate_sig = st.get("plate_clip_signature") or []
     return {
         "ok": True,
         "project_id": pid,
         "updated_at": ts,
         "clip_count": len(clip_sig) if isinstance(clip_sig, list) else 0,
         "faces": _attach_face_thumb_urls(faces_ui, pid, ts),
+        "plate_updated_at": plate_ts,
+        "plate_clip_count": len(plate_sig) if isinstance(plate_sig, list) else 0,
+        "plates": _attach_face_thumb_urls(plates_ui, pid, plate_ts),
         "config": st.get("config") or dict(_fp.DEFAULT_FACE_PRIVACY_CONFIG),
         "scan_job": _get_face_scan_job(pid),
+        "plate_scan_job": _get_plate_scan_job(pid),
     }
 
 
@@ -5177,6 +5198,93 @@ def api_face_privacy_scan(req: FacePrivacyScanReq):
     }
 
 
+@app.post("/api/face-privacy/scan-plates")
+def api_face_privacy_scan_plates(req: FacePrivacyScanReq):
+    import face_privacy as _fp
+
+    pid = str(req.project_id or "").strip() or ACTIVE_PROJECT_ID
+    p_root = get_project_root(pid)
+    force = bool(req.force)
+
+    if not req.background:
+        res = _fp.scan_project_plates(p_root, force=force)
+        ts = int(res.get("plate_updated_at") or int(time.time()))
+        clip_cnt = int(res.get("clip_count") or 0)
+        res["plates"] = _attach_face_thumb_urls(res.get("plates") or [], pid, ts)
+        job_snap = {
+            "status": "done",
+            "done_clips": clip_cnt,
+            "total_clips": clip_cnt,
+            "current_clip": "",
+            "error": "",
+            "cached": bool(res.get("cached")),
+            "plates_count": len(res.get("plates") or []),
+            "updated_at": ts,
+        }
+        with PLATE_SCAN_LOCK:
+            PLATE_SCAN_JOBS[pid] = dict(job_snap)
+        return {"ok": True, "project_id": pid, "already_running": False, "scan_job": job_snap, **res}
+
+    with PLATE_SCAN_LOCK:
+        cur_job = PLATE_SCAN_JOBS.get(pid)
+        if isinstance(cur_job, dict) and cur_job.get("status") == "running":
+            return {"ok": True, "project_id": pid, "already_running": True, "scan_job": dict(cur_job)}
+        now_ts = int(time.time())
+        PLATE_SCAN_JOBS[pid] = {
+            "status": "running",
+            "done_clips": 0,
+            "total_clips": 0,
+            "current_clip": "",
+            "error": "",
+            "started_at": now_ts,
+            "updated_at": now_ts,
+        }
+
+    def _bg_plate_worker() -> None:
+        def _on_prog(done: int, total: int, clip_name: str) -> None:
+            with PLATE_SCAN_LOCK:
+                job = PLATE_SCAN_JOBS.get(pid)
+                if isinstance(job, dict) and job.get("status") == "running":
+                    job["done_clips"] = int(done)
+                    job["total_clips"] = int(total)
+                    job["current_clip"] = str(clip_name or "")
+                    job["updated_at"] = int(time.time())
+
+        try:
+            res = _fp.scan_project_plates(p_root, force=force, progress_cb=_on_prog)
+            clip_cnt = int(res.get("clip_count") or 0)
+            with PLATE_SCAN_LOCK:
+                PLATE_SCAN_JOBS[pid] = {
+                    "status": "done",
+                    "done_clips": clip_cnt,
+                    "total_clips": clip_cnt,
+                    "current_clip": "",
+                    "error": "",
+                    "cached": bool(res.get("cached")),
+                    "plates_count": len(res.get("plates") or []),
+                    "updated_at": int(time.time()),
+                }
+        except Exception as exc:
+            with PLATE_SCAN_LOCK:
+                cur = PLATE_SCAN_JOBS.get(pid) or {}
+                PLATE_SCAN_JOBS[pid] = {
+                    "status": "error",
+                    "done_clips": int(cur.get("done_clips") or 0),
+                    "total_clips": int(cur.get("total_clips") or 0),
+                    "current_clip": str(cur.get("current_clip") or ""),
+                    "error": str(exc),
+                    "updated_at": int(time.time()),
+                }
+
+    threading.Thread(target=_bg_plate_worker, daemon=True).start()
+    return {
+        "ok": True,
+        "project_id": pid,
+        "already_running": False,
+        "scan_job": _get_plate_scan_job(pid),
+    }
+
+
 @app.post("/api/face-privacy/config")
 def api_face_privacy_config(req: FacePrivacyConfigReq):
     import face_privacy as _fp
@@ -5194,11 +5302,15 @@ def api_face_privacy_config(req: FacePrivacyConfigReq):
             "hold_sec": req.hold_sec,
             "selected_face_ids": req.selected_face_ids,
             "plate_blur_enabled": req.plate_blur_enabled,
+            "plate_blur_mode": req.plate_blur_mode,
             "plate_blur_style": req.plate_blur_style,
+            "selected_plate_ids": req.selected_plate_ids,
         },
     )
     ts = int(res.get("updated_at") or 0)
+    plate_ts = int(res.get("plate_updated_at") or 0)
     res["faces"] = _attach_face_thumb_urls(res.get("faces") or [], pid, ts)
+    res["plates"] = _attach_face_thumb_urls(res.get("plates") or [], pid, plate_ts)
     return {"ok": True, "project_id": pid, **res}
 
 
@@ -6135,7 +6247,7 @@ def _execute_longform_vlog_pipeline(
         )
     if fp_cfg.get("plate_blur_enabled"):
         _update_pipeline(
-            log_line=f"[Che biển số AI] BẬT (kiểu={fp_cfg.get('plate_blur_style', 'pixelate')}).",
+            log_line=f"[Che biển số AI] BẬT ({fp_cfg.get('plate_blur_mode', 'blur_all')} · kiểu={fp_cfg.get('plate_blur_style', 'pixelate')} · đã chọn={len(fp_cfg.get('selected_plate_ids') or [])} biển).",
         )
     eff_disclaimer = _resolve_effective_disclaimer(req, req_vibe, is_random_variant=bool(variant_tag))
     if eff_disclaimer:
@@ -6433,7 +6545,7 @@ def _run_single_project_pipeline(req: OneClickPipelineReq) -> None:
             )
         if fp_short_cfg.get("plate_blur_enabled"):
             _update_pipeline(
-                log_line=f"[Che biển số AI] BẬT (kiểu={fp_short_cfg.get('plate_blur_style', 'pixelate')}).",
+                log_line=f"[Che biển số AI] BẬT ({fp_short_cfg.get('plate_blur_mode', 'blur_all')} · kiểu={fp_short_cfg.get('plate_blur_style', 'pixelate')} · đã chọn={len(fp_short_cfg.get('selected_plate_ids') or [])} biển).",
             )
         _ensure_raw_frames_extracted(raw_videos)
         _update_pipeline(
@@ -7099,7 +7211,7 @@ def _req_for_project(req: OneClickPipelineReq, pid: str, multi_projects: bool) -
             "short_content_mode", "voice_preset", "tts_engine", "edge_voice", "bgm_track", "sticker_density", "sticker_style",
             "render_engine", "innovation_preset", "sfx_level", "transition_level",
             "icon_density", "visual_theme", "subtitle_lang", "disclaimer_text",
-            "face_blur_mode", "face_blur_style", "face_blur_icon", "plate_blur_style",
+            "face_blur_mode", "face_blur_style", "face_blur_icon", "plate_blur_mode", "plate_blur_style",
         )
         for sf_k in str_fields:
             if sf_k in pc and pc[sf_k] is not None:
@@ -7121,6 +7233,8 @@ def _req_for_project(req: OneClickPipelineReq, pid: str, multi_projects: bool) -
             upd["face_blur_hold_sec"] = float(pc["face_blur_hold_sec"])
         if isinstance(pc.get("face_blur_ids"), list):
             upd["face_blur_ids"] = [str(x) for x in pc["face_blur_ids"] if str(x).strip()]
+        if isinstance(pc.get("plate_blur_ids"), list):
+            upd["plate_blur_ids"] = [str(x) for x in pc["plate_blur_ids"] if str(x).strip()]
         if "target_duration_sec" in pc and pc["target_duration_sec"]:
             upd["target_duration_sec"] = float(pc["target_duration_sec"])
         if "longform_random_count" in pc and pc["longform_random_count"]:

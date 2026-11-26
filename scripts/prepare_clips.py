@@ -370,7 +370,10 @@ def main() -> int:
             sorted(fp_cfg["selected_face_ids"]),
             int(fp_state.get("updated_at") or 0),
             bool(fp_cfg.get("plate_blur_enabled")),
+            fp_cfg.get("plate_blur_mode", "blur_all"),
             fp_cfg.get("plate_blur_style", "pixelate"),
+            sorted(fp_cfg.get("selected_plate_ids") or []),
+            int(fp_state.get("plate_updated_at") or 0),
         ]
         if fp_enabled
         else []
