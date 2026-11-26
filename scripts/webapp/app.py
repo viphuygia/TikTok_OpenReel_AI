@@ -5350,6 +5350,7 @@ class BestPhotosExtractReq(BaseModel):
     project_id: str = ""
     count: int = 10
     count_mode: str = "per_video"
+    save_mode: str = "replace_selected"
     focus: str = "auto"
     selected_clips: list[str] = Field(default_factory=list)
     use_ai: bool = True
@@ -5382,12 +5383,15 @@ def _attach_best_photo_urls(photos: list[dict[str, Any]], pid: str, ts: int) -> 
         row = dict(item)
         fn = str(row.get("filename") or "").strip()
         if fn:
+            item_ts = int(row.get("updated_at") or t_val)
             q_pid = requests.utils.quote(pid, safe="")
             q_fn = requests.utils.quote(fn, safe="")
-            row["url"] = f"/api/best-photos/file?project_id={q_pid}&filename={q_fn}&t={t_val}"
-            row["download_url"] = f"/api/best-photos/file?project_id={q_pid}&filename={q_fn}&download=1&t={t_val}"
+            row["url"] = f"/api/best-photos/file?project_id={q_pid}&filename={q_fn}&t={item_ts}"
+            row["thumb_url"] = f"/api/best-photos/file?project_id={q_pid}&filename={q_fn}&thumb=1&t={item_ts}"
+            row["download_url"] = f"/api/best-photos/file?project_id={q_pid}&filename={q_fn}&download=1&t={item_ts}"
         else:
             row["url"] = ""
+            row["thumb_url"] = ""
             row["download_url"] = ""
         out.append(row)
     return out
@@ -5458,6 +5462,7 @@ def api_best_photos_extract(req: BestPhotosExtractReq):
                 p_root,
                 count=int(req.count or 10),
                 count_mode=str(req.count_mode or "per_video"),
+                save_mode=str(req.save_mode or "replace_selected"),
                 focus=str(req.focus or "auto"),
                 selected_clips=list(req.selected_clips or []),
                 use_ai=bool(req.use_ai),
@@ -5497,7 +5502,7 @@ def api_best_photos_extract(req: BestPhotosExtractReq):
 
 
 @app.get("/api/best-photos/file")
-def api_best_photos_file(project_id: str = Query(...), filename: str = Query(...), download: int = 0):
+def api_best_photos_file(project_id: str = Query(...), filename: str = Query(...), download: int = 0, thumb: int = 0):
     clean_name = Path(str(filename or "").strip()).name
     if not clean_name or not re.match(r"^[a-zA-Z0-9_.-]+$", clean_name):
         raise HTTPException(status_code=400, detail="Tên file ảnh không hợp lệ.")
@@ -5505,9 +5510,18 @@ def api_best_photos_file(project_id: str = Query(...), filename: str = Query(...
     fp = (p_root / "05_output" / "best_photos" / clean_name).resolve()
     if not fp.is_relative_to(p_root) or not fp.exists() or not fp.is_file():
         raise HTTPException(status_code=404, detail="Không tìm thấy ảnh.")
+    if int(thumb or 0) == 1 and int(download or 0) != 1:
+        import best_photos as _bp
+        try:
+            fp = _bp.ensure_best_photo_thumb(p_root, clean_name)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc))
+        except FileNotFoundError as exc:
+            raise HTTPException(status_code=404, detail=str(exc))
+    headers = {"Cache-Control": "private, max-age=86400"}
     if int(download or 0) == 1:
-        return FileResponse(path=str(fp), media_type="image/jpeg", filename=clean_name)
-    return FileResponse(path=str(fp), media_type="image/jpeg")
+        return FileResponse(path=str(fp), media_type="image/jpeg", filename=clean_name, headers=headers)
+    return FileResponse(path=str(fp), media_type="image/jpeg", headers=headers)
 
 
 @app.delete("/api/best-photos/file")
@@ -5522,6 +5536,16 @@ def api_best_photos_delete(project_id: str = Query(...), filename: str = Query(.
         raise HTTPException(status_code=400, detail=str(exc))
     ts = int(st.get("updated_at") or 0)
     st["photos"] = _attach_best_photo_urls(st.get("photos") or [], pid, ts)
+    return {"ok": True, "project_id": pid, **st}
+
+
+@app.delete("/api/best-photos/clear")
+def api_best_photos_clear(project_id: str | None = None):
+    import best_photos as _bp
+
+    pid = str(project_id or "").strip() or ACTIVE_PROJECT_ID
+    p_root = get_project_root(pid)
+    st = _bp.clear_all_best_photos(p_root)
     return {"ok": True, "project_id": pid, **st}
 
 

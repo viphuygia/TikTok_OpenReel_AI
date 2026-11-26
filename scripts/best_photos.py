@@ -61,6 +61,61 @@ def _best_photos_dir(project_root: Path) -> Path:
     return Path(project_root) / "05_output" / "best_photos"
 
 
+def _thumbs_dir(project_root: Path) -> Path:
+    return _best_photos_dir(project_root) / "_thumbs"
+
+
+def _write_thumb_jpg(cv2: Any, img: np.ndarray, thumb_fp: Path, max_side: int = 480) -> None:
+    if img is None or img.size == 0:
+        return
+    h, w = img.shape[:2]
+    m = max(h, w)
+    if m > max_side and m > 0:
+        scale = float(max_side) / float(m)
+        nw = max(1, int(round(w * scale)))
+        nh = max(1, int(round(h * scale)))
+        resized = cv2.resize(img, (nw, nh), interpolation=cv2.INTER_AREA)
+    else:
+        resized = img
+    ok, buf = cv2.imencode(".jpg", resized, [int(cv2.IMWRITE_JPEG_QUALITY), 80])
+    if ok:
+        thumb_fp.parent.mkdir(parents=True, exist_ok=True)
+        thumb_fp.write_bytes(buf.tobytes())
+
+
+def ensure_best_photo_thumb(project_root: Path, filename: str, max_side: int = 480) -> Path:
+    clean_name = Path(str(filename or "").strip()).name
+    if not clean_name or not re.match(r"^[a-zA-Z0-9_.-]+$", clean_name):
+        raise ValueError("Tên file ảnh không hợp lệ.")
+    out_dir = _best_photos_dir(project_root).resolve()
+    orig_fp = (out_dir / clean_name).resolve()
+    if not orig_fp.is_relative_to(out_dir) or not orig_fp.exists() or not orig_fp.is_file():
+        raise FileNotFoundError("Không tìm thấy ảnh.")
+
+    thumbs_dir = _thumbs_dir(project_root).resolve()
+    thumb_fp = (thumbs_dir / clean_name).resolve()
+    if (
+        thumb_fp.is_relative_to(thumbs_dir)
+        and thumb_fp.exists()
+        and thumb_fp.is_file()
+        and thumb_fp.stat().st_size > 0
+        and thumb_fp.stat().st_mtime >= orig_fp.stat().st_mtime
+    ):
+        return thumb_fp
+
+    try:
+        cv2 = _fp._ensure_cv2()
+        raw_bytes = np.fromfile(str(orig_fp), dtype=np.uint8)
+        img = cv2.imdecode(raw_bytes, cv2.IMREAD_COLOR)
+        if img is not None and img.size > 0:
+            _write_thumb_jpg(cv2, img, thumb_fp, max_side=max_side)
+            if thumb_fp.exists() and thumb_fp.stat().st_size > 0:
+                return thumb_fp
+    except Exception:
+        pass
+    return orig_fp
+
+
 def _manifest_path(project_root: Path) -> Path:
     return _best_photos_dir(project_root) / "manifest.json"
 
@@ -158,12 +213,16 @@ def load_best_photos_state(project_root: Path) -> dict[str, Any]:
             continue
         item_copy = dict(item)
         item_copy["filename"] = fn
-        item_copy["size_bytes"] = int(fp.stat().st_size)
+        st_stat = fp.stat()
+        item_copy["size_bytes"] = int(st_stat.st_size)
+        item_copy["updated_at"] = int(item.get("updated_at") or int(st_stat.st_mtime))
         valid_photos.append(item_copy)
 
     return {
         "updated_at": int(data.get("updated_at") or 0),
         "focus": str(data.get("focus") or "auto"),
+        "count_mode": str(data.get("count_mode") or "per_video"),
+        "save_mode": str(data.get("save_mode") or "replace_selected"),
         "ai_used": bool(data.get("ai_used", False)),
         "ai_channel": str(data.get("ai_channel") or ""),
         "ai_note": str(data.get("ai_note") or ""),
@@ -194,9 +253,29 @@ def delete_best_photo(project_root: Path, filename: str) -> dict[str, Any]:
     orig_target = (out_dir / "_orig" / clean_name).resolve()
     if orig_target.is_relative_to(out_dir) and orig_target.exists() and orig_target.is_file():
         orig_target.unlink(missing_ok=True)
+    thumb_target = (out_dir / "_thumbs" / clean_name).resolve()
+    if thumb_target.is_relative_to(out_dir) and thumb_target.exists() and thumb_target.is_file():
+        thumb_target.unlink(missing_ok=True)
 
     cur = load_best_photos_state(project_root)
     cur["photos"] = [p for p in (cur.get("photos") or []) if p.get("filename") != clean_name]
+    cur["updated_at"] = int(time.time())
+    _write_manifest(project_root, cur)
+    return cur
+
+
+def clear_all_best_photos(project_root: Path) -> dict[str, Any]:
+    out_dir = _best_photos_dir(project_root)
+    if out_dir.exists():
+        for fp in out_dir.glob("*.jpg"):
+            fp.unlink(missing_ok=True)
+        for sub_name in ("_orig", "_thumbs"):
+            sub_dir = out_dir / sub_name
+            if sub_dir.exists():
+                for fp in sub_dir.glob("*.jpg"):
+                    fp.unlink(missing_ok=True)
+    cur = load_best_photos_state(project_root)
+    cur["photos"] = []
     cur["updated_at"] = int(time.time())
     _write_manifest(project_root, cur)
     return cur
@@ -1024,23 +1103,28 @@ def enhance_best_photo(
     if src_img is None:
         raise RuntimeError("Không đọc được dữ liệu ảnh gốc.")
 
+    thumb_fp = (_thumbs_dir(project_root) / clean_name).resolve()
     if mode == "none":
         shutil.copy2(orig_fp, target_fp)
         applied = "none"
+        _write_thumb_jpg(cv2, src_img, thumb_fp)
     else:
         enh_img, applied = enhance_photo_frame(cv2, src_img, enhance_mode=mode)
         ok_enc, buf = cv2.imencode(".jpg", enh_img, [int(cv2.IMWRITE_JPEG_QUALITY), 95])
         if not ok_enc:
             raise RuntimeError("Không lưu được ảnh sau khi làm nét.")
         target_fp.write_bytes(buf.tobytes())
+        _write_thumb_jpg(cv2, enh_img, thumb_fp)
 
+    now_ts = int(time.time())
     cur = load_best_photos_state(project_root)
     new_sz = int(target_fp.stat().st_size)
     for item in cur.get("photos") or []:
         if item.get("filename") == clean_name:
             item["enhanced"] = applied
             item["size_bytes"] = new_sz
-    cur["updated_at"] = int(time.time())
+            item["updated_at"] = now_ts
+    cur["updated_at"] = now_ts
     _write_manifest(project_root, cur)
     return cur
 
@@ -1124,15 +1208,19 @@ def nudge_best_photo(
         raise RuntimeError("Không mã hóa được ảnh mới.")
     orig_fp.write_bytes(orig_buf.tobytes())
 
+    thumb_fp = (_thumbs_dir(project_root) / clean_name).resolve()
     enh_mode = str(target_item.get("enhanced") or "none").strip()
     if enh_mode in ("sharpen", "ai_face"):
         enh_img, applied_enh = enhance_photo_frame(cv2, full_frame, enhance_mode=enh_mode)
         ok_enh, enh_buf = cv2.imencode(".jpg", enh_img, [int(cv2.IMWRITE_JPEG_QUALITY), 95])
         target_fp.write_bytes(enh_buf.tobytes() if ok_enh else orig_buf.tobytes())
+        _write_thumb_jpg(cv2, enh_img if ok_enh else full_frame, thumb_fp)
     else:
         applied_enh = "none"
         target_fp.write_bytes(orig_buf.tobytes())
+        _write_thumb_jpg(cv2, full_frame, thumb_fp)
 
+    now_ts = int(time.time())
     fh, fw = full_frame.shape[:2]
     target_item["timestamp_sec"] = round(float(new_ts), 2)
     target_item["timestamp_str"] = _format_ts_str(float(new_ts))
@@ -1140,10 +1228,29 @@ def nudge_best_photo(
     target_item["height"] = int(fh)
     target_item["enhanced"] = applied_enh
     target_item["size_bytes"] = int(target_fp.stat().st_size)
+    target_item["updated_at"] = now_ts
 
-    cur["updated_at"] = int(time.time())
+    cur["updated_at"] = now_ts
     _write_manifest(project_root, cur)
     return cur
+
+
+def _unique_photo_filename(fname: str, used_names: set[str]) -> str:
+    clean = Path(str(fname or "photo.jpg")).name
+    if clean.lower() not in used_names:
+        used_names.add(clean.lower())
+        return clean
+    stem = Path(clean).stem
+    ext = Path(clean).suffix or ".jpg"
+    m = re.match(r"^(.+?)_(\d+)$", stem)
+    base, start_n = (m.group(1), int(m.group(2)) + 1) if m else (stem, 2)
+    n = max(2, start_n)
+    while True:
+        cand = f"{base}_{n:02d}{ext}"
+        if cand.lower() not in used_names:
+            used_names.add(cand.lower())
+            return cand
+        n += 1
 
 
 def extract_best_photos(
@@ -1151,6 +1258,7 @@ def extract_best_photos(
     *,
     count: int = 10,
     count_mode: str = "per_video",
+    save_mode: str = "replace_selected",
     focus: str = "auto",
     selected_clips: list[str] | None = None,
     use_ai: bool = True,
@@ -1171,6 +1279,10 @@ def extract_best_photos(
     project_root = Path(project_root)
     count = max(1, min(30, int(count or 10)))
     count_mode = "total" if str(count_mode or "per_video").strip() == "total" else "per_video"
+    save_mode_clean = str(save_mode or "replace_selected").strip()
+    if save_mode_clean not in ("replace_selected", "append", "replace_all"):
+        save_mode_clean = "replace_selected"
+    save_mode = save_mode_clean
     focus = focus if focus in ("auto", "portrait", "scenic") else "auto"
 
     videos = _collect_source_videos(project_root, selected_clips=selected_clips)
@@ -1330,12 +1442,41 @@ def extract_best_photos(
 
     out_dir = _best_photos_dir(project_root)
     out_dir.mkdir(parents=True, exist_ok=True)
-    for old_jpg in out_dir.glob("*.jpg"):
-        old_jpg.unlink(missing_ok=True)
     orig_dir = out_dir / "_orig"
-    if orig_dir.exists():
-        for old_bak in orig_dir.glob("*.jpg"):
-            old_bak.unlink(missing_ok=True)
+    thumbs_dir = _thumbs_dir(project_root)
+    prev_state = load_best_photos_state(project_root)
+    prev_photos = list(prev_state.get("photos") or [])
+
+    if save_mode == "replace_all":
+        for old_jpg in out_dir.glob("*.jpg"):
+            old_jpg.unlink(missing_ok=True)
+        for sub_d in (orig_dir, thumbs_dir):
+            if sub_d.exists():
+                for old_sub in sub_d.glob("*.jpg"):
+                    old_sub.unlink(missing_ok=True)
+        kept_photos: list[dict[str, Any]] = []
+    elif save_mode == "replace_selected":
+        processed_keys = {rel.lower() for _, rel in videos} | {p.name.lower() for p, _ in videos}
+        kept_photos = []
+        for old_item in prev_photos:
+            old_fn = Path(str(old_item.get("filename") or "")).name
+            c_rel = str(old_item.get("clip_rel") or "").replace("\\", "/").strip().lower()
+            c_name = str(old_item.get("clip_name") or "").strip().lower()
+            if (c_rel and c_rel in processed_keys) or (c_name and c_name in processed_keys):
+                if old_fn:
+                    (out_dir / old_fn).unlink(missing_ok=True)
+                    (orig_dir / old_fn).unlink(missing_ok=True)
+                    (thumbs_dir / old_fn).unlink(missing_ok=True)
+            else:
+                kept_photos.append(dict(old_item))
+    else:  # append
+        kept_photos = [dict(x) for x in prev_photos]
+
+    used_names: set[str] = {str(x.get("filename") or "").lower() for x in kept_photos if x.get("filename")}
+    unique_entries: list[tuple[dict[str, Any], float, str, str]] = []
+    for cand, sc, reason, raw_fname in selected_entries:
+        unique_entries.append((cand, sc, reason, _unique_photo_filename(raw_fname, used_names)))
+    selected_entries = unique_entries
 
     enh_mode = str(enhance_mode or "none").strip()
     if enh_mode not in ("none", "sharpen", "ai_face"):
@@ -1392,11 +1533,14 @@ def extract_best_photos(
                         face_engine=peak_face_eng,
                     )
                 out_fp = out_dir / fname
+                thumb_fp = thumbs_dir / fname
                 fh, fw = full_frame.shape[:2]
                 ts_val = round(float(picked_fi) / vid_fps, 2)
                 ok_enc, buf = cv2.imencode(".jpg", full_frame, [int(cv2.IMWRITE_JPEG_QUALITY), 95])
                 if ok_enc:
                     out_fp.write_bytes(buf.tobytes())
+                    _write_thumb_jpg(cv2, full_frame, thumb_fp)
+                    now_item_ts = int(time.time())
                     extracted_by_rank[rank] = {
                         "filename": fname,
                         "rank": int(rank),
@@ -1410,6 +1554,7 @@ def extract_best_photos(
                         "width": int(fw),
                         "height": int(fh),
                         "size_bytes": int(out_fp.stat().st_size),
+                        "updated_at": now_item_ts,
                     }
                 done_cnt += 1
                 pct = 76 + int(round((done_cnt / float(max(1, len(selected_entries)))) * 22))
@@ -1417,11 +1562,15 @@ def extract_best_photos(
         finally:
             cap.release()
 
-    photos_out = [extracted_by_rank[r] for r in sorted(extracted_by_rank.keys())]
+    new_photos = [extracted_by_rank[r] for r in sorted(extracted_by_rank.keys())]
+    photos_out = kept_photos + new_photos
+    for idx_r, p_item in enumerate(photos_out, start=1):
+        p_item["rank"] = int(idx_r)
     state_data = {
         "updated_at": int(time.time()),
         "focus": focus,
         "count_mode": count_mode,
+        "save_mode": save_mode,
         "enhance_mode": enh_mode,
         "ai_used": bool(ai_used),
         "ai_channel": ai_channel,
@@ -1430,5 +1579,5 @@ def extract_best_photos(
         "photos": photos_out,
     }
     _write_manifest(project_root, state_data)
-    _rep(100, f"Hoàn tất! Đã trích xuất {len(photos_out)} ảnh đẹp.")
+    _rep(100, f"Hoàn tất! Thêm {len(new_photos)} ảnh (tổng {len(photos_out)} ảnh đẹp).")
     return {"ok": True, **state_data}
