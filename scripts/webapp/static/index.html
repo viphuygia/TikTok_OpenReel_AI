@@ -1010,6 +1010,10 @@
         <span>4. 🎬 Kho Video Output</span>
         <span id="cnt-tab6" class="text-[11px] opacity-80"></span>
       </button>
+      <button data-tab="tab7" onclick="switchTab('tab7')" class="tab-btn px-3 py-1.5 rounded-xl text-xs sm:text-sm font-medium text-emerald-200 hover:bg-zinc-800 transition inline-flex items-center gap-1 whitespace-nowrap">
+        <span>📸 Tách Ảnh Đẹp</span>
+        <span id="cnt-tab7" class="text-[11px] opacity-80"></span>
+      </button>
       <button data-tab="tab3" onclick="switchTab('tab3')" class="tab-btn px-3 py-1.5 rounded-xl text-xs sm:text-sm font-medium text-zinc-300 hover:bg-zinc-800 transition inline-flex items-center gap-1 whitespace-nowrap">
         <span>⚙️ Style DNA</span>
         <span id="tab-prog-tab3" class="hidden text-[10px] px-1.5 py-0.5 rounded-full font-semibold"></span>
@@ -1328,82 +1332,12 @@
             </div>
           </div>
 
-          <!-- Best Photos Extractor Card (AI Hybrid: Local sharpness + YuNet + Gemini Vision) -->
-          <div id="tab1-best-photos-card" class="rounded-2xl bg-zinc-950/75 border border-emerald-500/30 p-4 space-y-3">
-            <div class="flex flex-wrap items-start justify-between gap-2">
-              <div>
-                <div class="flex flex-wrap items-center gap-2">
-                  <h3 class="text-sm font-semibold text-emerald-200">📸 Cắt Ảnh Đẹp Từ Clip (AI Chọn Khoảnh Khắc)</h3>
-                  <span id="tab1-bp-project-badge" class="px-2 py-0.5 rounded-full bg-zinc-900 border border-zinc-700 text-[10px] text-zinc-300 mono">--</span>
-                </div>
-                <p id="bp-status" class="text-[11px] text-zinc-400 mt-0.5">Chưa cắt ảnh đẹp cho project này.</p>
-              </div>
-              <div class="flex flex-wrap items-center gap-1.5">
-                <button id="btn-bp-extract" type="button" onclick="startBestPhotosExtract()" class="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-xs font-semibold text-white transition">
-                  ✨ Cắt Ảnh Đẹp Ngay
-                </button>
-                <button id="btn-bp-zip" type="button" onclick="downloadBestPhotosZip()" class="hidden px-2.5 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-[11px] text-emerald-200 transition">
-                  📦 Tải tất cả (.ZIP)
-                </button>
-                <button type="button" onclick="openBestPhotosFolder()" class="px-2.5 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-[11px] text-zinc-200">
-                  📂 Mở thư mục
-                </button>
-                <button id="btn-tab1-bp-toggle" type="button" onclick="toggleTab1BestPhotosBody()" class="px-2.5 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-[11px] text-zinc-300">
-                  Thu gọn
-                </button>
-              </div>
+          <div class="rounded-2xl bg-zinc-950/70 border border-emerald-500/30 px-4 py-3 flex flex-wrap items-center justify-between gap-2">
+            <div class="text-xs text-zinc-300">
+              <span class="font-semibold text-emerald-200">📸 Cần cắt ảnh đẹp từ video thô?</span>
+              <span class="text-zinc-400">Đã tách thành Tab riêng có chọn từng video, Sổ tay Gu Ảnh AI &amp; chỉnh ±0.2s.</span>
             </div>
-
-            <div id="bp-progress-wrap" class="hidden space-y-1">
-              <div class="flex items-center justify-between text-[11px] text-emerald-300">
-                <span id="bp-progress-text">⏳ Đang phân tích khung hình đẹp...</span>
-              </div>
-              <div class="h-1.5 w-full rounded-full bg-zinc-800 overflow-hidden">
-                <div id="bp-progress-bar" class="h-full bg-emerald-500 transition-all duration-200" style="width: 10%"></div>
-              </div>
-            </div>
-
-            <div id="tab1-bp-body" class="space-y-2.5 pt-2 border-t border-zinc-800/80">
-              <div class="flex flex-wrap items-center gap-2.5 text-[11px]">
-                <div class="flex items-center gap-1.5">
-                  <span class="text-zinc-400">Số lượng:</span>
-                  <select id="bp-count" class="rounded-lg bg-zinc-900 border border-zinc-700 px-2 py-1 text-[11px] text-zinc-100">
-                    <option value="5">5 ảnh</option>
-                    <option value="10" selected>10 ảnh</option>
-                    <option value="15">15 ảnh</option>
-                    <option value="20">20 ảnh</option>
-                  </select>
-                </div>
-                <div class="flex items-center gap-1.5">
-                  <span class="text-zinc-400">Gu chọn:</span>
-                  <select id="bp-focus" class="rounded-lg bg-zinc-900 border border-zinc-700 px-2 py-1 text-[11px] text-zinc-100">
-                    <option value="auto" selected>✨ Tự động (Cân bằng)</option>
-                    <option value="portrait">😊 Ưu tiên Chân dung &amp; Mặt rõ</option>
-                    <option value="scenic">🌄 Ưu tiên Cảnh đẹp &amp; Góc rộng</option>
-                  </select>
-                </div>
-                <label class="flex items-center gap-1.5 text-emerald-200 cursor-pointer">
-                  <input id="bp-use-ai" type="checkbox" checked class="rounded bg-zinc-800 border-emerald-500 text-emerald-500" />
-                  <span>🤖 AI Vision chọn lọc (Loại nhắm mắt)</span>
-                </label>
-                <label class="flex items-center gap-1.5 text-zinc-300 cursor-pointer">
-                  <input id="bp-apply-privacy" type="checkbox" class="rounded bg-zinc-800 border-sky-500 text-sky-500" />
-                  <span>🕵️ Áp dụng Che mặt / Biển số</span>
-                </label>
-                <div class="flex items-center gap-1.5">
-                  <span class="text-zinc-400">Làm rõ:</span>
-                  <select id="bp-enhance-mode" class="rounded-lg bg-zinc-900 border border-zinc-700 px-2 py-1 text-[11px] text-zinc-100">
-                    <option value="none" selected>Tắt (Ảnh gốc 100%)</option>
-                    <option value="sharpen">⚡ Tăng nét nhẹ (Nhanh)</option>
-                    <option value="ai_face">💎 Làm nét AI (GFPGAN · Khử mờ mặt)</option>
-                  </select>
-                </div>
-              </div>
-
-              <div id="bp-grid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2.5">
-                <div class="col-span-full text-[11px] text-zinc-500 p-3 border border-dashed border-zinc-800 rounded-lg text-center">Bấm "✨ Cắt Ảnh Đẹp Ngay" để AI lọc khung hình nét nhất, loại khoảnh khắc nhắm mắt và xuất ảnh gốc 4K/1080p.</div>
-              </div>
-            </div>
+            <button type="button" onclick="switchTab('tab7')" class="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-xs font-semibold text-white transition">📸 Mở Tab Tách Ảnh Đẹp →</button>
           </div>
         </div>
       </div>
@@ -2305,6 +2239,140 @@
       </div>
     </section>
 
+    <!-- ======================= TAB 7: AI PHOTO STUDIO (BEST FRAMES) ======================= -->
+    <section id="tab7" class="tab-panel hidden space-y-5">
+      <div class="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+        <!-- Left Column: Clip Selector + Rules Harness + Options -->
+        <div class="lg:col-span-5 bg-studio-card border border-studio-border rounded-2xl p-4 sm:p-5 space-y-4">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h2 class="text-base font-semibold text-emerald-200">📸 Tách Ảnh Đẹp Studio</h2>
+              <p class="text-[11px] text-zinc-400">Chọn 1, nhiều hoặc tất cả video trong Project — mỗi video xuất đủ số ảnh đã đặt.</p>
+            </div>
+            <span id="tab7-bp-project-badge" class="px-2.5 py-1 rounded-full bg-zinc-900 border border-zinc-700 text-[11px] text-zinc-200 mono">--</span>
+          </div>
+
+          <!-- Video Selector -->
+          <div class="rounded-xl bg-zinc-950/75 border border-zinc-800 p-3 space-y-2">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <span class="text-xs font-semibold text-zinc-200">🎬 Chọn Video trong 02_video_tho <span id="bp-clip-count-lbl" class="text-[11px] text-emerald-300 mono"></span></span>
+              <div class="flex items-center gap-1.5 text-[10px]">
+                <button type="button" onclick="selectAllBpClips(true)" class="px-2 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-200">Chọn tất cả</button>
+                <button type="button" onclick="selectAllBpClips(false)" class="px-2 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-300">Bỏ chọn</button>
+                <button type="button" onclick="loadTab7ClipList()" class="px-2 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-300">🔄</button>
+              </div>
+            </div>
+            <div id="bp-clip-list" class="max-h-56 overflow-y-auto space-y-1.5 pr-1 text-xs">
+              <div class="text-[11px] text-zinc-500 p-3 text-center border border-dashed border-zinc-800 rounded-lg">Đang tải danh sách video...</div>
+            </div>
+          </div>
+
+          <!-- Extraction Controls -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
+            <div>
+              <label class="block text-[10px] text-zinc-400 mb-1">Chế độ số lượng</label>
+              <select id="bp-count-mode" class="w-full rounded-lg bg-zinc-900 border border-zinc-700 px-2.5 py-1.5 text-xs text-zinc-100">
+                <option value="per_video" selected>🎬 Mỗi video xuất X ảnh</option>
+                <option value="total">📂 Tổng X ảnh cả Project</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-[10px] text-zinc-400 mb-1">Số ảnh (X)</label>
+              <select id="bp-count" class="w-full rounded-lg bg-zinc-900 border border-zinc-700 px-2.5 py-1.5 text-xs text-zinc-100">
+                <option value="2">2 ảnh</option>
+                <option value="3" selected>3 ảnh</option>
+                <option value="5">5 ảnh</option>
+                <option value="8">8 ảnh</option>
+                <option value="10">10 ảnh</option>
+                <option value="15">15 ảnh</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-[10px] text-zinc-400 mb-1">Gu ưu tiên</label>
+              <select id="bp-focus" class="w-full rounded-lg bg-zinc-900 border border-zinc-700 px-2.5 py-1.5 text-xs text-zinc-100">
+                <option value="auto" selected>✨ Tự động (Mặt &amp; Dáng quay lưng)</option>
+                <option value="portrait">😊 Ưu tiên Chân dung &amp; Mặt rõ</option>
+                <option value="scenic">🌄 Ưu tiên Cảnh đẹp &amp; Dáng rộng</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-[10px] text-zinc-400 mb-1">Làm rõ ảnh (Tùy chọn)</label>
+              <select id="bp-enhance-mode" class="w-full rounded-lg bg-zinc-900 border border-zinc-700 px-2.5 py-1.5 text-xs text-zinc-100">
+                <option value="none" selected>Tắt (Ảnh gốc 100%)</option>
+                <option value="sharpen">⚡ Tăng nét nhẹ (Nhanh)</option>
+                <option value="ai_face">💎 Làm nét AI (GFPGAN · Khử mờ mặt)</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="flex flex-wrap items-center gap-4 text-[11px]">
+            <label class="flex items-center gap-1.5 text-emerald-200 cursor-pointer">
+              <input id="bp-use-ai" type="checkbox" checked class="rounded bg-zinc-800 border-emerald-500 text-emerald-500" />
+              <span>🤖 AI Vision soi dáng &amp; loại tóc bay/nhắm mắt</span>
+            </label>
+            <label class="flex items-center gap-1.5 text-zinc-300 cursor-pointer">
+              <input id="bp-apply-privacy" type="checkbox" class="rounded bg-zinc-800 border-sky-500 text-sky-500" />
+              <span>🕵️ Áp dụng Che mặt / Biển số</span>
+            </label>
+          </div>
+
+          <button id="btn-bp-extract" type="button" onclick="startBestPhotosExtract()" class="w-full py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-sm font-semibold text-white shadow-lg transition">
+            ✨ Bắt Đầu Tách Ảnh Đẹp
+          </button>
+
+          <div id="bp-progress-wrap" class="hidden space-y-1">
+            <div class="flex items-center justify-between text-[11px] text-emerald-300">
+              <span id="bp-progress-text">⏳ Đang phân tích khung hình đẹp...</span>
+            </div>
+            <div class="h-2 w-full rounded-full bg-zinc-800 overflow-hidden">
+              <div id="bp-progress-bar" class="h-full bg-emerald-500 transition-all duration-200" style="width: 10%"></div>
+            </div>
+          </div>
+
+          <!-- Harness: Sổ tay Gu Ảnh AI (photo_taste_rules.md) -->
+          <div class="rounded-xl bg-zinc-950/80 border border-amber-500/30 p-3 space-y-2">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <button type="button" onclick="togglePhotoTasteRulesBody()" class="text-xs font-semibold text-amber-200 flex items-center gap-1.5">
+                <span>📓 Sổ tay Gu Ảnh AI</span>
+                <span class="text-[10px] text-zinc-400 mono">(04_workspace/photo_taste_rules.md)</span>
+              </button>
+              <button id="btn-bp-rules-toggle" type="button" onclick="togglePhotoTasteRulesBody()" class="px-2 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-[10px] text-zinc-300">Mở rộng</button>
+            </div>
+            <div id="bp-rules-wrap" class="hidden space-y-2 pt-1">
+              <p class="text-[10px] text-zinc-400">AI sẽ đọc trực tiếp các quy tắc này mỗi lần tách ảnh. Bạn có thể tự note thêm hoặc bấm "👎 Chê &amp; Note" trên từng ảnh để tự ghi vào đây.</p>
+              <textarea id="bp-rules-textarea" rows="9" class="w-full rounded-lg bg-zinc-900 border border-zinc-700 px-2.5 py-2 text-[11px] text-zinc-100 mono focus:outline-none focus:border-amber-500"></textarea>
+              <div class="flex flex-wrap items-center justify-between gap-2 text-[11px]">
+                <button type="button" onclick="resetPhotoTasteRules()" class="px-2.5 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-300">↺ Khôi phục mẫu chuẩn</button>
+                <button type="button" onclick="savePhotoTasteRules()" class="px-3 py-1 rounded-lg bg-amber-600 hover:bg-amber-500 text-white font-semibold">💾 Lưu Sổ tay Gu Ảnh</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Right Column: Grouped Results Gallery -->
+        <div class="lg:col-span-7 bg-studio-card border border-studio-border rounded-2xl p-4 sm:p-5 space-y-4">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h3 class="text-base font-semibold text-white">🖼️ Bộ Ảnh Đã Tách (Độ phân giải gốc)</h3>
+              <p id="bp-status" class="text-xs text-zinc-400 mt-0.5">Chưa cắt ảnh đẹp cho project này.</p>
+            </div>
+            <div class="flex flex-wrap items-center gap-1.5">
+              <button id="btn-bp-zip" type="button" onclick="downloadBestPhotosZip()" class="hidden px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-xs font-semibold text-white transition">
+                📦 Tải tất cả (.ZIP)
+              </button>
+              <button type="button" onclick="openBestPhotosFolder()" class="px-2.5 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-xs text-zinc-200">
+                📂 Mở thư mục
+              </button>
+            </div>
+          </div>
+
+          <div id="bp-grid" class="space-y-4">
+            <div class="text-xs text-zinc-500 p-8 border border-dashed border-zinc-800 rounded-xl text-center">Chọn video ở cột trái rồi bấm "✨ Bắt Đầu Tách Ảnh Đẹp" để AI lọc khoảnh khắc chuẩn dáng, tránh tóc bay rối &amp; nhắm mắt.</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
   </main>
 
   <script>
@@ -2387,6 +2455,7 @@
       if (tabId === 'tab4') { loadWorkshopState(); loadLongformTabState(); }
       if (tabId === 'tab5') loadOpenReelStatus();
       if (tabId === 'tab6') loadOutputGallery();
+      if (tabId === 'tab7') loadTab7PhotoStudio();
     }
 
     async function openExplorer(relPath, selectFile = false, projectId = '') {
@@ -2726,6 +2795,9 @@
       if (tab1Pid) {
         loadFacePrivacyState(tab1Pid, false);
         loadBestPhotosState(tab1Pid);
+        if (!document.getElementById('tab7')?.classList.contains('hidden')) {
+          loadTab7ClipList(tab1Pid);
+        }
       }
       loadSmbShareStatus(tab1Pid);
       try {
@@ -7995,12 +8067,136 @@
     state.bestPhotosPollTimers = state.bestPhotosPollTimers || {};
     state._bpLightboxIdx = -1;
 
-    function toggleTab1BestPhotosBody() {
-      const body = document.getElementById('tab1-bp-body');
-      const btn = document.getElementById('btn-tab1-bp-toggle');
-      if (!body) return;
-      const hidden = body.classList.toggle('hidden');
+    state.bpClipListMap = state.bpClipListMap || {};
+    state.bpSelectedClipsMap = state.bpSelectedClipsMap || {};
+
+    function togglePhotoTasteRulesBody() {
+      const wrap = document.getElementById('bp-rules-wrap');
+      const btn = document.getElementById('btn-bp-rules-toggle');
+      if (!wrap) return;
+      const hidden = wrap.classList.toggle('hidden');
       if (btn) btn.textContent = hidden ? 'Mở rộng' : 'Thu gọn';
+      if (!hidden) loadPhotoTasteRules();
+    }
+
+    async function loadPhotoTasteRules() {
+      try {
+        const res = await api('/api/best-photos/rules');
+        const el = document.getElementById('bp-rules-textarea');
+        if (res && res.ok && el) el.value = res.content || '';
+      } catch (e) {}
+    }
+
+    async function savePhotoTasteRules() {
+      const content = document.getElementById('bp-rules-textarea')?.value || '';
+      try {
+        const res = await api('/api/best-photos/rules', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content }),
+        });
+        if (res && res.ok) {
+          const el = document.getElementById('bp-rules-textarea');
+          if (el) el.value = res.content || '';
+          toast('Đã lưu Sổ tay Gu Ảnh AI (photo_taste_rules.md)!', 'success');
+        }
+      } catch (e) {
+        toast('Lỗi lưu Sổ tay: ' + e.message, 'error');
+      }
+    }
+
+    async function resetPhotoTasteRules() {
+      try {
+        const res = await api('/api/best-photos/rules', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ reset: true }),
+        });
+        if (res && res.ok) {
+          const el = document.getElementById('bp-rules-textarea');
+          if (el) el.value = res.content || '';
+          toast('Đã khôi phục mẫu Sổ tay Gu Ảnh chuẩn!', 'info');
+        }
+      } catch (e) {
+        toast(e.message, 'error');
+      }
+    }
+
+    async function loadTab7ClipList(projectId = '') {
+      const pid = projectId || getTab1ProjectId();
+      if (!pid) return;
+      const box = document.getElementById('bp-clip-list');
+      const lbl = document.getElementById('bp-clip-count-lbl');
+      const badge = document.getElementById('tab7-bp-project-badge');
+      if (badge) badge.textContent = pid;
+      try {
+        const data = await api(`/api/files?dir=02_video_tho&project_id=${encodeURIComponent(pid)}`);
+        const vids = (data.files || []).filter((f) => f.kind === 'video');
+        state.bpClipListMap[pid] = vids;
+        if (!Array.isArray(state.bpSelectedClipsMap[pid])) {
+          state.bpSelectedClipsMap[pid] = vids.map((v) => v.rel_path);
+        } else {
+          const valid = new Set(vids.map((v) => v.rel_path));
+          const kept = state.bpSelectedClipsMap[pid].filter((x) => valid.has(x));
+          state.bpSelectedClipsMap[pid] = kept.length ? kept : vids.map((v) => v.rel_path);
+        }
+        renderBpClipList(pid);
+      } catch (e) {
+        if (box) box.innerHTML = `<div class="text-[11px] text-rose-300 p-2">Lỗi tải danh sách clip: ${escapeHtml(e.message)}</div>`;
+        if (lbl) lbl.textContent = '';
+      }
+    }
+
+    function renderBpClipList(projectId = '') {
+      const pid = projectId || getTab1ProjectId();
+      const box = document.getElementById('bp-clip-list');
+      const lbl = document.getElementById('bp-clip-count-lbl');
+      if (!box) return;
+      const vids = state.bpClipListMap[pid] || [];
+      const selSet = new Set(state.bpSelectedClipsMap[pid] || []);
+      if (lbl) lbl.textContent = vids.length ? `(${selSet.size}/${vids.length} clip)` : '(0)';
+      if (!vids.length) {
+        box.innerHTML = '<div class="text-[11px] text-zinc-500 p-3 text-center border border-dashed border-zinc-800 rounded-lg">Thư mục 02_video_tho của project này đang trống.</div>';
+        return;
+      }
+      box.innerHTML = vids.map((v) => {
+        const checked = selSet.has(v.rel_path) ? 'checked' : '';
+        return `
+          <label class="flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg bg-zinc-900/80 hover:bg-zinc-900 border border-zinc-800 cursor-pointer">
+            <span class="flex items-center gap-2 min-w-0">
+              <input type="checkbox" ${checked} onchange="onToggleBpClip('${escapeHtml(pid)}', '${escapeHtml(v.rel_path)}', this.checked)" class="rounded bg-zinc-800 border-emerald-500 text-emerald-500 shrink-0" />
+              <span class="text-[11px] text-zinc-100 truncate mono" title="${escapeHtml(v.name)}">${escapeHtml(v.name)}</span>
+            </span>
+            <span class="text-[10px] text-zinc-400 mono shrink-0">${v.duration_sec}s · ${v.width}x${v.height}</span>
+          </label>
+        `;
+      }).join('');
+    }
+
+    function onToggleBpClip(pid, relPath, checked) {
+      const cur = new Set(state.bpSelectedClipsMap[pid] || []);
+      if (checked) cur.add(relPath);
+      else cur.delete(relPath);
+      state.bpSelectedClipsMap[pid] = Array.from(cur);
+      const lbl = document.getElementById('bp-clip-count-lbl');
+      const vids = state.bpClipListMap[pid] || [];
+      if (lbl) lbl.textContent = `(${cur.size}/${vids.length} clip)`;
+    }
+
+    function selectAllBpClips(selectAll = true) {
+      const pid = getTab1ProjectId();
+      const vids = state.bpClipListMap[pid] || [];
+      state.bpSelectedClipsMap[pid] = selectAll ? vids.map((v) => v.rel_path) : [];
+      renderBpClipList(pid);
+    }
+
+    async function loadTab7PhotoStudio(projectId = '') {
+      const pid = projectId || getTab1ProjectId();
+      await Promise.all([
+        loadTab7ClipList(pid),
+        loadBestPhotosState(pid),
+        loadPhotoTasteRules(),
+      ]);
     }
 
     function openBestPhotosFolder() {
@@ -8013,7 +8209,8 @@
       const pid = projectId || getTab1ProjectId();
       if (!pid || pid !== getTab1ProjectId()) return;
 
-      const badge = document.getElementById('tab1-bp-project-badge');
+      const badge = document.getElementById('tab7-bp-project-badge');
+      const tabCnt = document.getElementById('cnt-tab7');
       const statusEl = document.getElementById('bp-status');
       const btn = document.getElementById('btn-bp-extract');
       const btnZip = document.getElementById('btn-bp-zip');
@@ -8029,22 +8226,23 @@
       const photos = data.photos || [];
       const job = data.job || {};
 
+      if (tabCnt) tabCnt.textContent = photos.length > 0 ? `(${photos.length})` : '';
       if (btnZip) btnZip.classList.toggle('hidden', photos.length === 0);
 
       if (job.status === 'running') {
         const pct = Math.max(5, Math.min(99, Number(job.percent || 10)));
         if (btn) {
           btn.disabled = true;
-          btn.textContent = '⏳ Đang cắt ảnh...';
+          btn.textContent = '⏳ Đang tách ảnh...';
         }
         if (progWrap) progWrap.classList.remove('hidden');
-        if (progText) progText.textContent = job.message || '⏳ Đang chấm nét & chọn khoảnh khắc đẹp...';
+        if (progText) progText.textContent = job.message || '⏳ Đang chấm nét, soi dáng & chọn ảnh đẹp...';
         if (progBar) progBar.style.width = `${pct}%`;
         if (statusEl) statusEl.textContent = job.message || 'Đang xử lý ảnh đẹp chạy nền...';
       } else {
         if (btn) {
           btn.disabled = false;
-          btn.textContent = '✨ Cắt Ảnh Đẹp Ngay';
+          btn.textContent = '✨ Bắt Đầu Tách Ảnh Đẹp';
         }
         if (progWrap) progWrap.classList.add('hidden');
         if (statusEl) {
@@ -8054,8 +8252,9 @@
             const chLabel = data.ai_used
               ? (data.ai_channel === 'gemini_api' ? 'Gemini Vision AI' : 'Antigravity AI')
               : 'Local Chấm Nét';
+            const modeLabel = data.count_mode === 'total' ? 'Tổng cả Project' : 'Theo từng video';
             const noteSuffix = data.ai_note ? ` · ${data.ai_note}` : '';
-            statusEl.textContent = `Đã trích ${photos.length} ảnh gốc (${chLabel})${noteSuffix}`;
+            statusEl.textContent = `Đã trích ${photos.length} ảnh gốc (${chLabel} · ${modeLabel})${noteSuffix}`;
           } else {
             statusEl.textContent = 'Chưa cắt ảnh đẹp cho project này.';
           }
@@ -8063,27 +8262,49 @@
       }
 
       if (!photos.length) {
-        grid.innerHTML = '<div class="col-span-full text-[11px] text-zinc-500 p-3 border border-dashed border-zinc-800 rounded-lg text-center">Bấm "✨ Cắt Ảnh Đẹp Ngay" để AI lọc khung hình nét nhất, loại khoảnh khắc nhắm mắt và xuất ảnh gốc 4K/1080p.</div>';
+        grid.innerHTML = '<div class="text-xs text-zinc-500 p-8 border border-dashed border-zinc-800 rounded-xl text-center">Chọn video ở cột trái rồi bấm "✨ Bắt Đầu Tách Ảnh Đẹp" để AI lọc khoảnh khắc chuẩn dáng, tránh tóc bay rối &amp; nhắm mắt.</div>';
         return;
       }
 
-      grid.innerHTML = photos.map((ph, idx) => `
-        <div class="group rounded-xl bg-zinc-900/90 border border-zinc-800 hover:border-emerald-500/50 overflow-hidden flex flex-col transition">
-          <div class="relative aspect-[4/3] bg-zinc-950 cursor-pointer overflow-hidden" onclick="openBestPhotoLightbox(${idx})">
-            <img src="${escapeHtml(ph.url)}" alt="${escapeHtml(ph.filename)}" class="w-full h-full object-cover group-hover:scale-105 transition duration-200" loading="lazy" />
-            <span class="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded bg-black/75 border border-amber-400/50 text-[10px] font-bold text-amber-300">⭐ ${Number(ph.score || 8).toFixed(1)}</span>
-            <span class="absolute bottom-1.5 right-1.5 px-1.5 py-0.5 rounded bg-black/75 text-[9px] text-zinc-200 mono">${escapeHtml(ph.timestamp_str || '')}</span>
+      // Group photos by clip_name preserving order
+      const groups = [];
+      const byClip = {};
+      photos.forEach((ph, globalIdx) => {
+        const key = ph.clip_rel || ph.clip_name || 'Video';
+        if (!byClip[key]) {
+          byClip[key] = { clip_name: ph.clip_name || key, items: [] };
+          groups.push(byClip[key]);
+        }
+        byClip[key].items.push({ ph, idx: globalIdx });
+      });
+
+      grid.innerHTML = groups.map((g) => `
+        <div class="rounded-xl bg-zinc-950/75 border border-zinc-800 p-3 space-y-2.5">
+          <div class="flex items-center justify-between gap-2 text-xs">
+            <span class="font-semibold text-emerald-200 mono truncate">🎬 ${escapeHtml(g.clip_name)}</span>
+            <span class="text-[11px] text-zinc-400 shrink-0">${g.items.length} ảnh</span>
           </div>
-          <div class="p-2 flex-1 flex flex-col justify-between gap-1.5">
-            <div>
-              <div class="text-[10px] text-zinc-400 truncate mono" title="${escapeHtml(ph.clip_name || '')}">${escapeHtml(ph.clip_name || ph.filename)} · ${ph.width}x${ph.height}</div>
-              <div class="text-[11px] text-zinc-200 line-clamp-2 mt-0.5" title="${escapeHtml(ph.reason || '')}">${escapeHtml(ph.reason || '')}</div>
-            </div>
-            <div class="flex items-center justify-between gap-1 pt-1 border-t border-zinc-800/80">
-              <a href="${escapeHtml(ph.download_url)}" download="${escapeHtml(ph.filename)}" class="px-2 py-1 rounded bg-emerald-600/25 hover:bg-emerald-600/45 border border-emerald-500/35 text-[10px] font-semibold text-emerald-200">⬇️ Tải về</a>
-              <button type="button" onclick="enhanceSingleBestPhoto('${escapeHtml(pid)}', '${escapeHtml(ph.filename)}', 'ai_face')" title="Làm rõ mặt AI (GFPGAN) — chỉ áp dụng khi bạn bấm" class="px-2 py-1 rounded bg-amber-600/20 hover:bg-amber-600/40 border border-amber-500/35 text-[10px] text-amber-200">${ph.enhanced === 'ai_face' ? '💎 Đã nét AI' : (ph.enhanced === 'sharpen' ? '⚡ Đã nét' : '✨ Làm rõ')}</button>
-              <button type="button" onclick="deleteBestPhoto('${escapeHtml(pid)}', '${escapeHtml(ph.filename)}')" class="px-2 py-1 rounded bg-rose-600/20 hover:bg-rose-600/40 border border-rose-500/30 text-[10px] text-rose-200">Xóa</button>
-            </div>
+          <div class="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+            ${g.items.map(({ ph, idx }) => `
+              <div class="group rounded-xl bg-zinc-900/90 border border-zinc-800 hover:border-emerald-500/50 overflow-hidden flex flex-col transition">
+                <div class="relative aspect-[4/3] bg-zinc-950 cursor-pointer overflow-hidden" onclick="openBestPhotoLightbox(${idx})">
+                  <img src="${escapeHtml(ph.url)}" alt="${escapeHtml(ph.filename)}" class="w-full h-full object-cover group-hover:scale-105 transition duration-200" loading="lazy" />
+                  <span class="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded bg-black/75 border border-amber-400/50 text-[10px] font-bold text-amber-300">⭐ ${Number(ph.score || 8).toFixed(1)}</span>
+                  <span class="absolute bottom-1.5 right-1.5 px-1.5 py-0.5 rounded bg-black/75 text-[9px] text-zinc-200 mono">${escapeHtml(ph.timestamp_str || '')}</span>
+                </div>
+                <div class="p-2 flex-1 flex flex-col justify-between gap-1.5">
+                  <div>
+                    <div class="text-[10px] text-zinc-400 truncate mono">${escapeHtml(ph.filename)} · ${ph.width}x${ph.height}</div>
+                    <div class="text-[11px] text-zinc-200 line-clamp-2 mt-0.5" title="${escapeHtml(ph.reason || '')}">${escapeHtml(ph.reason || '')}</div>
+                  </div>
+                  <div class="flex flex-wrap items-center justify-between gap-1 pt-1 border-t border-zinc-800/80 text-[10px]">
+                    <a href="${escapeHtml(ph.download_url)}" download="${escapeHtml(ph.filename)}" class="px-1.5 py-1 rounded bg-emerald-600/25 hover:bg-emerald-600/45 border border-emerald-500/35 font-semibold text-emerald-200">⬇️ Tải</a>
+                    <button type="button" onclick="enhanceSingleBestPhoto('${escapeHtml(pid)}', '${escapeHtml(ph.filename)}', 'ai_face')" title="Làm rõ mặt AI (GFPGAN)" class="px-1.5 py-1 rounded bg-amber-600/20 hover:bg-amber-600/40 border border-amber-500/35 text-amber-200">${ph.enhanced === 'ai_face' ? '💎 AI' : (ph.enhanced === 'sharpen' ? '⚡ Nét' : '✨ Nét AI')}</button>
+                    <button type="button" onclick="openRejectNoteModal('${escapeHtml(pid)}', '${escapeHtml(ph.filename)}')" title="Xóa tấm này &amp; note lỗi vào Sổ tay Gu Ảnh AI" class="px-1.5 py-1 rounded bg-rose-600/20 hover:bg-rose-600/40 border border-rose-500/30 text-rose-200">👎 Chê</button>
+                  </div>
+                </div>
+              </div>
+            `).join('')}
           </div>
         </div>
       `).join('');
@@ -8107,7 +8328,12 @@
     async function startBestPhotosExtract() {
       const pid = getTab1ProjectId();
       if (!pid) return toast('Chưa xác định Project.', 'warn');
-      const count = parseInt(document.getElementById('bp-count')?.value || '10', 10) || 10;
+      const selected_clips = Array.isArray(state.bpSelectedClipsMap[pid]) ? [...state.bpSelectedClipsMap[pid]] : [];
+      if ((state.bpClipListMap[pid] || []).length > 0 && selected_clips.length === 0) {
+        return toast('Hãy chọn ít nhất 1 video ở danh sách bên trên.', 'warn');
+      }
+      const count_mode = document.getElementById('bp-count-mode')?.value || 'per_video';
+      const count = parseInt(document.getElementById('bp-count')?.value || '3', 10) || 3;
       const focus = document.getElementById('bp-focus')?.value || 'auto';
       const use_ai = !!document.getElementById('bp-use-ai')?.checked;
       const apply_privacy = !!document.getElementById('bp-apply-privacy')?.checked;
@@ -8124,12 +8350,12 @@
         const res = await api('/api/best-photos/extract', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ project_id: pid, count, focus, use_ai, apply_privacy, enhance_mode }),
+          body: JSON.stringify({ project_id: pid, count, count_mode, focus, selected_clips, use_ai, apply_privacy, enhance_mode }),
         });
         state.bestPhotosMap[pid] = { ...(state.bestPhotosMap[pid] || {}), job: res.job || { status: 'running', percent: 10 } };
         renderBestPhotosPanel(pid);
         if (res.job?.status === 'running') {
-          if (!res.already_running) toast('AI đang lọc khung hình & chọn ảnh đẹp chạy nền...', 'info');
+          if (!res.already_running) toast('AI đang tách ảnh đẹp theo từng video chạy nền...', 'info');
           pollBestPhotosJob(pid);
         } else {
           await loadBestPhotosState(pid);
@@ -8338,6 +8564,50 @@
       return enhanceSingleBestPhoto(state._bpLightboxCtx.pid, state._bpLightboxCtx.filename, mode);
     }
 
+    async function nudgeLightboxPhoto(deltaSec) {
+      if (!state._bpLightboxCtx) return;
+      const { pid, filename } = state._bpLightboxCtx;
+      toast(`Đang nhích ${deltaSec > 0 ? '+' : ''}${deltaSec}s từ video gốc...`, 'info');
+      try {
+        const res = await api('/api/best-photos/nudge', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ project_id: pid, filename, delta_sec: deltaSec }),
+        });
+        if (res && res.ok) {
+          state.bestPhotosMap[pid] = { ...(state.bestPhotosMap[pid] || {}), ...res };
+          if (pid === getTab1ProjectId()) renderBestPhotosPanel(pid);
+          await loadOutputGallery(state.galleryProjectId || 'all');
+          const updatedPh = (res.photos || []).find((x) => x.filename === filename);
+          if (updatedPh) openBestPhotoLightboxByObj(updatedPh, pid);
+        }
+      } catch (e) {
+        toast('Lỗi nhích khoảnh khắc: ' + e.message, 'error');
+      }
+    }
+
+    async function openRejectNoteModal(pid, filename) {
+      const reason = window.prompt(
+        'Nhập lý do chê tấm này để AI tự note vào Sổ tay Gu Ảnh (để trống nếu chỉ muốn xóa):\n' +
+        'Gợi ý: Tránh tóc bay rối / Tránh tay giơ lỡ cỡ / Tránh góc quá chật',
+        'Tránh tóc bay rối hoặc tay giơ lỡ cỡ giữa chuyển động'
+      );
+      if (reason === null) return;
+      if (reason.trim()) {
+        try {
+          const rRes = await api('/api/best-photos/rules', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ append_note: reason.trim() }),
+          });
+          const ta = document.getElementById('bp-rules-textarea');
+          if (ta && rRes?.content) ta.value = rRes.content;
+        } catch {}
+      }
+      await deleteBestPhoto(pid, filename);
+      if (reason.trim()) toast('Đã xóa ảnh & ghi quy tắc mới vào Sổ tay Gu Ảnh AI!', 'success');
+    }
+
     async function shareSingleBestPhotoMobile(pid, idx) {
       const ph = (state._galleryPhotoGroupsMap[pid]?.photos || [])[idx];
       if (!ph) return;
@@ -8442,11 +8712,13 @@
     <div class="max-w-4xl w-full bg-zinc-950 border border-zinc-800 rounded-2xl overflow-hidden shadow-2xl flex flex-col max-h-[92vh]">
       <div class="px-4 py-3 border-b border-zinc-800 flex items-center justify-between gap-2">
         <div id="bp-lb-meta" class="text-xs text-zinc-200 mono truncate">--</div>
-        <div class="flex flex-wrap items-center gap-2 shrink-0">
-          <button id="bp-lb-enhance" type="button" onclick="enhanceLightboxPhoto('ai_face')" class="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-xs font-semibold text-white">✨ Làm rõ AI</button>
-          <button id="bp-lb-restore-orig" type="button" onclick="enhanceLightboxPhoto('none')" class="hidden px-2.5 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-xs text-zinc-200">↩️ Ảnh gốc</button>
-          <a id="bp-lb-dl" href="#" download class="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-xs font-semibold text-white">⬇️ Tải ảnh</a>
-          <button type="button" onclick="closeBestPhotoLightbox()" class="px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-xs text-zinc-200">Đóng</button>
+        <div class="flex flex-wrap items-center gap-1.5 shrink-0">
+          <button type="button" onclick="nudgeLightboxPhoto(-0.2)" title="Lùi 0.2 giây trong video gốc" class="px-2.5 py-1.5 rounded-lg bg-indigo-600/30 hover:bg-indigo-600/50 border border-indigo-500/40 text-xs font-semibold text-indigo-100">⏪ -0.2s</button>
+          <button type="button" onclick="nudgeLightboxPhoto(0.2)" title="Tiến 0.2 giây trong video gốc" class="px-2.5 py-1.5 rounded-lg bg-indigo-600/30 hover:bg-indigo-600/50 border border-indigo-500/40 text-xs font-semibold text-indigo-100">⏩ +0.2s</button>
+          <button id="bp-lb-enhance" type="button" onclick="enhanceLightboxPhoto('ai_face')" class="px-2.5 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-xs font-semibold text-white">✨ Làm rõ AI</button>
+          <button id="bp-lb-restore-orig" type="button" onclick="enhanceLightboxPhoto('none')" class="hidden px-2 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-xs text-zinc-200">↩️ Gốc</button>
+          <a id="bp-lb-dl" href="#" download class="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-xs font-semibold text-white">⬇️ Tải</a>
+          <button type="button" onclick="closeBestPhotoLightbox()" class="px-2.5 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-xs text-zinc-200">Đóng</button>
         </div>
       </div>
       <div class="flex-1 bg-black flex items-center justify-center overflow-auto p-2">

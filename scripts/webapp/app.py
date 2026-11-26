@@ -5349,6 +5349,7 @@ def _get_best_photos_job(pid: str) -> dict[str, Any]:
 class BestPhotosExtractReq(BaseModel):
     project_id: str = ""
     count: int = 10
+    count_mode: str = "per_video"
     focus: str = "auto"
     selected_clips: list[str] = Field(default_factory=list)
     use_ai: bool = True
@@ -5360,6 +5361,18 @@ class BestPhotoEnhanceReq(BaseModel):
     project_id: str = ""
     filename: str
     enhance_mode: str = "ai_face"
+
+
+class PhotoTasteRulesReq(BaseModel):
+    content: str = ""
+    append_note: str = ""
+    reset: bool = False
+
+
+class BestPhotoNudgeReq(BaseModel):
+    project_id: str = ""
+    filename: str
+    delta_sec: float = 0.2
 
 
 def _attach_best_photo_urls(photos: list[dict[str, Any]], pid: str, ts: int) -> list[dict[str, Any]]:
@@ -5444,6 +5457,7 @@ def api_best_photos_extract(req: BestPhotosExtractReq):
             res = _bp.extract_best_photos(
                 p_root,
                 count=int(req.count or 10),
+                count_mode=str(req.count_mode or "per_video"),
                 focus=str(req.focus or "auto"),
                 selected_clips=list(req.selected_clips or []),
                 use_ai=bool(req.use_ai),
@@ -5522,6 +5536,55 @@ def api_best_photos_enhance(req: BestPhotoEnhanceReq):
             p_root,
             req.filename,
             enhance_mode=str(req.enhance_mode or "ai_face"),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    ts = int(st.get("updated_at") or 0)
+    st["photos"] = _attach_best_photo_urls(st.get("photos") or [], pid, ts)
+    return {"ok": True, "project_id": pid, **st}
+
+
+@app.get("/api/best-photos/rules")
+def api_best_photos_get_rules():
+    import best_photos as _bp
+
+    return {
+        "ok": True,
+        "path": "04_workspace/photo_taste_rules.md",
+        "content": _bp.load_photo_taste_rules(),
+    }
+
+
+@app.post("/api/best-photos/rules")
+def api_best_photos_save_rules(req: PhotoTasteRulesReq):
+    import best_photos as _bp
+
+    if req.reset:
+        content = _bp.reset_photo_taste_rules()
+    elif str(req.append_note or "").strip():
+        content = _bp.append_photo_taste_rule(str(req.append_note))
+    else:
+        content = _bp.save_photo_taste_rules(str(req.content or ""))
+    return {
+        "ok": True,
+        "path": "04_workspace/photo_taste_rules.md",
+        "content": content,
+    }
+
+
+@app.post("/api/best-photos/nudge")
+def api_best_photos_nudge(req: BestPhotoNudgeReq):
+    import best_photos as _bp
+
+    pid = str(req.project_id or "").strip() or ACTIVE_PROJECT_ID
+    p_root = get_project_root(pid)
+    try:
+        st = _bp.nudge_best_photo(
+            p_root,
+            req.filename,
+            delta_sec=float(req.delta_sec),
         )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
