@@ -8487,7 +8487,29 @@
 
     state._bpLightboxCtx = null;
 
-    function openBestPhotoLightboxByObj(ph, pid = '') {
+    function formatPrecisePhotoTs(ph) {
+      const sec = Number(ph?.timestamp_sec);
+      if (Number.isFinite(sec) && sec >= 0) {
+        const mins = Math.floor(sec / 60);
+        const rem = (sec - mins * 60).toFixed(1).padStart(4, '0');
+        return `${String(mins).padStart(2, '0')}:${rem}s`;
+      }
+      return ph?.timestamp_str || '00:00';
+    }
+
+    function setBpLightboxLoading(isLoading, text = 'Đang xử lý...') {
+      const overlay = document.getElementById('bp-lb-loading');
+      const label = document.getElementById('bp-lb-loading-text');
+      const img = document.getElementById('bp-lb-img');
+      if (label) label.textContent = text;
+      if (overlay) {
+        overlay.classList.toggle('hidden', !isLoading);
+        overlay.classList.toggle('flex', Boolean(isLoading));
+      }
+      if (img) img.classList.toggle('opacity-50', Boolean(isLoading));
+    }
+
+    function openBestPhotoLightboxByObj(ph, pid = '', cacheBust = null) {
       if (!ph) return;
       state._bpLightboxCtx = { pid: pid || getTab1ProjectId(), filename: ph.filename };
       const modal = document.getElementById('bp-lightbox');
@@ -8497,11 +8519,14 @@
       const dl = document.getElementById('bp-lb-dl');
       const btnEnh = document.getElementById('bp-lb-enhance');
       const btnOrig = document.getElementById('bp-lb-restore-orig');
-      if (img) img.src = ph.url;
-      if (meta) meta.textContent = `${ph.filename} · ${ph.clip_name} (${ph.timestamp_str}) · ${ph.width}x${ph.height} · ⭐ ${Number(ph.score || 8).toFixed(1)}`;
+      const suffix = cacheBust ? `&cb=${encodeURIComponent(String(cacheBust))}` : '';
+      const imgUrl = `${ph.url || ''}${suffix}`;
+      const dlUrl = `${ph.download_url || ''}${suffix}`;
+      if (img) img.src = imgUrl;
+      if (meta) meta.textContent = `${ph.filename} · ${ph.clip_name} (${formatPrecisePhotoTs(ph)}) · ${ph.width}x${ph.height} · ⭐ ${Number(ph.score || 8).toFixed(1)}`;
       if (reason) reason.textContent = ph.reason || '';
       if (dl) {
-        dl.href = ph.download_url;
+        dl.href = dlUrl;
         dl.setAttribute('download', ph.filename);
       }
       if (btnEnh) btnEnh.textContent = ph.enhanced === 'ai_face' ? '💎 Đã làm rõ AI' : '✨ Làm rõ AI';
@@ -8565,9 +8590,19 @@
     }
 
     async function nudgeLightboxPhoto(deltaSec) {
-      if (!state._bpLightboxCtx) return;
+      if (!state._bpLightboxCtx || state._bpNudging) return;
       const { pid, filename } = state._bpLightboxCtx;
-      toast(`Đang nhích ${deltaSec > 0 ? '+' : ''}${deltaSec}s từ video gốc...`, 'info');
+      const btnPrev = document.getElementById('bp-lb-nudge-prev');
+      const btnNext = document.getElementById('bp-lb-nudge-next');
+      const activeBtn = deltaSec < 0 ? btnPrev : btnNext;
+      const signLabel = `${deltaSec > 0 ? '+' : ''}${deltaSec}s`;
+
+      state._bpNudging = true;
+      if (btnPrev) btnPrev.disabled = true;
+      if (btnNext) btnNext.disabled = true;
+      if (activeBtn) activeBtn.textContent = '⏳ Đang cắt...';
+      setBpLightboxLoading(true, `Đang nhích ${signLabel} từ video gốc...`);
+
       try {
         const res = await api('/api/best-photos/nudge', {
           method: 'POST',
@@ -8576,13 +8611,42 @@
         });
         if (res && res.ok) {
           state.bestPhotosMap[pid] = { ...(state.bestPhotosMap[pid] || {}), ...res };
-          if (pid === getTab1ProjectId()) renderBestPhotosPanel(pid);
-          await loadOutputGallery(state.galleryProjectId || 'all');
           const updatedPh = (res.photos || []).find((x) => x.filename === filename);
-          if (updatedPh) openBestPhotoLightboxByObj(updatedPh, pid);
+          if (updatedPh) {
+            const img = document.getElementById('bp-lb-img');
+            const waitImg = img
+              ? new Promise((resolve) => {
+                  let done = false;
+                  const finish = () => {
+                    if (done) return;
+                    done = true;
+                    resolve();
+                  };
+                  img.addEventListener('load', finish, { once: true });
+                  img.addEventListener('error', finish, { once: true });
+                  setTimeout(finish, 2000);
+                })
+              : Promise.resolve();
+            openBestPhotoLightboxByObj(updatedPh, pid, Date.now());
+            await waitImg;
+            toast(`Đã nhích tới ${formatPrecisePhotoTs(updatedPh)}`, 'success');
+          }
+          if (pid === getTab1ProjectId()) renderBestPhotosPanel(pid);
+          loadOutputGallery(state.galleryProjectId || 'all').catch(() => {});
         }
       } catch (e) {
         toast('Lỗi nhích khoảnh khắc: ' + e.message, 'error');
+      } finally {
+        if (btnPrev) {
+          btnPrev.disabled = false;
+          btnPrev.textContent = '⏪ -0.2s';
+        }
+        if (btnNext) {
+          btnNext.disabled = false;
+          btnNext.textContent = '⏩ +0.2s';
+        }
+        setBpLightboxLoading(false);
+        state._bpNudging = false;
       }
     }
 
@@ -8713,16 +8777,20 @@
       <div class="px-4 py-3 border-b border-zinc-800 flex items-center justify-between gap-2">
         <div id="bp-lb-meta" class="text-xs text-zinc-200 mono truncate">--</div>
         <div class="flex flex-wrap items-center gap-1.5 shrink-0">
-          <button type="button" onclick="nudgeLightboxPhoto(-0.2)" title="Lùi 0.2 giây trong video gốc" class="px-2.5 py-1.5 rounded-lg bg-indigo-600/30 hover:bg-indigo-600/50 border border-indigo-500/40 text-xs font-semibold text-indigo-100">⏪ -0.2s</button>
-          <button type="button" onclick="nudgeLightboxPhoto(0.2)" title="Tiến 0.2 giây trong video gốc" class="px-2.5 py-1.5 rounded-lg bg-indigo-600/30 hover:bg-indigo-600/50 border border-indigo-500/40 text-xs font-semibold text-indigo-100">⏩ +0.2s</button>
+          <button id="bp-lb-nudge-prev" type="button" onclick="nudgeLightboxPhoto(-0.2)" title="Lùi 0.2 giây trong video gốc" class="px-2.5 py-1.5 rounded-lg bg-indigo-600/30 hover:bg-indigo-600/50 border border-indigo-500/40 text-xs font-semibold text-indigo-100 disabled:opacity-50 disabled:cursor-wait transition">⏪ -0.2s</button>
+          <button id="bp-lb-nudge-next" type="button" onclick="nudgeLightboxPhoto(0.2)" title="Tiến 0.2 giây trong video gốc" class="px-2.5 py-1.5 rounded-lg bg-indigo-600/30 hover:bg-indigo-600/50 border border-indigo-500/40 text-xs font-semibold text-indigo-100 disabled:opacity-50 disabled:cursor-wait transition">⏩ +0.2s</button>
           <button id="bp-lb-enhance" type="button" onclick="enhanceLightboxPhoto('ai_face')" class="px-2.5 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-xs font-semibold text-white">✨ Làm rõ AI</button>
           <button id="bp-lb-restore-orig" type="button" onclick="enhanceLightboxPhoto('none')" class="hidden px-2 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-xs text-zinc-200">↩️ Gốc</button>
           <a id="bp-lb-dl" href="#" download class="px-2.5 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-xs font-semibold text-white">⬇️ Tải</a>
           <button type="button" onclick="closeBestPhotoLightbox()" class="px-2.5 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-xs text-zinc-200">Đóng</button>
         </div>
       </div>
-      <div class="flex-1 bg-black flex items-center justify-center overflow-auto p-2">
-        <img id="bp-lb-img" src="" alt="Preview" class="max-h-[72vh] max-w-full object-contain rounded" />
+      <div class="relative flex-1 bg-black flex items-center justify-center overflow-auto p-2">
+        <img id="bp-lb-img" src="" alt="Preview" class="max-h-[72vh] max-w-full object-contain rounded transition-opacity duration-150" />
+        <div id="bp-lb-loading" class="hidden absolute inset-0 bg-black/60 backdrop-blur-[2px] flex-col items-center justify-center gap-2 z-10 pointer-events-none">
+          <div class="w-8 h-8 rounded-full border-2 border-indigo-400 border-t-transparent animate-spin"></div>
+          <div id="bp-lb-loading-text" class="text-xs font-semibold text-indigo-100 bg-zinc-900/90 px-3 py-1.5 rounded-full border border-indigo-500/40 shadow">Đang xử lý...</div>
+        </div>
       </div>
       <div id="bp-lb-reason" class="px-4 py-2.5 border-t border-zinc-800 text-xs text-emerald-200 bg-zinc-900/70"></div>
     </div>
