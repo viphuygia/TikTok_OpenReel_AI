@@ -1390,6 +1390,14 @@
                   <input id="bp-apply-privacy" type="checkbox" class="rounded bg-zinc-800 border-sky-500 text-sky-500" />
                   <span>🕵️ Áp dụng Che mặt / Biển số</span>
                 </label>
+                <div class="flex items-center gap-1.5">
+                  <span class="text-zinc-400">Làm rõ:</span>
+                  <select id="bp-enhance-mode" class="rounded-lg bg-zinc-900 border border-zinc-700 px-2 py-1 text-[11px] text-zinc-100">
+                    <option value="none" selected>Tắt (Ảnh gốc 100%)</option>
+                    <option value="sharpen">⚡ Tăng nét nhẹ (Nhanh)</option>
+                    <option value="ai_face">💎 Làm nét AI (GFPGAN · Khử mờ mặt)</option>
+                  </select>
+                </div>
               </div>
 
               <div id="bp-grid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2.5">
@@ -8073,6 +8081,7 @@
             </div>
             <div class="flex items-center justify-between gap-1 pt-1 border-t border-zinc-800/80">
               <a href="${escapeHtml(ph.download_url)}" download="${escapeHtml(ph.filename)}" class="px-2 py-1 rounded bg-emerald-600/25 hover:bg-emerald-600/45 border border-emerald-500/35 text-[10px] font-semibold text-emerald-200">⬇️ Tải về</a>
+              <button type="button" onclick="enhanceSingleBestPhoto('${escapeHtml(pid)}', '${escapeHtml(ph.filename)}', 'ai_face')" title="Làm rõ mặt AI (GFPGAN) — chỉ áp dụng khi bạn bấm" class="px-2 py-1 rounded bg-amber-600/20 hover:bg-amber-600/40 border border-amber-500/35 text-[10px] text-amber-200">${ph.enhanced === 'ai_face' ? '💎 Đã nét AI' : (ph.enhanced === 'sharpen' ? '⚡ Đã nét' : '✨ Làm rõ')}</button>
               <button type="button" onclick="deleteBestPhoto('${escapeHtml(pid)}', '${escapeHtml(ph.filename)}')" class="px-2 py-1 rounded bg-rose-600/20 hover:bg-rose-600/40 border border-rose-500/30 text-[10px] text-rose-200">Xóa</button>
             </div>
           </div>
@@ -8102,6 +8111,7 @@
       const focus = document.getElementById('bp-focus')?.value || 'auto';
       const use_ai = !!document.getElementById('bp-use-ai')?.checked;
       const apply_privacy = !!document.getElementById('bp-apply-privacy')?.checked;
+      const enhance_mode = document.getElementById('bp-enhance-mode')?.value || 'none';
 
       const cur = state.bestPhotosMap[pid] || { photos: [] };
       state.bestPhotosMap[pid] = {
@@ -8114,7 +8124,7 @@
         const res = await api('/api/best-photos/extract', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ project_id: pid, count, focus, use_ai, apply_privacy }),
+          body: JSON.stringify({ project_id: pid, count, focus, use_ai, apply_privacy, enhance_mode }),
         });
         state.bestPhotosMap[pid] = { ...(state.bestPhotosMap[pid] || {}), job: res.job || { status: 'running', percent: 10 } };
         renderBestPhotosPanel(pid);
@@ -8236,8 +8246,9 @@
                     <div class="text-[10px] text-zinc-300 line-clamp-2" title="${escapeHtml(ph.reason || '')}">${escapeHtml(ph.reason || ph.clip_name || ph.filename)}</div>
                     <div class="flex items-center justify-between gap-1 pt-1 border-t border-zinc-800/80 text-[10px]">
                       <button type="button" onclick="shareSingleBestPhotoMobile('${escapeHtml(g.project_id)}', ${idx})" class="px-2 py-1 rounded bg-emerald-600/25 hover:bg-emerald-600/45 border border-emerald-500/35 text-emerald-200 font-semibold">📲 Lưu</button>
-                      <a href="${escapeHtml(ph.download_url)}" download="${escapeHtml(ph.filename)}" class="px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-200">⬇️</a>
-                      <button type="button" onclick="deleteGalleryBestPhoto('${escapeHtml(g.project_id)}', '${escapeHtml(ph.filename)}')" class="px-2 py-1 rounded bg-rose-500/15 hover:bg-rose-500/30 text-rose-300">🗑️</button>
+                      <button type="button" onclick="enhanceSingleBestPhoto('${escapeHtml(g.project_id)}', '${escapeHtml(ph.filename)}', 'ai_face')" title="Làm rõ mặt AI (GFPGAN)" class="px-1.5 py-1 rounded bg-amber-600/20 hover:bg-amber-600/40 border border-amber-500/35 text-amber-200">${ph.enhanced === 'ai_face' ? '💎' : '✨'}</button>
+                      <a href="${escapeHtml(ph.download_url)}" download="${escapeHtml(ph.filename)}" class="px-1.5 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-200">⬇️</a>
+                      <button type="button" onclick="deleteGalleryBestPhoto('${escapeHtml(g.project_id)}', '${escapeHtml(ph.filename)}')" class="px-1.5 py-1 rounded bg-rose-500/15 hover:bg-rose-500/30 text-rose-300">🗑️</button>
                     </div>
                   </div>
                 </div>
@@ -8248,13 +8259,18 @@
       }).join('');
     }
 
-    function openBestPhotoLightboxByObj(ph) {
+    state._bpLightboxCtx = null;
+
+    function openBestPhotoLightboxByObj(ph, pid = '') {
       if (!ph) return;
+      state._bpLightboxCtx = { pid: pid || getTab1ProjectId(), filename: ph.filename };
       const modal = document.getElementById('bp-lightbox');
       const img = document.getElementById('bp-lb-img');
       const meta = document.getElementById('bp-lb-meta');
       const reason = document.getElementById('bp-lb-reason');
       const dl = document.getElementById('bp-lb-dl');
+      const btnEnh = document.getElementById('bp-lb-enhance');
+      const btnOrig = document.getElementById('bp-lb-restore-orig');
       if (img) img.src = ph.url;
       if (meta) meta.textContent = `${ph.filename} · ${ph.clip_name} (${ph.timestamp_str}) · ${ph.width}x${ph.height} · ⭐ ${Number(ph.score || 8).toFixed(1)}`;
       if (reason) reason.textContent = ph.reason || '';
@@ -8262,6 +8278,8 @@
         dl.href = ph.download_url;
         dl.setAttribute('download', ph.filename);
       }
+      if (btnEnh) btnEnh.textContent = ph.enhanced === 'ai_face' ? '💎 Đã làm rõ AI' : '✨ Làm rõ AI';
+      if (btnOrig) btnOrig.classList.toggle('hidden', !ph.enhanced || ph.enhanced === 'none');
       if (modal) {
         modal.classList.remove('hidden');
         modal.classList.add('flex');
@@ -8274,13 +8292,50 @@
       const ph = photos[idx];
       if (!ph) return;
       state._bpLightboxIdx = idx;
-      openBestPhotoLightboxByObj(ph);
+      openBestPhotoLightboxByObj(ph, pid);
     }
 
     function openGalleryPhotoLightbox(pid, idx) {
       const ph = (state._galleryPhotoGroupsMap[pid]?.photos || [])[idx];
       if (!ph) return;
-      openBestPhotoLightboxByObj(ph);
+      openBestPhotoLightboxByObj(ph, pid);
+    }
+
+    async function enhanceSingleBestPhoto(pid, filename, mode = 'ai_face') {
+      const targetPid = pid || getTab1ProjectId();
+      if (!targetPid || !filename) return;
+      const btnLb = document.getElementById('bp-lb-enhance');
+      if (btnLb && state._bpLightboxCtx?.filename === filename) {
+        btnLb.disabled = true;
+        btnLb.textContent = '⏳ Đang làm nét AI...';
+      }
+      toast(mode === 'none' ? `Đang khôi phục ảnh gốc ${filename}...` : `Đang làm rõ ${filename} bằng AI (GFPGAN)...`, 'info');
+      try {
+        const res = await api('/api/best-photos/enhance', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ project_id: targetPid, filename, enhance_mode: mode }),
+        });
+        if (res && res.ok) {
+          state.bestPhotosMap[targetPid] = { ...(state.bestPhotosMap[targetPid] || {}), ...res };
+          if (targetPid === getTab1ProjectId()) renderBestPhotosPanel(targetPid);
+          await loadOutputGallery(state.galleryProjectId || 'all');
+          const updatedPh = (res.photos || []).find((x) => x.filename === filename);
+          if (updatedPh && state._bpLightboxCtx?.filename === filename && !document.getElementById('bp-lightbox')?.classList.contains('hidden')) {
+            openBestPhotoLightboxByObj(updatedPh, targetPid);
+          }
+          toast(mode === 'none' ? `Đã khôi phục ảnh gốc ${filename}!` : `Đã làm rõ ảnh ${filename}!`, 'success');
+        }
+      } catch (e) {
+        toast('Lỗi làm rõ ảnh: ' + e.message, 'error');
+      } finally {
+        if (btnLb) btnLb.disabled = false;
+      }
+    }
+
+    function enhanceLightboxPhoto(mode = 'ai_face') {
+      if (!state._bpLightboxCtx) return;
+      return enhanceSingleBestPhoto(state._bpLightboxCtx.pid, state._bpLightboxCtx.filename, mode);
     }
 
     async function shareSingleBestPhotoMobile(pid, idx) {
@@ -8387,8 +8442,10 @@
     <div class="max-w-4xl w-full bg-zinc-950 border border-zinc-800 rounded-2xl overflow-hidden shadow-2xl flex flex-col max-h-[92vh]">
       <div class="px-4 py-3 border-b border-zinc-800 flex items-center justify-between gap-2">
         <div id="bp-lb-meta" class="text-xs text-zinc-200 mono truncate">--</div>
-        <div class="flex items-center gap-2 shrink-0">
-          <a id="bp-lb-dl" href="#" download class="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-xs font-semibold text-white">⬇️ Tải ảnh gốc</a>
+        <div class="flex flex-wrap items-center gap-2 shrink-0">
+          <button id="bp-lb-enhance" type="button" onclick="enhanceLightboxPhoto('ai_face')" class="px-3 py-1.5 rounded-lg bg-amber-600 hover:bg-amber-500 text-xs font-semibold text-white">✨ Làm rõ AI</button>
+          <button id="bp-lb-restore-orig" type="button" onclick="enhanceLightboxPhoto('none')" class="hidden px-2.5 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-xs text-zinc-200">↩️ Ảnh gốc</button>
+          <a id="bp-lb-dl" href="#" download class="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-xs font-semibold text-white">⬇️ Tải ảnh</a>
           <button type="button" onclick="closeBestPhotoLightbox()" class="px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-xs text-zinc-200">Đóng</button>
         </div>
       </div>

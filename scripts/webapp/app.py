@@ -5353,6 +5353,13 @@ class BestPhotosExtractReq(BaseModel):
     selected_clips: list[str] = Field(default_factory=list)
     use_ai: bool = True
     apply_privacy: bool = False
+    enhance_mode: str = "none"
+
+
+class BestPhotoEnhanceReq(BaseModel):
+    project_id: str = ""
+    filename: str
+    enhance_mode: str = "ai_face"
 
 
 def _attach_best_photo_urls(photos: list[dict[str, Any]], pid: str, ts: int) -> list[dict[str, Any]]:
@@ -5441,6 +5448,7 @@ def api_best_photos_extract(req: BestPhotosExtractReq):
                 selected_clips=list(req.selected_clips or []),
                 use_ai=bool(req.use_ai),
                 apply_privacy=bool(req.apply_privacy),
+                enhance_mode=str(req.enhance_mode or "none"),
                 gemini_api_key=gem_key,
                 gemini_model=gem_model,
                 agy_fallback=agy_cb,
@@ -5498,6 +5506,27 @@ def api_best_photos_delete(project_id: str = Query(...), filename: str = Query(.
         st = _bp.delete_best_photo(p_root, filename)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
+    ts = int(st.get("updated_at") or 0)
+    st["photos"] = _attach_best_photo_urls(st.get("photos") or [], pid, ts)
+    return {"ok": True, "project_id": pid, **st}
+
+
+@app.post("/api/best-photos/enhance")
+def api_best_photos_enhance(req: BestPhotoEnhanceReq):
+    import best_photos as _bp
+
+    pid = str(req.project_id or "").strip() or ACTIVE_PROJECT_ID
+    p_root = get_project_root(pid)
+    try:
+        st = _bp.enhance_best_photo(
+            p_root,
+            req.filename,
+            enhance_mode=str(req.enhance_mode or "ai_face"),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
     ts = int(st.get("updated_at") or 0)
     st["photos"] = _attach_best_photo_urls(st.get("photos") or [], pid, ts)
     return {"ok": True, "project_id": pid, **st}

@@ -13,6 +13,8 @@ import base64
 import json
 import os
 import re
+import shutil
+import threading
 import time
 import zipfile
 from pathlib import Path
@@ -24,6 +26,14 @@ import requests
 import face_privacy as _fp
 
 MEDIA_VIDEO_EXTS = (".mp4", ".mov", ".mkv", ".avi", ".webm", ".m4v")
+GFPGAN_MODEL_NAME = "gfpgan_1.4.onnx"
+GFPGAN_URLS = [
+    "https://github.com/facefusion/facefusion-assets/releases/download/models-3.0.0/gfpgan_1.4.onnx",
+    "https://huggingface.co/facefusion/models-3.0.0/resolve/main/gfpgan_1.4.onnx",
+    "https://huggingface.co/datasets/Gourieff/ReActor/resolve/main/models/facerestore_models/GFPGANv1.4.onnx",
+]
+_GFPGAN_LOCK = threading.Lock()
+_GFPGAN_CACHE: "_GfpganEngine | None" = None
 
 
 def _best_photos_dir(project_root: Path) -> Path:
@@ -117,6 +127,9 @@ def delete_best_photo(project_root: Path, filename: str) -> dict[str, Any]:
         raise ValueError("Đường dẫn ảnh không hợp lệ.")
     if target.exists() and target.is_file():
         target.unlink(missing_ok=True)
+    orig_target = (out_dir / "_orig" / clean_name).resolve()
+    if orig_target.is_relative_to(out_dir) and orig_target.exists() and orig_target.is_file():
+        orig_target.unlink(missing_ok=True)
 
     cur = load_best_photos_state(project_root)
     cur["photos"] = [p for p in (cur.get("photos") or []) if p.get("filename") != clean_name]
@@ -205,9 +218,10 @@ def _score_candidate_frame(
     sat_mean = float(hsv[:, :, 1].mean()) / 255.0
     color_norm = min(1.0, sat_mean * 1.9)
 
-    # 4. Face composition (YuNet) when auto/portrait
+    # 4. Face composition + direct face sharpness (YuNet) when auto/portrait
     face_score = 0.0
     face_count = 0
+    best_face_lap = 0.0
     if face_engine is not None and focus in ("auto", "portrait"):
         try:
             dets = face_engine.detect_and_embed(frame_small, score_threshold=0.58, min_box_px=20)
@@ -218,13 +232,21 @@ def _score_candidate_frame(
             best_fq = 0.0
             for d in dets:
                 bx, by, bw, bh = d["box"]
-                # Penalize clipped edge faces
                 mx = min(bx, sw - (bx + bw))
                 my = min(by, sh - (by + bh))
                 edge_ok = 1.0 if (mx >= 6 and my >= 6) else 0.55
-                fq = float(d.get("quality", 0.6)) * edge_ok
+                fx1 = max(0, int(round(bx)))
+                fy1 = max(0, int(round(by)))
+                fx2 = min(sw, int(round(bx + bw)))
+                fy2 = min(sh, int(round(by + bh)))
+                face_lap = 0.0
+                if fx2 - fx1 >= 8 and fy2 - fy1 >= 8:
+                    face_lap = float(cv2.Laplacian(gray[fy1:fy2, fx1:fx2], cv2.CV_64F).var())
+                face_sharp = min(1.0, face_lap / 260.0)
+                fq = float(d.get("quality", 0.6)) * edge_ok * (0.35 + 0.65 * face_sharp)
                 if fq > best_fq:
                     best_fq = fq
+                    best_face_lap = face_lap
             face_score = min(1.0, best_fq)
 
     if focus == "portrait":
@@ -250,6 +272,10 @@ def _score_candidate_frame(
             + color_norm * 0.10
             + face_score * 0.20
         )
+
+    # Penalize motion-blurred faces even if mirror/background lights are sharp
+    if face_count > 0 and best_face_lap < 55.0:
+        local_score *= 0.55
 
     # Compact visual fingerprint for scene dedup
     fp_patch = cv2.resize(gray, (16, 16), interpolation=cv2.INTER_AREA).astype(np.float32).flatten()
@@ -647,6 +673,256 @@ def _apply_privacy_to_single_frame(
             _fp._apply_plate_mask(cv2, frame, pboxes, str(cfg.get("plate_blur_style") or "pixelate"))
 
 
+def _apply_natural_sharpen(cv2: Any, bgr_img: np.ndarray, strength: float = 1.0) -> np.ndarray:
+    """Crisp micro-contrast & unsharp mask on LAB luminance channel without color haloing."""
+    lab = cv2.cvtColor(bgr_img, cv2.COLOR_BGR2LAB)
+    l_ch, a_ch, b_ch = cv2.split(lab)
+    blur = cv2.GaussianBlur(l_ch, (0, 0), sigmaX=1.2)
+    w = 0.55 * float(strength)
+    sharp_l = cv2.addWeighted(l_ch, 1.0 + w, blur, -w, 0)
+    clahe = cv2.createCLAHE(clipLimit=1.35, tileGridSize=(8, 8))
+    clahe_l = clahe.apply(sharp_l)
+    final_l = cv2.addWeighted(sharp_l, 0.85, clahe_l, 0.15, 0)
+    merged = cv2.merge([final_l, a_ch, b_ch])
+    return cv2.cvtColor(merged, cv2.COLOR_LAB2BGR)
+
+
+class _GfpganEngine:
+    """Optional GFPGAN v1.4 ONNX face restoration via existing onnxruntime."""
+
+    def __init__(self, model_path: Path) -> None:
+        import onnxruntime as ort  # type: ignore
+
+        self.cv2 = _fp._ensure_cv2()
+        self._run_lock = threading.Lock()
+        avail = ort.get_available_providers()
+        providers = ["CUDAExecutionProvider", "CPUExecutionProvider"] if "CUDAExecutionProvider" in avail else ["CPUExecutionProvider"]
+        try:
+            self.session = ort.InferenceSession(str(model_path), providers=providers)
+        except Exception:
+            self.session = ort.InferenceSession(str(model_path), providers=["CPUExecutionProvider"])
+        inp = self.session.get_inputs()[0]
+        self.input_name = inp.name
+        shape = inp.shape
+        self.in_h = int(shape[2]) if len(shape) == 4 and isinstance(shape[2], (int, np.integer)) and int(shape[2]) > 0 else 512
+        self.in_w = int(shape[3]) if len(shape) == 4 and isinstance(shape[3], (int, np.integer)) and int(shape[3]) > 0 else 512
+
+    def restore_face(self, bgr_crop: np.ndarray) -> np.ndarray:
+        cv2 = self.cv2
+        ch, cw = bgr_crop.shape[:2]
+        resized = cv2.resize(bgr_crop, (self.in_w, self.in_h), interpolation=cv2.INTER_CUBIC)
+        rgb = cv2.cvtColor(resized, cv2.COLOR_BGR2RGB).astype(np.float32)
+        tensor = ((rgb / 255.0) - 0.5) / 0.5
+        blob = np.transpose(tensor, (2, 0, 1))[None, ...]
+        with self._run_lock:
+            out = self.session.run(None, {self.input_name: blob})
+        if not out:
+            return bgr_crop
+        arr = np.asarray(out[0], dtype=np.float32)
+        if arr.ndim == 4:
+            arr = arr[0]
+        if arr.shape[0] == 3:
+            arr = np.transpose(arr, (1, 2, 0))
+        arr = np.clip((arr * 0.5 + 0.5) * 255.0, 0.0, 255.0).astype(np.uint8)
+        restored_bgr = cv2.cvtColor(arr, cv2.COLOR_RGB2BGR)
+        if restored_bgr.shape[:2] != (ch, cw):
+            restored_bgr = cv2.resize(
+                restored_bgr,
+                (cw, ch),
+                interpolation=cv2.INTER_AREA if cw < self.in_w else cv2.INTER_CUBIC,
+            )
+        return restored_bgr
+
+
+def _get_gfpgan_engine() -> _GfpganEngine | None:
+    global _GFPGAN_CACHE
+    if _GFPGAN_CACHE is not None:
+        return _GFPGAN_CACHE
+    with _GFPGAN_LOCK:
+        if _GFPGAN_CACHE is not None:
+            return _GFPGAN_CACHE
+        model_p = _fp.FACE_MODEL_DIR / GFPGAN_MODEL_NAME
+        if not _fp._download_file(GFPGAN_URLS, model_p, min_bytes=50_000_000):
+            print("[BestPhotos WARN] Không tải được model GFPGAN ONNX, chuyển sang tăng nét OpenCV.")
+            return None
+        try:
+            _GFPGAN_CACHE = _GfpganEngine(model_p)
+            return _GFPGAN_CACHE
+        except Exception as exc:
+            print(f"[BestPhotos WARN] Không khởi tạo được GFPGAN ONNX ({exc}).")
+            return None
+
+
+def enhance_photo_frame(
+    cv2: Any,
+    bgr_img: np.ndarray,
+    *,
+    enhance_mode: str = "none",
+    face_engine: Any = None,
+) -> tuple[np.ndarray, str]:
+    mode = str(enhance_mode or "none").strip()
+    if mode not in ("none", "sharpen", "ai_face"):
+        mode = "none"
+    if mode == "none":
+        return bgr_img, "none"
+    if mode == "sharpen":
+        return _apply_natural_sharpen(cv2, bgr_img, strength=1.0), "sharpen"
+
+    # mode == "ai_face": mild natural sharpen overall + GFPGAN face restore blended naturally
+    gfp = _get_gfpgan_engine()
+    if gfp is None:
+        return _apply_natural_sharpen(cv2, bgr_img, strength=1.0), "sharpen"
+
+    out_img = _apply_natural_sharpen(cv2, bgr_img, strength=0.55)
+    feng = face_engine if face_engine is not None else _fp._FaceEngine()
+    oh, ow = out_img.shape[:2]
+    scale = min(1.0, 640.0 / float(max(oh, ow)))
+    scan_fr = (
+        cv2.resize(out_img, (max(1, int(round(ow * scale))), max(1, int(round(oh * scale)))), interpolation=cv2.INTER_AREA)
+        if scale < 1.0
+        else out_img
+    )
+    dets = feng.detect_and_embed(scan_fr, score_threshold=0.52, min_box_px=16)
+    for d in dets:
+        bx, by, bw, bh = d["box"]
+        cx = (bx + bw * 0.5) / scale
+        cy = (by + bh * 0.48) / scale
+        side = max(bw / scale, bh / scale) * 1.68
+        x1 = max(0, int(round(cx - side * 0.5)))
+        y1 = max(0, int(round(cy - side * 0.5)))
+        x2 = min(ow, int(round(cx + side * 0.5)))
+        y2 = min(oh, int(round(cy + side * 0.5)))
+        rw, rh = x2 - x1, y2 - y1
+        if rw < 16 or rh < 16:
+            continue
+        crop = out_img[y1:y2, x1:x2]
+        sq = max(rw, rh)
+        sq_crop = crop if rw == rh else cv2.resize(crop, (sq, sq), interpolation=cv2.INTER_CUBIC)
+        restored_sq = gfp.restore_face(sq_crop)
+        restored = restored_sq if restored_sq.shape[:2] == (rh, rw) else cv2.resize(restored_sq, (rw, rh), interpolation=cv2.INTER_CUBIC)
+        # Blend 72% GFPGAN + 28% original with feathered elliptical mask for natural identity
+        blended_face = cv2.addWeighted(restored, 0.72, crop, 0.28, 0)
+        mask = np.zeros((rh, rw), dtype=np.float32)
+        cv2.ellipse(mask, (rw // 2, rh // 2), (max(2, int(rw * 0.44)), max(2, int(rh * 0.45))), 0, 0, 360, 1.0, -1)
+        fk = max(7, (min(rw, rh) // 5) | 1)
+        mask = cv2.GaussianBlur(mask, (fk, fk), 0)[:, :, None]
+        comp = blended_face.astype(np.float32) * mask + crop.astype(np.float32) * (1.0 - mask)
+        out_img[y1:y2, x1:x2] = np.clip(comp, 0, 255).astype(np.uint8)
+    return out_img, "ai_face"
+
+
+def _score_fullres_for_peak(cv2: Any, frame: np.ndarray, face_engine: Any) -> float:
+    oh, ow = frame.shape[:2]
+    scale = min(1.0, 640.0 / float(max(oh, ow)))
+    small = (
+        cv2.resize(frame, (max(1, int(round(ow * scale))), max(1, int(round(oh * scale)))), interpolation=cv2.INTER_AREA)
+        if scale < 1.0
+        else frame
+    )
+    gray = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY)
+    full_lap = float(cv2.Laplacian(gray, cv2.CV_64F).var())
+    if face_engine is not None:
+        try:
+            dets = face_engine.detect_and_embed(small, score_threshold=0.55, min_box_px=16)
+        except Exception:
+            dets = []
+        if dets:
+            best_lap = 0.0
+            sh, sw = small.shape[:2]
+            for d in dets:
+                bx, by, bw, bh = d["box"]
+                fx1, fy1 = max(0, int(round(bx))), max(0, int(round(by)))
+                fx2, fy2 = min(sw, int(round(bx + bw))), min(sh, int(round(by + bh)))
+                if fx2 - fx1 >= 8 and fy2 - fy1 >= 8:
+                    best_lap = max(best_lap, float(cv2.Laplacian(gray[fy1:fy2, fx1:fx2], cv2.CV_64F).var()))
+            if best_lap > 0.0:
+                return best_lap * 0.75 + full_lap * 0.25
+    return full_lap
+
+
+def _extract_sharpest_near_frame(
+    cv2: Any,
+    cap: Any,
+    target_fi: int,
+    *,
+    total_frames: int,
+    face_engine: Any = None,
+    radius: int = 5,
+) -> tuple[np.ndarray | None, int]:
+    """Seek slightly before target_fi and pick the sharpest frame inside +-radius window to dodge VFR/motion blur."""
+    start_fi = max(0, int(target_fi) - radius)
+    end_fi = int(target_fi) + radius
+    if total_frames > 0:
+        end_fi = min(total_frames - 1, end_fi)
+    cap.set(cv2.CAP_PROP_POS_FRAMES, float(start_fi))
+    best_frame: np.ndarray | None = None
+    best_fi = int(target_fi)
+    best_score = -1.0
+    n_read = max(1, end_fi - start_fi + 1)
+    for offset in range(n_read):
+        ok, fr = cap.read()
+        if not ok or fr is None:
+            break
+        cur_fi = start_fi + offset
+        sc = _score_fullres_for_peak(cv2, fr, face_engine)
+        if sc > best_score or best_frame is None:
+            best_score = sc
+            best_frame = fr
+            best_fi = cur_fi
+    return best_frame, best_fi
+
+
+def enhance_best_photo(
+    project_root: Path,
+    filename: str,
+    *,
+    enhance_mode: str = "ai_face",
+) -> dict[str, Any]:
+    clean_name = Path(str(filename or "").strip()).name
+    if not clean_name or not re.match(r"^[a-zA-Z0-9_.-]+$", clean_name):
+        raise ValueError("Tên file ảnh không hợp lệ.")
+    out_dir = _best_photos_dir(project_root).resolve()
+    target_fp = (out_dir / clean_name).resolve()
+    if not target_fp.is_relative_to(out_dir) or not target_fp.exists() or not target_fp.is_file():
+        raise FileNotFoundError("Không tìm thấy file ảnh cần xử lý.")
+
+    orig_dir = (out_dir / "_orig").resolve()
+    orig_dir.mkdir(parents=True, exist_ok=True)
+    orig_fp = (orig_dir / clean_name).resolve()
+    if not orig_fp.exists():
+        shutil.copy2(target_fp, orig_fp)
+
+    mode = str(enhance_mode or "ai_face").strip()
+    if mode not in ("none", "sharpen", "ai_face"):
+        mode = "ai_face"
+
+    cv2 = _fp._ensure_cv2()
+    raw_bytes = np.fromfile(str(orig_fp), dtype=np.uint8)
+    src_img = cv2.imdecode(raw_bytes, cv2.IMREAD_COLOR)
+    if src_img is None:
+        raise RuntimeError("Không đọc được dữ liệu ảnh gốc.")
+
+    if mode == "none":
+        shutil.copy2(orig_fp, target_fp)
+        applied = "none"
+    else:
+        enh_img, applied = enhance_photo_frame(cv2, src_img, enhance_mode=mode)
+        ok_enc, buf = cv2.imencode(".jpg", enh_img, [int(cv2.IMWRITE_JPEG_QUALITY), 95])
+        if not ok_enc:
+            raise RuntimeError("Không lưu được ảnh sau khi làm nét.")
+        target_fp.write_bytes(buf.tobytes())
+
+    cur = load_best_photos_state(project_root)
+    new_sz = int(target_fp.stat().st_size)
+    for item in cur.get("photos") or []:
+        if item.get("filename") == clean_name:
+            item["enhanced"] = applied
+            item["size_bytes"] = new_sz
+    cur["updated_at"] = int(time.time())
+    _write_manifest(project_root, cur)
+    return cur
+
+
 def extract_best_photos(
     project_root: Path,
     *,
@@ -655,6 +931,7 @@ def extract_best_photos(
     selected_clips: list[str] | None = None,
     use_ai: bool = True,
     apply_privacy: bool = False,
+    enhance_mode: str = "none",
     gemini_api_key: str = "",
     gemini_model: str = "gemini-2.5-flash",
     agy_fallback: Callable[[str, list[Path]], str] | None = None,
@@ -753,6 +1030,15 @@ def extract_best_photos(
     out_dir.mkdir(parents=True, exist_ok=True)
     for old_jpg in out_dir.glob("photo_*.jpg"):
         old_jpg.unlink(missing_ok=True)
+    orig_dir = out_dir / "_orig"
+    if orig_dir.exists():
+        for old_bak in orig_dir.glob("photo_*.jpg"):
+            old_bak.unlink(missing_ok=True)
+
+    enh_mode = str(enhance_mode or "none").strip()
+    if enh_mode not in ("none", "sharpen", "ai_face"):
+        enh_mode = "none"
+    peak_face_eng = _fp._FaceEngine() if (focus in ("auto", "portrait") or enh_mode == "ai_face") else None
 
     cv2 = _fp._ensure_cv2()
     # Group extractions by video path so each video opens once
@@ -767,12 +1053,23 @@ def extract_best_photos(
         if not cap.isOpened():
             continue
         try:
+            total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+            vid_fps = float(cap.get(cv2.CAP_PROP_FPS) or 30.0)
+            if vid_fps < 1.0 or vid_fps > 120.0:
+                vid_fps = 30.0
             for rank, cand, sc, reason in sorted(jobs, key=lambda x: x[1]["frame_idx"]):
                 fi = int(cand["frame_idx"])
-                cap.set(cv2.CAP_PROP_POS_FRAMES, float(fi))
-                ok, full_frame = cap.read()
-                if not ok or full_frame is None:
+                full_frame, picked_fi = _extract_sharpest_near_frame(
+                    cv2,
+                    cap,
+                    fi,
+                    total_frames=total_frames,
+                    face_engine=peak_face_eng,
+                    radius=5,
+                )
+                if full_frame is None:
                     full_frame = cand["tile"]
+                    picked_fi = fi
                 if apply_privacy and (priv_face_eng is not None or priv_plate_eng is not None):
                     _apply_privacy_to_single_frame(
                         cv2,
@@ -785,9 +1082,18 @@ def extract_best_photos(
                         priv_plate_ocr,
                         priv_cfg,
                     )
+                applied_enh = "none"
+                if enh_mode != "none":
+                    full_frame, applied_enh = enhance_photo_frame(
+                        cv2,
+                        full_frame,
+                        enhance_mode=enh_mode,
+                        face_engine=peak_face_eng,
+                    )
                 fname = f"photo_{rank:02d}.jpg"
                 out_fp = out_dir / fname
                 fh, fw = full_frame.shape[:2]
+                ts_val = round(float(picked_fi) / vid_fps, 2)
                 ok_enc, buf = cv2.imencode(".jpg", full_frame, [int(cv2.IMWRITE_JPEG_QUALITY), 95])
                 if ok_enc:
                     out_fp.write_bytes(buf.tobytes())
@@ -796,10 +1102,11 @@ def extract_best_photos(
                         "rank": int(rank),
                         "score": float(sc),
                         "reason": reason,
+                        "enhanced": applied_enh,
                         "clip_rel": cand["clip_rel"],
                         "clip_name": cand["clip_name"],
-                        "timestamp_sec": float(cand["timestamp_sec"]),
-                        "timestamp_str": _format_ts_str(float(cand["timestamp_sec"])),
+                        "timestamp_sec": float(ts_val),
+                        "timestamp_str": _format_ts_str(float(ts_val)),
                         "width": int(fw),
                         "height": int(fh),
                         "size_bytes": int(out_fp.stat().st_size),
@@ -814,6 +1121,7 @@ def extract_best_photos(
     state_data = {
         "updated_at": int(time.time()),
         "focus": focus,
+        "enhance_mode": enh_mode,
         "ai_used": bool(ai_used),
         "ai_channel": ai_channel,
         "ai_note": ai_note,
