@@ -2280,6 +2280,20 @@
 
         <!-- Gallery Videos Grid -->
         <div id="gallery-output-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"></div>
+
+        <!-- Gallery Best Photos Section -->
+        <div id="gallery-photos-section" class="hidden pt-4 border-t border-zinc-800 space-y-3">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h3 class="text-sm sm:text-base font-semibold text-emerald-200 flex items-center gap-2">
+                <span>📸 Ảnh Đẹp Đã Cắt (Độ phân giải gốc · Lưu nhanh iPhone)</span>
+                <span id="gallery-photos-count" class="px-2 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-500/35 text-[10px] text-emerald-200 mono">0</span>
+              </h3>
+              <p class="text-[11px] text-zinc-400">Bấm "📲 Lưu tất cả vào Ảnh iPhone" để gọi Share Sheet của iOS lưu thẳng vào Thư viện Ảnh, hoặc tải ZIP/từng tấm.</p>
+            </div>
+          </div>
+          <div id="gallery-photos-groups" class="space-y-4"></div>
+        </div>
       </div>
     </section>
 
@@ -7593,6 +7607,8 @@
         const res = await api(`/api/projects/outputs?project_id=${encodeURIComponent(projectId)}`);
         const projs = res.projects || [];
         const outputs = res.outputs || [];
+        const photoGroups = res.photo_groups || [];
+        const totalPhotosAll = projs.reduce((acc, p) => acc + Number(p.photo_count || 0), 0);
         const totalAll = projs.reduce((acc, p) => acc + Number(p.output_count || 0), 0);
         const cntEl = document.getElementById('cnt-tab6');
         const cntHdrEl = document.getElementById('cnt-header-outputs');
@@ -7605,13 +7621,14 @@
             ? 'bg-indigo-600 text-white border-indigo-500'
             : 'bg-zinc-900 text-zinc-300 border-zinc-700 hover:bg-zinc-800';
           pillsEl.innerHTML = [
-            `<button type="button" onclick="selectGalleryProject('all')" class="px-3 py-1.5 rounded-xl border font-medium transition ${allCls}">📂 Tất cả Project (${totalAll})</button>`,
+            `<button type="button" onclick="selectGalleryProject('all')" class="px-3 py-1.5 rounded-xl border font-medium transition ${allCls}">📂 Tất cả Project (${totalAll}${totalPhotosAll > 0 ? ` · 📸${totalPhotosAll}` : ''})</button>`,
             ...projs.map((p) => {
               const active = projectId === p.id;
               const cls = active
                 ? 'bg-indigo-600 text-white border-indigo-500'
                 : 'bg-zinc-900 text-zinc-300 border-zinc-700 hover:bg-zinc-800';
-              return `<button type="button" onclick="selectGalleryProject('${escapeHtml(p.id)}')" class="px-3 py-1.5 rounded-xl border font-medium transition ${cls}">📁 ${escapeHtml(p.name || p.id)} (${p.output_count || 0})</button>`;
+              const pc = Number(p.photo_count || 0);
+              return `<button type="button" onclick="selectGalleryProject('${escapeHtml(p.id)}')" class="px-3 py-1.5 rounded-xl border font-medium transition ${cls}">📁 ${escapeHtml(p.name || p.id)} (${p.output_count || 0}${pc > 0 ? ` · 📸${pc}` : ''})</button>`;
             }),
           ].join('');
         }
@@ -7659,6 +7676,7 @@
               </div>`).join('')
             : '<div class="col-span-full p-8 text-center text-xs text-zinc-500 border border-dashed border-zinc-800 rounded-xl">Chưa có video output nào trong Project này.</div>';
         }
+        renderGalleryPhotoGroups(photoGroups);
         if (state._r360PollTimer) {
           clearTimeout(state._r360PollTimer);
           state._r360PollTimer = null;
@@ -8132,6 +8150,7 @@
             if (st === 'done') {
               const n = (res.photos || []).length;
               toast(`Đã trích xuất ${n} ảnh đẹp độ phân giải gốc!`, 'success');
+              loadOutputGallery(state.galleryProjectId || 'all');
             } else if (st === 'error') {
               toast(`Lỗi cắt ảnh đẹp: ${res.job?.error || 'Không rõ'}`, 'error');
             }
@@ -8165,12 +8184,72 @@
       window.location.href = `/api/best-photos/download-zip?project_id=${encodeURIComponent(pid)}`;
     }
 
-    function openBestPhotoLightbox(idx) {
-      const pid = getTab1ProjectId();
-      const photos = state.bestPhotosMap[pid]?.photos || [];
-      const ph = photos[idx];
+    state._galleryPhotoGroupsMap = state._galleryPhotoGroupsMap || {};
+
+    function renderGalleryPhotoGroups(photoGroups) {
+      const sec = document.getElementById('gallery-photos-section');
+      const wrap = document.getElementById('gallery-photos-groups');
+      const cntBadge = document.getElementById('gallery-photos-count');
+      if (!sec || !wrap) return;
+
+      state._galleryPhotoGroupsMap = {};
+      let totalPhotos = 0;
+      (photoGroups || []).forEach((g) => {
+        state._galleryPhotoGroupsMap[g.project_id] = g;
+        totalPhotos += (g.photos || []).length;
+      });
+      if (cntBadge) cntBadge.textContent = `${totalPhotos} ảnh`;
+      if (!photoGroups || !photoGroups.length || totalPhotos === 0) {
+        sec.classList.add('hidden');
+        wrap.innerHTML = '';
+        return;
+      }
+
+      sec.classList.remove('hidden');
+      wrap.innerHTML = photoGroups.map((g) => {
+        const photos = g.photos || [];
+        const aiTag = g.ai_used
+          ? '<span class="px-2 py-0.5 rounded bg-emerald-500/20 border border-emerald-500/35 text-[10px] text-emerald-200">AI Vision</span>'
+          : '<span class="px-2 py-0.5 rounded bg-zinc-800 border border-zinc-700 text-[10px] text-zinc-300">Local Nét</span>';
+        return `
+          <div class="rounded-xl bg-zinc-950/75 border border-zinc-800 p-3 space-y-2.5">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <div class="flex flex-wrap items-center gap-2">
+                <span class="px-2.5 py-0.5 rounded-md bg-indigo-500/20 border border-indigo-500/35 text-indigo-200 text-xs font-semibold">📁 ${escapeHtml(g.project_name)}</span>
+                <span class="text-[11px] text-zinc-400 mono">${photos.length} ảnh gốc</span>
+                ${aiTag}
+              </div>
+              <div class="flex flex-wrap items-center gap-1.5 text-[11px]">
+                <button type="button" onclick="shareBestPhotosMobile('${escapeHtml(g.project_id)}')" class="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold">📲 Lưu tất cả vào Ảnh iPhone</button>
+                <a href="${escapeHtml(g.zip_url)}" class="px-2.5 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-emerald-200 font-semibold">📦 Tải .ZIP</a>
+              </div>
+            </div>
+            <div class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2.5">
+              ${photos.map((ph, idx) => `
+                <div class="group rounded-xl bg-zinc-900 border border-zinc-800 hover:border-emerald-500/50 overflow-hidden flex flex-col transition">
+                  <div class="relative aspect-[4/3] bg-black cursor-pointer overflow-hidden" onclick="openGalleryPhotoLightbox('${escapeHtml(g.project_id)}', ${idx})">
+                    <img src="${escapeHtml(ph.url)}" alt="${escapeHtml(ph.filename)}" class="w-full h-full object-cover group-hover:scale-105 transition duration-200" loading="lazy" />
+                    <span class="absolute top-1 left-1 px-1.5 py-0.5 rounded bg-black/75 border border-amber-400/50 text-[10px] font-bold text-amber-300">⭐ ${Number(ph.score || 8).toFixed(1)}</span>
+                    <span class="absolute bottom-1 right-1 px-1.5 py-0.5 rounded bg-black/75 text-[9px] text-zinc-200 mono">${escapeHtml(ph.timestamp_str || '')}</span>
+                  </div>
+                  <div class="p-2 flex-1 flex flex-col justify-between gap-1.5">
+                    <div class="text-[10px] text-zinc-300 line-clamp-2" title="${escapeHtml(ph.reason || '')}">${escapeHtml(ph.reason || ph.clip_name || ph.filename)}</div>
+                    <div class="flex items-center justify-between gap-1 pt-1 border-t border-zinc-800/80 text-[10px]">
+                      <button type="button" onclick="shareSingleBestPhotoMobile('${escapeHtml(g.project_id)}', ${idx})" class="px-2 py-1 rounded bg-emerald-600/25 hover:bg-emerald-600/45 border border-emerald-500/35 text-emerald-200 font-semibold">📲 Lưu</button>
+                      <a href="${escapeHtml(ph.download_url)}" download="${escapeHtml(ph.filename)}" class="px-2 py-1 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-200">⬇️</a>
+                      <button type="button" onclick="deleteGalleryBestPhoto('${escapeHtml(g.project_id)}', '${escapeHtml(ph.filename)}')" class="px-2 py-1 rounded bg-rose-500/15 hover:bg-rose-500/30 text-rose-300">🗑️</button>
+                    </div>
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function openBestPhotoLightboxByObj(ph) {
       if (!ph) return;
-      state._bpLightboxIdx = idx;
       const modal = document.getElementById('bp-lightbox');
       const img = document.getElementById('bp-lb-img');
       const meta = document.getElementById('bp-lb-meta');
@@ -8186,6 +8265,90 @@
       if (modal) {
         modal.classList.remove('hidden');
         modal.classList.add('flex');
+      }
+    }
+
+    function openBestPhotoLightbox(idx) {
+      const pid = getTab1ProjectId();
+      const photos = state.bestPhotosMap[pid]?.photos || [];
+      const ph = photos[idx];
+      if (!ph) return;
+      state._bpLightboxIdx = idx;
+      openBestPhotoLightboxByObj(ph);
+    }
+
+    function openGalleryPhotoLightbox(pid, idx) {
+      const ph = (state._galleryPhotoGroupsMap[pid]?.photos || [])[idx];
+      if (!ph) return;
+      openBestPhotoLightboxByObj(ph);
+    }
+
+    async function shareSingleBestPhotoMobile(pid, idx) {
+      const ph = (state._galleryPhotoGroupsMap[pid]?.photos || [])[idx];
+      if (!ph) return;
+      if (typeof navigator.share === 'function') {
+        try {
+          const resp = await fetch(ph.url, { cache: 'no-store' });
+          const blob = await resp.blob();
+          const file = new File([blob], ph.filename || 'photo.jpg', { type: 'image/jpeg' });
+          if (navigator.canShare && navigator.canShare({ files: [file] })) {
+            await navigator.share({ files: [file], title: ph.filename || 'Ảnh đẹp OpenReel' });
+            return;
+          }
+        } catch (err) {
+          if (err && err.name === 'AbortError') return;
+        }
+      }
+      const a = document.createElement('a');
+      a.href = ph.download_url;
+      a.download = ph.filename || 'photo.jpg';
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    }
+
+    async function shareBestPhotosMobile(pid) {
+      const g = state._galleryPhotoGroupsMap[pid];
+      const photos = g?.photos || [];
+      if (!photos.length) return;
+      if (typeof navigator.share === 'function') {
+        toast(`Đang chuẩn bị ${photos.length} ảnh gốc để mở bảng Chia sẻ iPhone...`, 'info');
+        try {
+          const files = await Promise.all(
+            photos.map(async (ph) => {
+              const resp = await fetch(ph.url, { cache: 'no-store' });
+              const blob = await resp.blob();
+              return new File([blob], ph.filename || 'photo.jpg', { type: 'image/jpeg' });
+            })
+          );
+          if (navigator.canShare && navigator.canShare({ files })) {
+            await navigator.share({ files, title: `${g.project_name || pid} (${files.length} ảnh)` });
+            return;
+          }
+        } catch (err) {
+          if (err && err.name === 'AbortError') return;
+        }
+      }
+      toast('Trình duyệt không hỗ trợ Share nhiều ảnh — đang tải file .ZIP...', 'info');
+      window.location.href = g.zip_url;
+    }
+
+    async function deleteGalleryBestPhoto(pid, filename) {
+      if (!pid || !filename) return;
+      try {
+        const res = await api(`/api/best-photos/file?project_id=${encodeURIComponent(pid)}&filename=${encodeURIComponent(filename)}`, {
+          method: 'DELETE',
+        });
+        if (res && res.ok) {
+          if (state.bestPhotosMap[pid]) {
+            state.bestPhotosMap[pid] = { ...state.bestPhotosMap[pid], ...res };
+            if (pid === getTab1ProjectId()) renderBestPhotosPanel(pid);
+          }
+          toast(`Đã xóa ${filename}`, 'info');
+          await loadOutputGallery(state.galleryProjectId || 'all');
+        }
+      } catch (e) {
+        toast(e.message, 'error');
       }
     }
 

@@ -8057,18 +8057,43 @@ def _run_review_360_transcode(job_key: str, src_path: Path, dest_path: Path) -> 
 
 @app.get("/api/projects/outputs")
 def api_list_project_outputs(project_id: str = Query("all")):
+    import best_photos as _bp
+
     proj_bundle = pm_list_projects()
     all_projs = proj_bundle.get("projects") or []
     active_id = proj_bundle.get("active_id") or ""
     target_pid = str(project_id or "all").strip()
     outputs: list[dict[str, Any]] = []
+    photo_groups: list[dict[str, Any]] = []
+    proj_photo_counts: dict[str, int] = {}
     with REVIEW_360_LOCK:
         jobs_snap = dict(REVIEW_360_JOBS)
     for pr in all_projs:
         pid = str(pr.get("id") or "")
-        if not pid or (target_pid != "all" and pid != target_pid):
+        if not pid:
             continue
         p_root = get_project_root(pid)
+        bp_st = _bp.load_best_photos_state(p_root)
+        bp_photos = bp_st.get("photos") or []
+        proj_photo_counts[pid] = len(bp_photos)
+
+        if target_pid != "all" and pid != target_pid:
+            continue
+
+        if bp_photos:
+            bp_ts = int(bp_st.get("updated_at") or 0)
+            photo_groups.append(
+                {
+                    "project_id": pid,
+                    "project_name": str(pr.get("name") or pid),
+                    "updated_at": bp_ts,
+                    "ai_used": bool(bp_st.get("ai_used")),
+                    "ai_channel": str(bp_st.get("ai_channel") or ""),
+                    "zip_url": f"/api/best-photos/download-zip?project_id={requests.utils.quote(pid, safe='')}",
+                    "photos": _attach_best_photo_urls(bp_photos, pid, bp_ts),
+                }
+            )
+
         out_dir = p_root / "05_output"
         if not out_dir.exists():
             continue
@@ -8131,12 +8156,22 @@ def api_list_project_outputs(project_id: str = Query("all")):
                 }
             )
     outputs.sort(key=lambda x: x["mtime"], reverse=True)
+    photo_groups.sort(key=lambda x: x["updated_at"], reverse=True)
     return {
         "ok": True,
         "active_project_id": active_id,
         "selected_project_id": target_pid,
-        "projects": [{"id": p["id"], "name": p["name"], "output_count": p.get("output_count", 0)} for p in all_projs],
+        "projects": [
+            {
+                "id": p["id"],
+                "name": p["name"],
+                "output_count": p.get("output_count", 0),
+                "photo_count": proj_photo_counts.get(str(p.get("id") or ""), 0),
+            }
+            for p in all_projs
+        ],
         "outputs": outputs,
+        "photo_groups": photo_groups,
     }
 
 
