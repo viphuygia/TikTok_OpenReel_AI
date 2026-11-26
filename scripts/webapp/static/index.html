@@ -611,7 +611,7 @@
                   </button>
                   <span id="face-scan-status" class="text-[11px] text-zinc-400">Chưa quét gương mặt cho project này.</span>
                 </div>
-                <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2">
                   <div>
                     <label class="block text-[10px] text-zinc-400 mb-1">Chế độ lọc</label>
                     <select id="face-blur-mode" onchange="onFaceBlurOptionChange()" class="w-full rounded-lg bg-zinc-900 border border-zinc-700 px-2 py-1.5 text-[11px] text-zinc-100">
@@ -632,6 +632,15 @@
                     <select id="face-blur-padding" onchange="onFaceBlurOptionChange()" class="w-full rounded-lg bg-zinc-900 border border-zinc-700 px-2 py-1.5 text-[11px] text-zinc-100">
                       <option value="1.25">📐 Chuẩn (1.25x)</option>
                       <option value="1.45">🛡️ Rộng an toàn (1.45x)</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label class="block text-[10px] text-zinc-400 mb-1">Thời gian giữ che</label>
+                    <select id="face-blur-hold-sec" onchange="onFaceBlurOptionChange()" class="w-full rounded-lg bg-zinc-900 border border-zinc-700 px-2 py-1.5 text-[11px] text-zinc-100">
+                      <option value="0.25">⚡ Gọn (0.25s)</option>
+                      <option value="0.65" selected>🛡️ Chuẩn (0.65s · Đỡ hở mặt)</option>
+                      <option value="1">🔒 An toàn (1.0s)</option>
+                      <option value="1.5">🧱 Rất kỹ (1.5s)</option>
                     </select>
                   </div>
                 </div>
@@ -657,6 +666,20 @@
                 </div>
                 <div id="face-blur-grid" class="flex sm:grid sm:grid-cols-4 md:grid-cols-5 gap-2 overflow-x-auto pb-1">
                   <div class="col-span-full text-[11px] text-zinc-500 p-2 border border-dashed border-zinc-800 rounded-lg w-full text-center">Bấm "🔍 Quét Gương Mặt" để AI nhận diện các khuôn mặt trong clip thô.</div>
+                </div>
+              </div>
+              <div class="flex flex-wrap items-center justify-between gap-2 pt-1">
+                <label class="flex items-center gap-2 text-amber-200 font-medium cursor-pointer">
+                  <input id="chk-plate-blur-enabled" type="checkbox" onchange="onFaceBlurOptionChange()" class="rounded bg-zinc-800 border-amber-500 text-amber-500" />
+                  <span>🚗 Tự động che Biển số xe (Ô tô &amp; Xe máy VN · Không cần quét)</span>
+                </label>
+                <div id="wrap-plate-blur-style" class="hidden flex items-center gap-1.5">
+                  <span class="text-[10px] text-zinc-400">Kiểu che biển:</span>
+                  <select id="plate-blur-style" onchange="onFaceBlurOptionChange()" class="rounded-lg bg-zinc-900 border border-amber-500/40 px-2 py-1 text-[11px] text-zinc-100">
+                    <option value="pixelate" selected>🧱 Ô vuông Mosaic (Khuyên dùng)</option>
+                    <option value="gaussian">💧 Làm mờ mạnh (Gaussian)</option>
+                    <option value="solid">⬛ Khối tối che kín (Solid)</option>
+                  </select>
                 </div>
               </div>
             </div>
@@ -1162,7 +1185,7 @@
                 <span class="text-[10px] text-zinc-500">Đồng bộ 2 chiều với mục Tạo Video Auto</span>
               </div>
 
-              <div class="grid grid-cols-1 sm:grid-cols-3 gap-2">
+              <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2">
                 <div>
                   <label class="block text-[10px] text-zinc-400 mb-1">Chế độ lọc</label>
                   <select id="tab1-face-mode" onchange="onTab1FaceConfigChange()" class="w-full rounded-lg bg-zinc-900 border border-zinc-700 px-2 py-1.5 text-[11px] text-zinc-100">
@@ -1183,6 +1206,15 @@
                   <select id="tab1-face-padding" onchange="onTab1FaceConfigChange()" class="w-full rounded-lg bg-zinc-900 border border-zinc-700 px-2 py-1.5 text-[11px] text-zinc-100">
                     <option value="1.25">📐 Chuẩn (1.25x)</option>
                     <option value="1.45">🛡️ Rộng an toàn (1.45x)</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="block text-[10px] text-zinc-400 mb-1">Thời gian giữ che</label>
+                  <select id="tab1-face-hold-sec" onchange="onTab1FaceConfigChange()" class="w-full rounded-lg bg-zinc-900 border border-zinc-700 px-2 py-1.5 text-[11px] text-zinc-100">
+                    <option value="0.25">⚡ Gọn (0.25s)</option>
+                    <option value="0.65" selected>🛡️ Chuẩn (0.65s · Đỡ hở mặt)</option>
+                    <option value="1">🔒 An toàn (1.0s)</option>
+                    <option value="1.5">🧱 Rất kỹ (1.5s)</option>
                   </select>
                 </div>
               </div>
@@ -1211,6 +1243,21 @@
 
               <div id="tab1-face-grid" class="flex sm:grid sm:grid-cols-4 md:grid-cols-5 gap-2 overflow-x-auto pb-1">
                 <div class="col-span-full text-[11px] text-zinc-500 p-2 border border-dashed border-zinc-800 rounded-lg w-full text-center">Bấm "🔍 Quét Gương Mặt (Chạy nền)" để AI nhận diện trước các khuôn mặt trong clip thô.</div>
+              </div>
+
+              <div class="pt-2 border-t border-zinc-800/80 flex flex-wrap items-center justify-between gap-2">
+                <label class="flex items-center gap-2 text-xs text-amber-200 font-medium cursor-pointer">
+                  <input id="tab1-plate-enabled" type="checkbox" onchange="onTab1FaceConfigChange()" class="rounded bg-zinc-800 border-amber-500 text-amber-500" />
+                  <span>🚗 Tự động che Biển số xe (Ô tô &amp; Xe máy VN)</span>
+                </label>
+                <div id="wrap-tab1-plate-style" class="hidden flex items-center gap-1.5">
+                  <span class="text-[10px] text-zinc-400">Kiểu che biển:</span>
+                  <select id="tab1-plate-style" onchange="onTab1FaceConfigChange()" class="rounded-lg bg-zinc-900 border border-amber-500/40 px-2 py-1 text-[11px] text-zinc-100">
+                    <option value="pixelate" selected>🧱 Ô vuông Mosaic (Khuyên dùng)</option>
+                    <option value="gaussian">💧 Làm mờ mạnh (Gaussian)</option>
+                    <option value="solid">⬛ Khối tối che kín (Solid)</option>
+                  </select>
+                </div>
               </div>
             </div>
           </div>
@@ -4964,7 +5011,10 @@
         face_blur_style: document.getElementById('face-blur-style')?.value || 'gaussian',
         face_blur_icon: document.getElementById('face-blur-icon')?.value || 'cool',
         face_blur_padding: parseFloat(document.getElementById('face-blur-padding')?.value || '1.25') || 1.25,
+        face_blur_hold_sec: parseFloat(document.getElementById('face-blur-hold-sec')?.value || '0.65') || 0.65,
         face_blur_ids: Array.isArray(state.currentFaceBlurIds) ? [...state.currentFaceBlurIds] : [],
+        plate_blur_enabled: !!document.getElementById('chk-plate-blur-enabled')?.checked,
+        plate_blur_style: document.getElementById('plate-blur-style')?.value || 'pixelate',
       };
       state.projConfigMap[pid] = cfg;
       return cfg;
@@ -5032,7 +5082,10 @@
       setVal('face-blur-style', cfg.face_blur_style || 'gaussian');
       setVal('face-blur-icon', cfg.face_blur_icon || 'cool');
       setVal('face-blur-padding', String(cfg.face_blur_padding || '1.25'));
+      setVal('face-blur-hold-sec', String(cfg.face_blur_hold_sec || '0.65'));
       state.currentFaceBlurIds = Array.isArray(cfg.face_blur_ids) ? [...cfg.face_blur_ids] : [];
+      setChk('chk-plate-blur-enabled', !!cfg.plate_blur_enabled);
+      setVal('plate-blur-style', cfg.plate_blur_style || 'pixelate');
       toggleFaceBlurPanel(true);
     }
 
@@ -5080,7 +5133,10 @@
         face_blur_style: fpCfg.style || base.face_blur_style || 'gaussian',
         face_blur_icon: fpCfg.icon || base.face_blur_icon || 'cool',
         face_blur_padding: fpCfg.padding || base.face_blur_padding || 1.25,
+        face_blur_hold_sec: fpCfg.hold_sec || base.face_blur_hold_sec || 0.65,
         face_blur_ids: Array.isArray(fpCfg.selected_face_ids) ? [...fpCfg.selected_face_ids] : [],
+        plate_blur_enabled: fpCfg.plate_blur_enabled !== undefined ? !!fpCfg.plate_blur_enabled : !!base.plate_blur_enabled,
+        plate_blur_style: fpCfg.plate_blur_style || base.plate_blur_style || 'pixelate',
       };
       return state.projConfigMap[pid];
     }
@@ -5653,7 +5709,10 @@
       const face_blur_style = document.getElementById('face-blur-style')?.value || 'gaussian';
       const face_blur_icon = document.getElementById('face-blur-icon')?.value || 'cool';
       const face_blur_padding = parseFloat(document.getElementById('face-blur-padding')?.value || '1.25') || 1.25;
+      const face_blur_hold_sec = parseFloat(document.getElementById('face-blur-hold-sec')?.value || '0.65') || 0.65;
       const face_blur_ids = Array.isArray(state.currentFaceBlurIds) ? [...state.currentFaceBlurIds] : [];
+      const plate_blur_enabled = !!document.getElementById('chk-plate-blur-enabled')?.checked;
+      const plate_blur_style = document.getElementById('plate-blur-style')?.value || 'pixelate';
       const project_configs = {};
       const pidList = (projectIds && projectIds.length) ? projectIds : getCheckedAutoProjectIds().map((x) => x.id);
       for (const pid of pidList) {
@@ -5705,7 +5764,10 @@
             face_blur_style,
             face_blur_icon,
             face_blur_padding,
+            face_blur_hold_sec,
             face_blur_ids,
+            plate_blur_enabled,
+            plate_blur_style,
             disable_flash_shake,
             mix_engines,
             tts_engine,
@@ -6245,6 +6307,9 @@
       const style = document.getElementById('face-blur-style')?.value || 'gaussian';
       const wrap = document.getElementById('wrap-face-blur-icon');
       if (wrap) wrap.classList.toggle('hidden', style !== 'emoji');
+      const plateOn = !!document.getElementById('chk-plate-blur-enabled')?.checked;
+      const plateWrap = document.getElementById('wrap-plate-blur-style');
+      if (plateWrap) plateWrap.classList.toggle('hidden', !plateOn);
     }
 
     function toggleLongformRandomUi() {
@@ -6325,7 +6390,10 @@
       state.projConfigMap[pid].face_blur_style = cfg.style || 'gaussian';
       state.projConfigMap[pid].face_blur_icon = cfg.icon || 'cool';
       state.projConfigMap[pid].face_blur_padding = Number(cfg.padding || 1.25) || 1.25;
+      state.projConfigMap[pid].face_blur_hold_sec = Number(cfg.hold_sec || 0.65) || 0.65;
       state.projConfigMap[pid].face_blur_ids = Array.isArray(cfg.selected_face_ids) ? [...cfg.selected_face_ids] : [];
+      state.projConfigMap[pid].plate_blur_enabled = !!cfg.plate_blur_enabled;
+      state.projConfigMap[pid].plate_blur_style = cfg.plate_blur_style || 'pixelate';
     }
 
     function _applyFaceConfigToModalDom(pid, c) {
@@ -6335,11 +6403,17 @@
       const sEl = document.getElementById('face-blur-style');
       const iEl = document.getElementById('face-blur-icon');
       const pEl = document.getElementById('face-blur-padding');
+      const hEl = document.getElementById('face-blur-hold-sec');
+      const chkPlate = document.getElementById('chk-plate-blur-enabled');
+      const psEl = document.getElementById('plate-blur-style');
       if (chk) chk.checked = !!c.enabled;
       if (mEl && c.mode) mEl.value = c.mode;
       if (sEl && c.style) sEl.value = c.style;
       if (iEl && c.icon) iEl.value = c.icon;
       if (pEl && c.padding) pEl.value = String(c.padding);
+      if (hEl && c.hold_sec) hEl.value = String(c.hold_sec);
+      if (chkPlate) chkPlate.checked = !!c.plate_blur_enabled;
+      if (psEl && c.plate_blur_style) psEl.value = c.plate_blur_style;
       state.currentFaceBlurIds = Array.isArray(c.selected_face_ids) ? [...c.selected_face_ids] : [];
       const panel = document.getElementById('face-blur-panel');
       if (panel) panel.classList.toggle('hidden', !c.enabled);
@@ -6354,7 +6428,10 @@
         style: document.getElementById('face-blur-style')?.value || 'gaussian',
         icon: document.getElementById('face-blur-icon')?.value || 'cool',
         padding: parseFloat(document.getElementById('face-blur-padding')?.value || '1.25') || 1.25,
+        hold_sec: parseFloat(document.getElementById('face-blur-hold-sec')?.value || '0.65') || 0.65,
         selected_face_ids: Array.isArray(state.currentFaceBlurIds) ? [...state.currentFaceBlurIds] : [],
+        plate_blur_enabled: !!document.getElementById('chk-plate-blur-enabled')?.checked,
+        plate_blur_style: document.getElementById('plate-blur-style')?.value || 'pixelate',
       };
     }
 
@@ -6423,9 +6500,13 @@
         style: document.getElementById('tab1-face-style')?.value || 'gaussian',
         icon: document.getElementById('tab1-face-icon')?.value || 'cool',
         padding: parseFloat(document.getElementById('tab1-face-padding')?.value || '1.25') || 1.25,
+        hold_sec: parseFloat(document.getElementById('tab1-face-hold-sec')?.value || '0.65') || 0.65,
         selected_face_ids: Array.isArray(prevIds) ? [...prevIds] : [],
+        plate_blur_enabled: !!document.getElementById('tab1-plate-enabled')?.checked,
+        plate_blur_style: document.getElementById('tab1-plate-style')?.value || 'pixelate',
       };
       document.getElementById('wrap-tab1-face-icon')?.classList.toggle('hidden', cfgObj.style !== 'emoji');
+      document.getElementById('wrap-tab1-plate-style')?.classList.toggle('hidden', !cfgObj.plate_blur_enabled);
       saveFacePrivacyConfigObj(pid, cfgObj);
       _applyFaceConfigToModalDom(pid, cfgObj);
       renderTab1FacePanel(pid);
@@ -6694,13 +6775,20 @@
       const sEl = document.getElementById('tab1-face-style');
       const iEl = document.getElementById('tab1-face-icon');
       const pEl = document.getElementById('tab1-face-padding');
+      const hEl = document.getElementById('tab1-face-hold-sec');
+      const chkPlate = document.getElementById('tab1-plate-enabled');
+      const psEl = document.getElementById('tab1-plate-style');
       if (chkEn) chkEn.checked = !!cfg.enabled;
       if (mEl && cfg.mode) mEl.value = cfg.mode;
       if (sEl && cfg.style) sEl.value = cfg.style;
       if (iEl && cfg.icon) iEl.value = cfg.icon;
       if (pEl && cfg.padding) pEl.value = String(cfg.padding);
+      if (hEl && cfg.hold_sec) hEl.value = String(cfg.hold_sec);
+      if (chkPlate) chkPlate.checked = !!cfg.plate_blur_enabled;
+      if (psEl && cfg.plate_blur_style) psEl.value = cfg.plate_blur_style;
       const curStyle = (sEl?.value || cfg.style || 'gaussian');
       document.getElementById('wrap-tab1-face-icon')?.classList.toggle('hidden', curStyle !== 'emoji');
+      document.getElementById('wrap-tab1-plate-style')?.classList.toggle('hidden', !cfg.plate_blur_enabled);
 
       if (job.status === 'running') {
         const done = Number(job.done_clips || 0);

@@ -1236,7 +1236,10 @@ class OneClickPipelineReq(BaseModel):
     face_blur_style: str = "gaussian"
     face_blur_icon: str = "cool"
     face_blur_padding: float = 1.25
+    face_blur_hold_sec: float = 0.65
     face_blur_ids: list[str] = Field(default_factory=list)
+    plate_blur_enabled: bool = False
+    plate_blur_style: str = "pixelate"
     project_ids: list[str] = Field(default_factory=list)
     project_configs: dict[str, dict[str, Any]] = Field(default_factory=dict)
     sync: bool = False
@@ -5031,7 +5034,10 @@ class FacePrivacyConfigReq(BaseModel):
     style: str = "gaussian"
     icon: str = "cool"
     padding: float = 1.25
+    hold_sec: float = 0.65
     selected_face_ids: list[str] = Field(default_factory=list)
+    plate_blur_enabled: bool = False
+    plate_blur_style: str = "pixelate"
 
 
 def _attach_face_thumb_urls(faces: list[dict[str, Any]], pid: str, updated_at: int) -> list[dict[str, Any]]:
@@ -5056,7 +5062,10 @@ def _req_face_privacy_dict(req: OneClickPipelineReq) -> dict[str, Any]:
         "style": str(getattr(req, "face_blur_style", "gaussian") or "gaussian"),
         "icon": str(getattr(req, "face_blur_icon", "cool") or "cool"),
         "padding": float(getattr(req, "face_blur_padding", 1.25) or 1.25),
+        "hold_sec": float(getattr(req, "face_blur_hold_sec", 0.65) or 0.65),
         "selected_face_ids": list(getattr(req, "face_blur_ids", None) or []),
+        "plate_blur_enabled": bool(getattr(req, "plate_blur_enabled", False)),
+        "plate_blur_style": str(getattr(req, "plate_blur_style", "pixelate") or "pixelate"),
     }
 
 
@@ -5182,7 +5191,10 @@ def api_face_privacy_config(req: FacePrivacyConfigReq):
             "style": req.style,
             "icon": req.icon,
             "padding": req.padding,
+            "hold_sec": req.hold_sec,
             "selected_face_ids": req.selected_face_ids,
+            "plate_blur_enabled": req.plate_blur_enabled,
+            "plate_blur_style": req.plate_blur_style,
         },
     )
     ts = int(res.get("updated_at") or 0)
@@ -6119,7 +6131,11 @@ def _execute_longform_vlog_pipeline(
     fp_cfg = fp_saved["config"]
     if fp_cfg.get("enabled"):
         _update_pipeline(
-            log_line=f"[Che mặt AI] BẬT ({fp_cfg['mode']} · kiểu={fp_cfg['style']} · icon={fp_cfg.get('icon', 'cool')} · đã chọn={len(fp_cfg['selected_face_ids'])} mặt).",
+            log_line=f"[Che mặt AI] BẬT ({fp_cfg['mode']} · kiểu={fp_cfg['style']} · icon={fp_cfg.get('icon', 'cool')} · giữ={fp_cfg.get('hold_sec', 0.65)}s · đã chọn={len(fp_cfg['selected_face_ids'])} mặt).",
+        )
+    if fp_cfg.get("plate_blur_enabled"):
+        _update_pipeline(
+            log_line=f"[Che biển số AI] BẬT (kiểu={fp_cfg.get('plate_blur_style', 'pixelate')}).",
         )
     eff_disclaimer = _resolve_effective_disclaimer(req, req_vibe, is_random_variant=bool(variant_tag))
     if eff_disclaimer:
@@ -6413,7 +6429,11 @@ def _run_single_project_pipeline(req: OneClickPipelineReq) -> None:
         fp_short_cfg = _fp_short.save_face_privacy_config(ACTIVE_PROJECT_ROOT, _req_face_privacy_dict(req))["config"]
         if fp_short_cfg.get("enabled"):
             _update_pipeline(
-                log_line=f"[Che mặt AI] BẬT ({fp_short_cfg['mode']} · kiểu={fp_short_cfg['style']} · đã chọn={len(fp_short_cfg['selected_face_ids'])} mặt).",
+                log_line=f"[Che mặt AI] BẬT ({fp_short_cfg['mode']} · kiểu={fp_short_cfg['style']} · giữ={fp_short_cfg.get('hold_sec', 0.65)}s · đã chọn={len(fp_short_cfg['selected_face_ids'])} mặt).",
+            )
+        if fp_short_cfg.get("plate_blur_enabled"):
+            _update_pipeline(
+                log_line=f"[Che biển số AI] BẬT (kiểu={fp_short_cfg.get('plate_blur_style', 'pixelate')}).",
             )
         _ensure_raw_frames_extracted(raw_videos)
         _update_pipeline(
@@ -7078,7 +7098,8 @@ def _req_for_project(req: OneClickPipelineReq, pid: str, multi_projects: bool) -
             "vlog_title", "product_note", "quality_preset", "aspect_ratio", "content_vibe", "pacing_preset",
             "short_content_mode", "voice_preset", "tts_engine", "edge_voice", "bgm_track", "sticker_density", "sticker_style",
             "render_engine", "innovation_preset", "sfx_level", "transition_level",
-            "icon_density", "visual_theme", "subtitle_lang", "disclaimer_text", "face_blur_mode", "face_blur_style", "face_blur_icon",
+            "icon_density", "visual_theme", "subtitle_lang", "disclaimer_text",
+            "face_blur_mode", "face_blur_style", "face_blur_icon", "plate_blur_style",
         )
         for sf_k in str_fields:
             if sf_k in pc and pc[sf_k] is not None:
@@ -7089,13 +7110,15 @@ def _req_for_project(req: OneClickPipelineReq, pid: str, multi_projects: bool) -
             "disclaimer_enabled",
             "batch_all_scripts", "mix_variants", "mix_engines",
             "preserve_clips", "regenerate_script", "force_tts", "disable_flash_shake",
-            "face_blur_enabled",
+            "face_blur_enabled", "plate_blur_enabled",
         )
         for bf_k in bool_fields:
             if bf_k in pc:
                 upd[bf_k] = bool(pc[bf_k])
         if "face_blur_padding" in pc and pc["face_blur_padding"] is not None:
             upd["face_blur_padding"] = float(pc["face_blur_padding"])
+        if "face_blur_hold_sec" in pc and pc["face_blur_hold_sec"] is not None:
+            upd["face_blur_hold_sec"] = float(pc["face_blur_hold_sec"])
         if isinstance(pc.get("face_blur_ids"), list):
             upd["face_blur_ids"] = [str(x) for x in pc["face_blur_ids"] if str(x).strip()]
         if "target_duration_sec" in pc and pc["target_duration_sec"]:

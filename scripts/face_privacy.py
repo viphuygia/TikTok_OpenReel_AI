@@ -27,6 +27,7 @@ MEDIA_VIDEO_EXTS = (".mp4", ".mov", ".mkv", ".avi", ".webm", ".m4v")
 
 YUNET_MODEL_NAME = "face_detection_yunet_2023mar.onnx"
 SFACE_MODEL_NAME = "face_recognition_sface_2021dec.onnx"
+PLATE_MODEL_NAME = "license_plate_yolo.onnx"
 
 YUNET_URLS = [
     "https://github.com/opencv/opencv_zoo/raw/main/models/face_detection_yunet/face_detection_yunet_2023mar.onnx",
@@ -35,6 +36,11 @@ YUNET_URLS = [
 SFACE_URLS = [
     "https://github.com/opencv/opencv_zoo/raw/main/models/face_recognition_sface/face_recognition_sface_2021dec.onnx",
     "https://huggingface.co/opencv/face_recognition_sface/resolve/main/face_recognition_sface_2021dec.onnx",
+]
+PLATE_URLS = [
+    "https://huggingface.co/morsetechlab/yolov11-license-plate-detection/resolve/main/license-plate-finetune-v1n.onnx",
+    "https://huggingface.co/joker5914/yolov8n-license-plate/resolve/main/best.onnx",
+    "https://huggingface.co/ml-debi/yolov8-license-plate-detection/resolve/main/best.onnx",
 ]
 
 FACE_EMOJI_CATALOG: dict[str, str] = {
@@ -53,12 +59,17 @@ DEFAULT_FACE_PRIVACY_CONFIG: dict[str, Any] = {
     "style": "gaussian",      # "gaussian" | "pixelate" | "emoji"
     "icon": "cool",           # key in FACE_EMOJI_CATALOG or "random_person"
     "padding": 1.25,
+    "hold_sec": 0.65,
     "selected_face_ids": [],
+    "plate_blur_enabled": False,
+    "plate_blur_style": "pixelate",  # "pixelate" | "gaussian" | "solid"
 }
 
 _CV2_MOD: Any = None
 _CV2_LOCK = threading.Lock()
 _MODEL_LOCK = threading.Lock()
+_PLATE_ENGINE_LOCK = threading.Lock()
+_PLATE_ENGINE_CACHE: "_PlateEngine | None" = None
 _HW_ENC_CACHE: tuple[str, list[str]] | None = None
 _EMOJI_BGRA_CACHE: np.ndarray | None = None
 _EMOJI_ICON_CACHE: dict[str, np.ndarray] = {}
@@ -125,6 +136,171 @@ def _ensure_face_models() -> tuple[Path | None, Path | None]:
         ok_yn = _download_file(YUNET_URLS, yunet_p, min_bytes=50_000)
         ok_sf = _download_file(SFACE_URLS, sface_p, min_bytes=1_000_000)
         return (yunet_p if ok_yn else None, sface_p if ok_sf else None)
+
+
+def _ensure_plate_model() -> Path | None:
+    with _MODEL_LOCK:
+        plate_p = FACE_MODEL_DIR / PLATE_MODEL_NAME
+        ok = _download_file(PLATE_URLS, plate_p, min_bytes=1_000_000)
+        return plate_p if ok else None
+
+
+class _PlateEngine:
+    """YOLOv8/YOLO11 ONNX license plate detector running via onnxruntime."""
+
+    def __init__(self, model_path: Path) -> None:
+        import onnxruntime as ort  # type: ignore
+
+        self.cv2 = _ensure_cv2()
+        self._run_lock = threading.Lock()
+        avail = ort.get_available_providers()
+        providers = ["CUDAExecutionProvider", "CPUExecutionProvider"] if "CUDAExecutionProvider" in avail else ["CPUExecutionProvider"]
+        try:
+            self.session = ort.InferenceSession(str(model_path), providers=providers)
+        except Exception:
+            self.session = ort.InferenceSession(str(model_path), providers=["CPUExecutionProvider"])
+
+        inp = self.session.get_inputs()[0]
+        self.input_name = inp.name
+        shape = inp.shape
+        ih = int(shape[2]) if len(shape) >= 4 and isinstance(shape[2], (int, np.integer)) and int(shape[2]) > 0 else 640
+        iw = int(shape[3]) if len(shape) >= 4 and isinstance(shape[3], (int, np.integer)) and int(shape[3]) > 0 else 640
+        self.in_h = ih
+        self.in_w = iw
+
+    def detect(
+        self,
+        bgr_img: np.ndarray,
+        conf_threshold: float = 0.35,
+        nms_threshold: float = 0.45,
+    ) -> list[dict[str, float]]:
+        cv2 = self.cv2
+        oh, ow = bgr_img.shape[:2]
+        if oh <= 0 or ow <= 0:
+            return []
+
+        ratio = min(float(self.in_w) / float(ow), float(self.in_h) / float(oh))
+        nw = max(1, int(round(ow * ratio)))
+        nh = max(1, int(round(oh * ratio)))
+        pad_x = (self.in_w - nw) // 2
+        pad_y = (self.in_h - nh) // 2
+
+        resized = cv2.resize(
+            bgr_img,
+            (nw, nh),
+            interpolation=cv2.INTER_AREA if ratio < 1.0 else cv2.INTER_LINEAR,
+        )
+        canvas = np.full((self.in_h, self.in_w, 3), 114, dtype=np.uint8)
+        canvas[pad_y : pad_y + nh, pad_x : pad_x + nw] = resized
+
+        rgb = cv2.cvtColor(canvas, cv2.COLOR_BGR2RGB).astype(np.float32) * (1.0 / 255.0)
+        blob = np.transpose(rgb, (2, 0, 1))[None, ...]
+
+        with self._run_lock:
+            outputs = self.session.run(None, {self.input_name: blob})
+        if not outputs:
+            return []
+
+        arr = np.asarray(outputs[0], dtype=np.float32)
+        if arr.ndim == 3:
+            arr = arr[0]
+        if arr.ndim != 2 or arr.shape[0] == 0 or arr.shape[1] < 5:
+            return []
+
+        # Standard YOLO raw head (4+C, N) -> transpose to (N, 4+C)
+        if arr.shape[0] < arr.shape[1] and arr.shape[0] <= 64:
+            arr = arr.T
+
+        # Handle end-to-end NMS exports if shape is (N, 6) and cols [x1, y1, x2, y2, score, cls]
+        if arr.shape[1] == 6 and arr.shape[0] <= 300 and np.all(arr[:, 2] >= arr[:, 0]) and np.all(arr[:, 3] >= arr[:, 1]):
+            results: list[dict[str, float]] = []
+            for row in arr:
+                score = float(row[4])
+                if score < conf_threshold:
+                    continue
+                x1, y1, x2, y2 = float(row[0]), float(row[1]), float(row[2]), float(row[3])
+                if max(x2, y2) <= 1.5 and self.in_w > 32:
+                    x1, x2 = x1 * self.in_w, x2 * self.in_w
+                    y1, y2 = y1 * self.in_h, y2 * self.in_h
+                ox1 = (x1 - pad_x) / ratio
+                oy1 = (y1 - pad_y) / ratio
+                ox2 = (x2 - pad_x) / ratio
+                oy2 = (y2 - pad_y) / ratio
+                bw = ox2 - ox1
+                bh = oy2 - oy1
+                if bw < 16 or bh < 8 or bw > ow * 0.65 or bh > oh * 0.45:
+                    continue
+                results.append({"cx": (ox1 + ox2) * 0.5, "cy": (oy1 + oy2) * 0.5, "w": bw, "h": bh, "score": score})
+            return results
+
+        scores = arr[:, 4] if arr.shape[1] == 5 else arr[:, 4:].max(axis=1)
+        keep = scores >= conf_threshold
+        if not np.any(keep):
+            return []
+
+        cand = arr[keep]
+        cand_scores = scores[keep]
+        if float(cand[:, 2:4].max()) <= 1.5 and self.in_w > 32:
+            cand = cand.copy()
+            cand[:, 0] *= self.in_w
+            cand[:, 1] *= self.in_h
+            cand[:, 2] *= self.in_w
+            cand[:, 3] *= self.in_h
+
+        xywh_boxes: list[list[float]] = []
+        valid_scores: list[float] = []
+        parsed: list[tuple[float, float, float, float, float]] = []
+
+        for row, sc in zip(cand, cand_scores):
+            cx = (float(row[0]) - pad_x) / ratio
+            cy = (float(row[1]) - pad_y) / ratio
+            bw = float(row[2]) / ratio
+            bh = float(row[3]) / ratio
+            if bw < 16 or bh < 8 or bw > ow * 0.65 or bh > oh * 0.45:
+                continue
+            if cx + bw * 0.5 <= 0 or cy + bh * 0.5 <= 0 or cx - bw * 0.5 >= ow or cy - bh * 0.5 >= oh:
+                continue
+            xywh_boxes.append([cx - bw * 0.5, cy - bh * 0.5, bw, bh])
+            valid_scores.append(float(sc))
+            parsed.append((cx, cy, bw, bh, float(sc)))
+
+        if not xywh_boxes:
+            return []
+
+        idxs = cv2.dnn.NMSBoxes(xywh_boxes, valid_scores, float(conf_threshold), float(nms_threshold))
+        if len(idxs) == 0:
+            return []
+
+        flat_idxs = np.asarray(idxs).reshape(-1).tolist()
+        return [
+            {
+                "cx": parsed[i][0],
+                "cy": parsed[i][1],
+                "w": parsed[i][2],
+                "h": parsed[i][3],
+                "score": parsed[i][4],
+            }
+            for i in flat_idxs
+        ]
+
+
+def _get_plate_engine() -> _PlateEngine | None:
+    global _PLATE_ENGINE_CACHE
+    if _PLATE_ENGINE_CACHE is not None:
+        return _PLATE_ENGINE_CACHE
+    with _PLATE_ENGINE_LOCK:
+        if _PLATE_ENGINE_CACHE is not None:
+            return _PLATE_ENGINE_CACHE
+        model_p = _ensure_plate_model()
+        if model_p is None:
+            print("[PlatePrivacy WARN] Không tải được model nhận diện biển số ONNX.")
+            return None
+        try:
+            _PLATE_ENGINE_CACHE = _PlateEngine(model_p)
+            return _PLATE_ENGINE_CACHE
+        except Exception as exc:
+            print(f"[PlatePrivacy WARN] Không khởi tạo được ONNXRuntime cho biển số ({exc}).")
+            return None
 
 
 def _l2_norm(vec: np.ndarray) -> np.ndarray:
@@ -280,6 +456,16 @@ def normalize_face_config(cfg: dict[str, Any] | None) -> dict[str, Any]:
         padding = 1.25
     padding = round(max(1.0, min(2.2, padding)), 2)
 
+    try:
+        hold_sec = float(raw.get("hold_sec") if raw.get("hold_sec") is not None else 0.65)
+    except (TypeError, ValueError):
+        hold_sec = 0.65
+    hold_sec = round(max(0.15, min(2.5, hold_sec)), 2)
+
+    plate_style = str(raw.get("plate_blur_style") or "pixelate").strip()
+    if plate_style not in ("pixelate", "gaussian", "solid"):
+        plate_style = "pixelate"
+
     raw_ids = raw.get("selected_face_ids")
     if not isinstance(raw_ids, list):
         raw_ids = []
@@ -297,7 +483,10 @@ def normalize_face_config(cfg: dict[str, Any] | None) -> dict[str, Any]:
         "style": style,
         "icon": icon,
         "padding": padding,
+        "hold_sec": hold_sec,
         "selected_face_ids": sel_ids,
+        "plate_blur_enabled": bool(raw.get("plate_blur_enabled", False)),
+        "plate_blur_style": plate_style,
     }
 
 
@@ -907,6 +1096,143 @@ def _apply_roi_mask(
         frame[y1c:y2c, x1c:x2c] = np.clip(blended, 0, 255).astype(np.uint8)
 
 
+def _apply_plate_mask(
+    cv2: Any,
+    frame: np.ndarray,
+    boxes: list[tuple[int, int, int, int]],
+    plate_style: str,
+) -> None:
+    """Apply strong rectangular feathered privacy masking to detected license plates."""
+    fh, fw = frame.shape[:2]
+    for (x1, y1, x2, y2) in boxes:
+        x1c = max(0, min(fw - 1, int(x1)))
+        y1c = max(0, min(fh - 1, int(y1)))
+        x2c = max(0, min(fw, int(x2)))
+        y2c = max(0, min(fh, int(y2)))
+        rw = x2c - x1c
+        rh = y2c - y1c
+        if rw < 8 or rh < 6:
+            continue
+
+        roi = frame[y1c:y2c, x1c:x2c]
+        if plate_style == "solid":
+            effect = np.full((rh, rw, 3), (24, 24, 28), dtype=np.uint8)
+        elif plate_style == "gaussian":
+            sw = max(6, min(20, rw // 14))
+            sh = max(4, min(14, rh // 12))
+            small = cv2.resize(roi, (sw, sh), interpolation=cv2.INTER_AREA)
+            small = cv2.GaussianBlur(small, (15, 15), 0)
+            effect = cv2.resize(small, (rw, rh), interpolation=cv2.INTER_LINEAR)
+        else:
+            pw = max(4, min(10, rw // 14))
+            ph = max(3, min(8, rh // 10))
+            small = cv2.resize(roi, (pw, ph), interpolation=cv2.INTER_LINEAR)
+            effect = cv2.resize(small, (rw, rh), interpolation=cv2.INTER_NEAREST)
+
+        mask = np.ones((rh, rw), dtype=np.float32)
+        border = max(1, min(4, min(rw, rh) // 10))
+        if border > 1 and rw > border * 2 and rh > border * 2:
+            mask[:border, :] = 0.0
+            mask[-border:, :] = 0.0
+            mask[:, :border] = 0.0
+            mask[:, -border:] = 0.0
+            k = (border * 2 + 1) | 1
+            mask = cv2.GaussianBlur(mask, (k, k), 0)
+        mask_3 = mask[:, :, None]
+        blended = effect.astype(np.float32) * mask_3 + roi.astype(np.float32) * (1.0 - mask_3)
+        frame[y1c:y2c, x1c:x2c] = np.clip(blended, 0, 255).astype(np.uint8)
+
+
+def _build_plate_frame_boxes(
+    plate_keyframes: list[tuple[int, list[dict[str, float]]]],
+    *,
+    orig_w: int,
+    orig_h: int,
+    fps: float,
+    total_frames: int,
+    hold_sec: float = 0.65,
+) -> dict[int, list[tuple[int, int, int, int]]]:
+    """Link detected license plates into spatial tracks and interpolate per frame."""
+    if not plate_keyframes:
+        return {}
+
+    max_gap_frames = max(8, int(round(fps * max(0.55, hold_sec * 0.90))))
+    pad_edge_frames = max(3, int(round(fps * min(0.80, max(0.30, hold_sec * 0.70)))))
+
+    tracks: list[list[dict[str, float]]] = []
+    for f_idx, dets in plate_keyframes:
+        unmatched = set(range(len(tracks)))
+        candidates: list[tuple[float, int, int]] = []
+        for di, d in enumerate(dets):
+            dcx, dcy, dw, dh = d["cx"], d["cy"], d["w"], d["h"]
+            diag = max(24.0, (dw + dh) * 0.5)
+            for ti in unmatched:
+                last = tracks[ti][-1]
+                f_gap = f_idx - int(last["frame"])
+                if f_gap <= 0 or f_gap > max_gap_frames:
+                    continue
+                dist = float(np.hypot(dcx - last["cx"], dcy - last["cy"]))
+                ref_size = max(diag, (last["w"] + last["h"]) * 0.5)
+                allowed_dist = ref_size * (1.65 + 0.30 * (f_gap / max(1.0, fps * 0.15)))
+                if dist <= allowed_dist:
+                    candidates.append((dist / ref_size, di, ti))
+        candidates.sort(key=lambda x: x[0])
+
+        matched_d: set[int] = set()
+        matched_t: set[int] = set()
+        for _, di, ti in candidates:
+            if di in matched_d or ti in matched_t:
+                continue
+            matched_d.add(di)
+            matched_t.add(ti)
+            tracks[ti].append({"frame": float(f_idx), **dets[di]})
+
+        for di, d in enumerate(dets):
+            if di not in matched_d:
+                tracks.append([{"frame": float(f_idx), **d}])
+
+    frame_boxes: dict[int, list[tuple[int, int, int, int]]] = {}
+    max_frame_idx = max(0, total_frames - 1) if total_frames > 0 else 10**7
+
+    def _add_pbox(fi: int, cx: float, cy: float, bw: float, bh: float) -> None:
+        ew = bw * 1.25
+        eh = bh * 1.30
+        x1 = max(0, int(round(cx - ew * 0.5)))
+        y1 = max(0, int(round(cy - eh * 0.5)))
+        x2 = min(orig_w, int(round(cx + ew * 0.5)))
+        y2 = min(orig_h, int(round(cy + eh * 0.5)))
+        if x2 - x1 >= 8 and y2 - y1 >= 6:
+            frame_boxes.setdefault(fi, []).append((x1, y1, x2, y2))
+
+    for trk in tracks:
+        first = trk[0]
+        f0 = int(first["frame"])
+        for fi in range(max(0, f0 - pad_edge_frames), f0):
+            _add_pbox(fi, first["cx"], first["cy"], first["w"], first["h"])
+        for k in range(len(trk) - 1):
+            a = trk[k]
+            b = trk[k + 1]
+            fa = int(a["frame"])
+            fb = int(b["frame"])
+            span = max(1, fb - fa)
+            for fi in range(fa, fb):
+                alpha = (fi - fa) / float(span)
+                _add_pbox(
+                    fi,
+                    a["cx"] * (1.0 - alpha) + b["cx"] * alpha,
+                    a["cy"] * (1.0 - alpha) + b["cy"] * alpha,
+                    a["w"] * (1.0 - alpha) + b["w"] * alpha,
+                    a["h"] * (1.0 - alpha) + b["h"] * alpha,
+                )
+        last = trk[-1]
+        fl = int(last["frame"])
+        _add_pbox(fl, last["cx"], last["cy"], last["w"], last["h"])
+        for fi in range(fl + 1, min(max_frame_idx + 1, fl + 1 + pad_edge_frames)):
+            _add_pbox(fi, last["cx"], last["cy"], last["w"], last["h"])
+
+    return frame_boxes
+
+
 def _match_cluster_id(
     emb: np.ndarray,
     cluster_items: list[tuple[str, np.ndarray]],
@@ -936,6 +1262,7 @@ def _build_masked_frame_boxes(
     total_frames: int,
     onnx_mode: bool,
     icon_mode: str = "cool",
+    hold_sec: float = 0.65,
 ) -> dict[int, list[tuple[int, int, int, int, str]]]:
     """Link detections into smooth spatial tracks, classify target identities, and interpolate per frame."""
     if not keyframes:
@@ -943,8 +1270,9 @@ def _build_masked_frame_boxes(
 
     sim_thresh = 0.33 if onnx_mode else 0.74
     strong_thresh = 0.36 if onnx_mode else 0.80
-    max_gap_frames = max(8, int(round(fps * 0.50)))
-    pad_edge_frames = max(2, int(round(fps * 0.20)))
+    hold_sec = max(0.15, min(2.5, float(hold_sec or 0.65)))
+    max_gap_frames = max(10, int(round(fps * max(0.80, hold_sec * 1.45))))
+    pad_edge_frames = max(2, int(round(fps * hold_sec)))
 
     # 1. Link detections across keyframes into spatial tracks
     # Each track node: {"frame": f_idx, "cx": cx, "cy": cy, "w": bw, "h": bh, "best_id": str|None, "best_sim": float}
@@ -984,7 +1312,7 @@ def _build_masked_frame_boxes(
 
     # 2. Classify each track observation (inheriting identity cleanly across brief head turns)
     target_segments: list[list[dict[str, Any]]] = []
-    id_hold_frames = max(6, int(round(fps * 0.65)))
+    id_hold_frames = max(10, int(round(fps * max(1.00, hold_sec * 1.75))))
 
     for trk in spatial_tracks:
         cur_seg: list[dict[str, Any]] = []
@@ -1091,8 +1419,8 @@ def apply_face_privacy_to_clip(
     ffmpeg_bin: str = "ffmpeg",
 ) -> bool:
     """
-    Detect, track & mask selected (or bystander) faces inside `clip_path` in-place.
-    Returns True if masking was applied, False if skipped (disabled or no target faces found).
+    Detect, track & mask selected (or bystander) faces and/or license plates inside `clip_path` in-place.
+    Returns True if masking was applied, False if skipped (disabled or no target regions found).
     """
     clip_path = Path(clip_path)
     if not clip_path.exists() or not clip_path.is_file():
@@ -1111,40 +1439,65 @@ def apply_face_privacy_to_clip(
             merged_raw["icon"] = override_cfg["face_blur_icon"]
         if "face_blur_padding" in override_cfg:
             merged_raw["padding"] = override_cfg["face_blur_padding"]
+        if "face_blur_hold_sec" in override_cfg:
+            merged_raw["hold_sec"] = override_cfg["face_blur_hold_sec"]
         if "face_blur_ids" in override_cfg:
             merged_raw["selected_face_ids"] = override_cfg["face_blur_ids"]
-        for k in ("enabled", "mode", "style", "icon", "padding", "selected_face_ids"):
+        for k in (
+            "enabled",
+            "mode",
+            "style",
+            "icon",
+            "padding",
+            "hold_sec",
+            "selected_face_ids",
+            "plate_blur_enabled",
+            "plate_blur_style",
+        ):
             if k in override_cfg:
                 merged_raw[k] = override_cfg[k]
 
     cfg = normalize_face_config(merged_raw)
-    if not cfg["enabled"]:
+    face_active = bool(cfg["enabled"])
+    plate_active = bool(cfg["plate_blur_enabled"])
+    if not face_active and not plate_active:
         return False
 
     mode = cfg["mode"]
     style = cfg["style"]
     padding = float(cfg["padding"])
+    hold_sec = float(cfg["hold_sec"])
+    plate_style = cfg["plate_blur_style"]
     selected_ids = set(cfg["selected_face_ids"])
 
-    if mode == "blur_selected" and not selected_ids:
+    cluster_items: list[tuple[str, np.ndarray]] = []
+    if face_active:
+        if mode == "blur_selected" and not selected_ids:
+            face_active = False
+        else:
+            for f in state.get("faces") or []:
+                fid = str(f.get("id") or "").strip()
+                emb_list = f.get("embedding")
+                if fid and isinstance(emb_list, list) and emb_list:
+                    vec = _l2_norm(np.array(emb_list, dtype=np.float32))
+                    cluster_items.append((fid, vec))
+            if mode == "blur_selected":
+                cluster_ids_present = {cid for cid, _ in cluster_items}
+                if not (selected_ids & cluster_ids_present):
+                    face_active = False
+
+    if not face_active and not plate_active:
         return False
 
-    cluster_items: list[tuple[str, np.ndarray]] = []
-    for f in state.get("faces") or []:
-        fid = str(f.get("id") or "").strip()
-        emb_list = f.get("embedding")
-        if fid and isinstance(emb_list, list) and emb_list:
-            vec = _l2_norm(np.array(emb_list, dtype=np.float32))
-            cluster_items.append((fid, vec))
+    face_engine = _FaceEngine() if face_active else None
+    plate_engine = _get_plate_engine() if plate_active else None
+    if plate_engine is None:
+        plate_active = False
+    if not face_active and not plate_active:
+        return False
 
-    if mode == "blur_selected":
-        cluster_ids_present = {cid for cid, _ in cluster_items}
-        if not (selected_ids & cluster_ids_present):
-            return False
-
-    engine = _FaceEngine()
-    cv2 = engine.cv2
-    match_thresh = 0.33 if engine.use_onnx else 0.74
+    cv2 = face_engine.cv2 if face_engine is not None else _ensure_cv2()
+    match_thresh = (0.33 if face_engine.use_onnx else 0.74) if face_engine is not None else 0.33
 
     cap = cv2.VideoCapture(str(clip_path))
     if not cap.isOpened():
@@ -1155,6 +1508,7 @@ def apply_face_privacy_to_clip(
     fps = 30.0
     total_frames = 0
     keyframes: list[tuple[int, list[dict[str, Any]]]] = []
+    plate_keyframes: list[tuple[int, list[dict[str, float]]]] = []
     try:
         orig_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH) or 0)
         orig_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT) or 0)
@@ -1168,7 +1522,7 @@ def apply_face_privacy_to_clip(
         scale = min(1.0, 640.0 / float(max(orig_h, orig_w)))
         sw = max(1, int(round(orig_w * scale)))
         sh = max(1, int(round(orig_h * scale)))
-        step = 4
+        step = 3
         fi = 0
         while True:
             is_sample = (fi % step == 0) or (known_total > 0 and fi == known_total - 1)
@@ -1180,48 +1534,73 @@ def apply_face_privacy_to_clip(
             ok, frame = cap.read()
             if not ok or frame is None:
                 break
-            scan_frame = cv2.resize(frame, (sw, sh), interpolation=cv2.INTER_AREA) if scale < 1.0 else frame
-            dets = engine.detect_and_embed(scan_frame, score_threshold=0.58, min_box_px=18)
-            if dets:
-                kf_list: list[dict[str, Any]] = []
-                for d in dets:
-                    bx, by, bw, bh = d["box"]
-                    cid, sim = _match_cluster_id(d["emb"], cluster_items, match_thresh) if cluster_items else (None, -1.0)
-                    kf_list.append(
-                        {
-                            "cx": (bx + bw * 0.5) / scale,
-                            "cy": (by + bh * 0.5) / scale,
-                            "w": bw / scale,
-                            "h": bh / scale,
-                            "best_id": cid,
-                            "best_sim": sim,
-                        }
-                    )
-                keyframes.append((fi, kf_list))
+
+            if face_active and face_engine is not None:
+                scan_frame = cv2.resize(frame, (sw, sh), interpolation=cv2.INTER_AREA) if scale < 1.0 else frame
+                dets = face_engine.detect_and_embed(scan_frame, score_threshold=0.58, min_box_px=18)
+                if dets:
+                    kf_list: list[dict[str, Any]] = []
+                    for d in dets:
+                        bx, by, bw, bh = d["box"]
+                        cid, sim = _match_cluster_id(d["emb"], cluster_items, match_thresh) if cluster_items else (None, -1.0)
+                        kf_list.append(
+                            {
+                                "cx": (bx + bw * 0.5) / scale,
+                                "cy": (by + bh * 0.5) / scale,
+                                "w": bw / scale,
+                                "h": bh / scale,
+                                "best_id": cid,
+                                "best_sim": sim,
+                            }
+                        )
+                    keyframes.append((fi, kf_list))
+
+            if plate_active and plate_engine is not None:
+                p_dets = plate_engine.detect(frame, conf_threshold=0.35, nms_threshold=0.45)
+                if p_dets:
+                    plate_keyframes.append((fi, p_dets))
+
             fi += 1
         total_frames = fi
     finally:
         cap.release()
 
-    if not keyframes or total_frames <= 0:
+    if total_frames <= 0 or (not keyframes and not plate_keyframes):
         return False
 
-    frame_boxes = _build_masked_frame_boxes(
-        keyframes,
-        mode=mode,
-        selected_ids=selected_ids,
-        padding=padding,
-        orig_w=orig_w,
-        orig_h=orig_h,
-        fps=fps,
-        total_frames=total_frames,
-        onnx_mode=engine.use_onnx,
-        icon_mode=cfg["icon"],
+    frame_boxes: dict[int, list[tuple[int, int, int, int, str]]] = (
+        _build_masked_frame_boxes(
+            keyframes,
+            mode=mode,
+            selected_ids=selected_ids,
+            padding=padding,
+            orig_w=orig_w,
+            orig_h=orig_h,
+            fps=fps,
+            total_frames=total_frames,
+            onnx_mode=bool(face_engine.use_onnx if face_engine is not None else True),
+            icon_mode=cfg["icon"],
+            hold_sec=hold_sec,
+        )
+        if (face_active and keyframes)
+        else {}
     )
-    if not frame_boxes:
+    plate_frame_boxes: dict[int, list[tuple[int, int, int, int]]] = (
+        _build_plate_frame_boxes(
+            plate_keyframes,
+            orig_w=orig_w,
+            orig_h=orig_h,
+            fps=fps,
+            total_frames=total_frames,
+            hold_sec=hold_sec,
+        )
+        if (plate_active and plate_keyframes)
+        else {}
+    )
+    if not frame_boxes and not plate_frame_boxes:
         return False
 
-    # Pass 2: Apply ROI masking and stream to FFmpeg encoder preserving audio & bt709 color profile
+    # Pass 2: Apply face + plate ROI masking and stream to FFmpeg encoder preserving audio & bt709 color profile
     vcodec, vargs = _detect_h264_encoder_fast(ffmpeg_bin, max(orig_w, orig_h))
     tmp_out = clip_path.with_suffix(".fmask.tmp.mp4")
     if tmp_out.exists():
@@ -1290,6 +1669,9 @@ def apply_face_privacy_to_clip(
             boxes = frame_boxes.get(fi)
             if boxes:
                 _apply_roi_mask(cv2, frame, boxes, style)
+            pboxes = plate_frame_boxes.get(fi)
+            if pboxes:
+                _apply_plate_mask(cv2, frame, pboxes, plate_style)
             if not frame.flags["C_CONTIGUOUS"]:
                 frame = np.ascontiguousarray(frame)
             if proc.stdin is not None:
@@ -1318,7 +1700,7 @@ def apply_face_privacy_to_clip(
         err_msg = stderr_data.decode("utf-8", errors="replace").strip()[-400:]
         if tmp_out.exists():
             tmp_out.unlink(missing_ok=True)
-        raise RuntimeError(f"FFmpeg lỗi khi xuất video che mặt ({ret}): {err_msg}")
+        raise RuntimeError(f"FFmpeg lỗi khi xuất video che riêng tư ({ret}): {err_msg}")
 
     os.replace(tmp_out, clip_path)
     return True

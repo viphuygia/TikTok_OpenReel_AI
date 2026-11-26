@@ -357,16 +357,20 @@ def main() -> int:
     import face_privacy as _fp
     fp_state = _fp.load_face_privacy_state(PROJECT_ROOT)
     fp_cfg = _fp.normalize_face_config(fp_state.get("config"))
-    fp_enabled = bool(fp_cfg.get("enabled"))
+    fp_enabled = bool(fp_cfg.get("enabled") or fp_cfg.get("plate_blur_enabled"))
     fp_cache_part: list[Any] = (
         [
-            "face_v1",
+            "privacy_v2",
+            bool(fp_cfg.get("enabled")),
             fp_cfg["mode"],
             fp_cfg["style"],
             fp_cfg.get("icon", "cool"),
             fp_cfg["padding"],
+            fp_cfg.get("hold_sec", 0.65),
             sorted(fp_cfg["selected_face_ids"]),
             int(fp_state.get("updated_at") or 0),
+            bool(fp_cfg.get("plate_blur_enabled")),
+            fp_cfg.get("plate_blur_style", "pixelate"),
         ]
         if fp_enabled
         else []

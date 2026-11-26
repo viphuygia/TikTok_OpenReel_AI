@@ -2844,7 +2844,9 @@ def render_longform_ffmpeg_vlog(
                     cmd.append("-an")
                 cmd.append(str(seg_out))
             subprocess.run(cmd, capture_output=True, check=True, timeout=240)
-            if isinstance(face_privacy_cfg, dict) and face_privacy_cfg.get("enabled"):
+            if isinstance(face_privacy_cfg, dict) and (
+                face_privacy_cfg.get("enabled") or face_privacy_cfg.get("plate_blur_enabled")
+            ):
                 import face_privacy as _fp
 
                 _fp.apply_face_privacy_to_clip(
