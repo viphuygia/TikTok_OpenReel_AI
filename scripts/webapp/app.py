@@ -5326,6 +5326,201 @@ def api_face_privacy_thumb(project_id: str = Query(...), face_id: str = Query(..
     return FileResponse(path=str(thumb_fp), media_type="image/jpeg")
 
 
+BEST_PHOTOS_LOCK = threading.Lock()
+BEST_PHOTOS_JOBS: dict[str, dict[str, Any]] = {}
+
+
+def _default_best_photos_job() -> dict[str, Any]:
+    return {
+        "status": "idle",
+        "percent": 0,
+        "message": "",
+        "error": "",
+        "updated_at": 0,
+    }
+
+
+def _get_best_photos_job(pid: str) -> dict[str, Any]:
+    with BEST_PHOTOS_LOCK:
+        job = BEST_PHOTOS_JOBS.get(pid)
+        return dict(job) if isinstance(job, dict) else _default_best_photos_job()
+
+
+class BestPhotosExtractReq(BaseModel):
+    project_id: str = ""
+    count: int = 10
+    focus: str = "auto"
+    selected_clips: list[str] = Field(default_factory=list)
+    use_ai: bool = True
+    apply_privacy: bool = False
+
+
+def _attach_best_photo_urls(photos: list[dict[str, Any]], pid: str, ts: int) -> list[dict[str, Any]]:
+    t_val = int(ts or int(time.time()))
+    out: list[dict[str, Any]] = []
+    for item in photos or []:
+        row = dict(item)
+        fn = str(row.get("filename") or "").strip()
+        if fn:
+            q_pid = requests.utils.quote(pid, safe="")
+            q_fn = requests.utils.quote(fn, safe="")
+            row["url"] = f"/api/best-photos/file?project_id={q_pid}&filename={q_fn}&t={t_val}"
+            row["download_url"] = f"/api/best-photos/file?project_id={q_pid}&filename={q_fn}&download=1&t={t_val}"
+        else:
+            row["url"] = ""
+            row["download_url"] = ""
+        out.append(row)
+    return out
+
+
+@app.get("/api/best-photos/state")
+def api_best_photos_state(project_id: str | None = None):
+    import best_photos as _bp
+
+    pid = str(project_id or "").strip() or ACTIVE_PROJECT_ID
+    p_root = get_project_root(pid)
+    st = _bp.load_best_photos_state(p_root)
+    ts = int(st.get("updated_at") or 0)
+    st["photos"] = _attach_best_photo_urls(st.get("photos") or [], pid, ts)
+    return {
+        "ok": True,
+        "project_id": pid,
+        "job": _get_best_photos_job(pid),
+        **st,
+    }
+
+
+@app.post("/api/best-photos/extract")
+def api_best_photos_extract(req: BestPhotosExtractReq):
+    import best_photos as _bp
+
+    pid = str(req.project_id or "").strip() or ACTIVE_PROJECT_ID
+    p_root = get_project_root(pid)
+
+    with BEST_PHOTOS_LOCK:
+        cur = BEST_PHOTOS_JOBS.get(pid)
+        if isinstance(cur, dict) and cur.get("status") == "running":
+            return {"ok": True, "project_id": pid, "already_running": True, "job": dict(cur)}
+        now_ts = int(time.time())
+        BEST_PHOTOS_JOBS[pid] = {
+            "status": "running",
+            "percent": 3,
+            "message": "Đang khởi tạo quét ảnh đẹp...",
+            "error": "",
+            "started_at": now_ts,
+            "updated_at": now_ts,
+        }
+
+    cfg = load_config()
+    gem_key = str(cfg.get("gemini_api_key") or "").strip()
+    gem_model = str(cfg.get("gemini_model") or "gemini-2.5-flash").strip()
+    agy_model = str(cfg.get("agy_model") or "gemini-3.8-flash-medium").strip()
+
+    def _agy_fallback(prompt_text: str, _sheet_paths: list[Path]) -> str:
+        if not find_agy_executable():
+            raise RuntimeError("Antigravity CLI chưa sẵn sàng.")
+        res = call_agy_cli(prompt_text, model=agy_model, effort="low", timeout=120)
+        return str(res.get("response") or "")
+
+    agy_cb = _agy_fallback if find_agy_executable() else None
+
+    def _bg_worker() -> None:
+        def _on_prog(pct: int, msg: str) -> None:
+            with BEST_PHOTOS_LOCK:
+                job = BEST_PHOTOS_JOBS.get(pid)
+                if isinstance(job, dict) and job.get("status") == "running":
+                    job["percent"] = max(1, min(99, int(pct)))
+                    job["message"] = str(msg or "")
+                    job["updated_at"] = int(time.time())
+
+        try:
+            res = _bp.extract_best_photos(
+                p_root,
+                count=int(req.count or 10),
+                focus=str(req.focus or "auto"),
+                selected_clips=list(req.selected_clips or []),
+                use_ai=bool(req.use_ai),
+                apply_privacy=bool(req.apply_privacy),
+                gemini_api_key=gem_key,
+                gemini_model=gem_model,
+                agy_fallback=agy_cb,
+                progress_cb=_on_prog,
+            )
+            with BEST_PHOTOS_LOCK:
+                BEST_PHOTOS_JOBS[pid] = {
+                    "status": "done",
+                    "percent": 100,
+                    "message": f"Hoàn tất! Đã xuất {len(res.get('photos') or [])} ảnh đẹp.",
+                    "error": "",
+                    "updated_at": int(time.time()),
+                }
+        except Exception as exc:
+            with BEST_PHOTOS_LOCK:
+                cur_j = BEST_PHOTOS_JOBS.get(pid) or {}
+                BEST_PHOTOS_JOBS[pid] = {
+                    "status": "error",
+                    "percent": int(cur_j.get("percent") or 0),
+                    "message": "",
+                    "error": str(exc),
+                    "updated_at": int(time.time()),
+                }
+
+    threading.Thread(target=_bg_worker, daemon=True).start()
+    return {
+        "ok": True,
+        "project_id": pid,
+        "already_running": False,
+        "job": _get_best_photos_job(pid),
+    }
+
+
+@app.get("/api/best-photos/file")
+def api_best_photos_file(project_id: str = Query(...), filename: str = Query(...), download: int = 0):
+    clean_name = Path(str(filename or "").strip()).name
+    if not clean_name or not re.match(r"^[a-zA-Z0-9_.-]+$", clean_name):
+        raise HTTPException(status_code=400, detail="Tên file ảnh không hợp lệ.")
+    p_root = get_project_root(project_id).resolve()
+    fp = (p_root / "05_output" / "best_photos" / clean_name).resolve()
+    if not fp.is_relative_to(p_root) or not fp.exists() or not fp.is_file():
+        raise HTTPException(status_code=404, detail="Không tìm thấy ảnh.")
+    if int(download or 0) == 1:
+        return FileResponse(path=str(fp), media_type="image/jpeg", filename=clean_name)
+    return FileResponse(path=str(fp), media_type="image/jpeg")
+
+
+@app.delete("/api/best-photos/file")
+def api_best_photos_delete(project_id: str = Query(...), filename: str = Query(...)):
+    import best_photos as _bp
+
+    pid = str(project_id or "").strip() or ACTIVE_PROJECT_ID
+    p_root = get_project_root(pid)
+    try:
+        st = _bp.delete_best_photo(p_root, filename)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    ts = int(st.get("updated_at") or 0)
+    st["photos"] = _attach_best_photo_urls(st.get("photos") or [], pid, ts)
+    return {"ok": True, "project_id": pid, **st}
+
+
+@app.get("/api/best-photos/download-zip")
+def api_best_photos_download_zip(project_id: str = Query(...)):
+    import best_photos as _bp
+
+    pid = str(project_id or "").strip() or ACTIVE_PROJECT_ID
+    p_root = get_project_root(pid)
+    try:
+        zip_fp = _bp.build_best_photos_zip(p_root)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    safe_pid = re.sub(r"[^a-zA-Z0-9_-]+", "_", pid).strip("_") or "project"
+    return FileResponse(
+        path=str(zip_fp),
+        media_type="application/zip",
+        filename=f"best_photos_{safe_pid}.zip",
+    )
+
+
 @app.get("/api/style/vibes")
 def api_style_vibes():
     import style_dna as _sd

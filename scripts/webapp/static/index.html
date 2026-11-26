@@ -1327,6 +1327,76 @@
               </div>
             </div>
           </div>
+
+          <!-- Best Photos Extractor Card (AI Hybrid: Local sharpness + YuNet + Gemini Vision) -->
+          <div id="tab1-best-photos-card" class="rounded-2xl bg-zinc-950/75 border border-emerald-500/30 p-4 space-y-3">
+            <div class="flex flex-wrap items-start justify-between gap-2">
+              <div>
+                <div class="flex flex-wrap items-center gap-2">
+                  <h3 class="text-sm font-semibold text-emerald-200">📸 Cắt Ảnh Đẹp Từ Clip (AI Chọn Khoảnh Khắc)</h3>
+                  <span id="tab1-bp-project-badge" class="px-2 py-0.5 rounded-full bg-zinc-900 border border-zinc-700 text-[10px] text-zinc-300 mono">--</span>
+                </div>
+                <p id="bp-status" class="text-[11px] text-zinc-400 mt-0.5">Chưa cắt ảnh đẹp cho project này.</p>
+              </div>
+              <div class="flex flex-wrap items-center gap-1.5">
+                <button id="btn-bp-extract" type="button" onclick="startBestPhotosExtract()" class="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-xs font-semibold text-white transition">
+                  ✨ Cắt Ảnh Đẹp Ngay
+                </button>
+                <button id="btn-bp-zip" type="button" onclick="downloadBestPhotosZip()" class="hidden px-2.5 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-[11px] text-emerald-200 transition">
+                  📦 Tải tất cả (.ZIP)
+                </button>
+                <button type="button" onclick="openBestPhotosFolder()" class="px-2.5 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-[11px] text-zinc-200">
+                  📂 Mở thư mục
+                </button>
+                <button id="btn-tab1-bp-toggle" type="button" onclick="toggleTab1BestPhotosBody()" class="px-2.5 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-[11px] text-zinc-300">
+                  Thu gọn
+                </button>
+              </div>
+            </div>
+
+            <div id="bp-progress-wrap" class="hidden space-y-1">
+              <div class="flex items-center justify-between text-[11px] text-emerald-300">
+                <span id="bp-progress-text">⏳ Đang phân tích khung hình đẹp...</span>
+              </div>
+              <div class="h-1.5 w-full rounded-full bg-zinc-800 overflow-hidden">
+                <div id="bp-progress-bar" class="h-full bg-emerald-500 transition-all duration-200" style="width: 10%"></div>
+              </div>
+            </div>
+
+            <div id="tab1-bp-body" class="space-y-2.5 pt-2 border-t border-zinc-800/80">
+              <div class="flex flex-wrap items-center gap-2.5 text-[11px]">
+                <div class="flex items-center gap-1.5">
+                  <span class="text-zinc-400">Số lượng:</span>
+                  <select id="bp-count" class="rounded-lg bg-zinc-900 border border-zinc-700 px-2 py-1 text-[11px] text-zinc-100">
+                    <option value="5">5 ảnh</option>
+                    <option value="10" selected>10 ảnh</option>
+                    <option value="15">15 ảnh</option>
+                    <option value="20">20 ảnh</option>
+                  </select>
+                </div>
+                <div class="flex items-center gap-1.5">
+                  <span class="text-zinc-400">Gu chọn:</span>
+                  <select id="bp-focus" class="rounded-lg bg-zinc-900 border border-zinc-700 px-2 py-1 text-[11px] text-zinc-100">
+                    <option value="auto" selected>✨ Tự động (Cân bằng)</option>
+                    <option value="portrait">😊 Ưu tiên Chân dung &amp; Mặt rõ</option>
+                    <option value="scenic">🌄 Ưu tiên Cảnh đẹp &amp; Góc rộng</option>
+                  </select>
+                </div>
+                <label class="flex items-center gap-1.5 text-emerald-200 cursor-pointer">
+                  <input id="bp-use-ai" type="checkbox" checked class="rounded bg-zinc-800 border-emerald-500 text-emerald-500" />
+                  <span>🤖 AI Vision chọn lọc (Loại nhắm mắt)</span>
+                </label>
+                <label class="flex items-center gap-1.5 text-zinc-300 cursor-pointer">
+                  <input id="bp-apply-privacy" type="checkbox" class="rounded bg-zinc-800 border-sky-500 text-sky-500" />
+                  <span>🕵️ Áp dụng Che mặt / Biển số</span>
+                </label>
+              </div>
+
+              <div id="bp-grid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2.5">
+                <div class="col-span-full text-[11px] text-zinc-500 p-3 border border-dashed border-zinc-800 rounded-lg text-center">Bấm "✨ Cắt Ảnh Đẹp Ngay" để AI lọc khung hình nét nhất, loại khoảnh khắc nhắm mắt và xuất ảnh gốc 4K/1080p.</div>
+              </div>
+            </div>
+          </div>
         </div>
       </div>
     </section>
@@ -2631,7 +2701,10 @@
       const targetPid = state.pipelineRunning && state.uploadTargetProjectId ? state.uploadTargetProjectId : '';
       document.getElementById('tab1-cur-dir').textContent = targetPid ? `${dir} (Upload -> ${targetPid})` : dir;
       const tab1Pid = getTab1ProjectId();
-      if (tab1Pid) loadFacePrivacyState(tab1Pid, false);
+      if (tab1Pid) {
+        loadFacePrivacyState(tab1Pid, false);
+        loadBestPhotosState(tab1Pid);
+      }
       loadSmbShareStatus(tab1Pid);
       try {
         const url = `/api/files?dir=${encodeURIComponent(dir)}` + (targetPid ? `&project_id=${encodeURIComponent(targetPid)}` : '');
@@ -7892,6 +7965,239 @@
       }
     }
 
+    state.bestPhotosMap = state.bestPhotosMap || {};
+    state.bestPhotosPollTimers = state.bestPhotosPollTimers || {};
+    state._bpLightboxIdx = -1;
+
+    function toggleTab1BestPhotosBody() {
+      const body = document.getElementById('tab1-bp-body');
+      const btn = document.getElementById('btn-tab1-bp-toggle');
+      if (!body) return;
+      const hidden = body.classList.toggle('hidden');
+      if (btn) btn.textContent = hidden ? 'Mở rộng' : 'Thu gọn';
+    }
+
+    function openBestPhotosFolder() {
+      const pid = getTab1ProjectId();
+      const hasPhotos = (state.bestPhotosMap[pid]?.photos || []).length > 0;
+      openExplorer(hasPhotos ? '05_output/best_photos' : '05_output');
+    }
+
+    function renderBestPhotosPanel(projectId = '') {
+      const pid = projectId || getTab1ProjectId();
+      if (!pid || pid !== getTab1ProjectId()) return;
+
+      const badge = document.getElementById('tab1-bp-project-badge');
+      const statusEl = document.getElementById('bp-status');
+      const btn = document.getElementById('btn-bp-extract');
+      const btnZip = document.getElementById('btn-bp-zip');
+      const progWrap = document.getElementById('bp-progress-wrap');
+      const progText = document.getElementById('bp-progress-text');
+      const progBar = document.getElementById('bp-progress-bar');
+      const grid = document.getElementById('bp-grid');
+      if (!grid) return;
+
+      if (badge) badge.textContent = pid;
+
+      const data = state.bestPhotosMap[pid] || { photos: [], job: { status: 'idle' } };
+      const photos = data.photos || [];
+      const job = data.job || {};
+
+      if (btnZip) btnZip.classList.toggle('hidden', photos.length === 0);
+
+      if (job.status === 'running') {
+        const pct = Math.max(5, Math.min(99, Number(job.percent || 10)));
+        if (btn) {
+          btn.disabled = true;
+          btn.textContent = '⏳ Đang cắt ảnh...';
+        }
+        if (progWrap) progWrap.classList.remove('hidden');
+        if (progText) progText.textContent = job.message || '⏳ Đang chấm nét & chọn khoảnh khắc đẹp...';
+        if (progBar) progBar.style.width = `${pct}%`;
+        if (statusEl) statusEl.textContent = job.message || 'Đang xử lý ảnh đẹp chạy nền...';
+      } else {
+        if (btn) {
+          btn.disabled = false;
+          btn.textContent = '✨ Cắt Ảnh Đẹp Ngay';
+        }
+        if (progWrap) progWrap.classList.add('hidden');
+        if (statusEl) {
+          if (job.status === 'error' && job.error) {
+            statusEl.textContent = 'Lỗi: ' + job.error;
+          } else if (photos.length > 0) {
+            const chLabel = data.ai_used
+              ? (data.ai_channel === 'gemini_api' ? 'Gemini Vision AI' : 'Antigravity AI')
+              : 'Local Chấm Nét';
+            const noteSuffix = data.ai_note ? ` · ${data.ai_note}` : '';
+            statusEl.textContent = `Đã trích ${photos.length} ảnh gốc (${chLabel})${noteSuffix}`;
+          } else {
+            statusEl.textContent = 'Chưa cắt ảnh đẹp cho project này.';
+          }
+        }
+      }
+
+      if (!photos.length) {
+        grid.innerHTML = '<div class="col-span-full text-[11px] text-zinc-500 p-3 border border-dashed border-zinc-800 rounded-lg text-center">Bấm "✨ Cắt Ảnh Đẹp Ngay" để AI lọc khung hình nét nhất, loại khoảnh khắc nhắm mắt và xuất ảnh gốc 4K/1080p.</div>';
+        return;
+      }
+
+      grid.innerHTML = photos.map((ph, idx) => `
+        <div class="group rounded-xl bg-zinc-900/90 border border-zinc-800 hover:border-emerald-500/50 overflow-hidden flex flex-col transition">
+          <div class="relative aspect-[4/3] bg-zinc-950 cursor-pointer overflow-hidden" onclick="openBestPhotoLightbox(${idx})">
+            <img src="${escapeHtml(ph.url)}" alt="${escapeHtml(ph.filename)}" class="w-full h-full object-cover group-hover:scale-105 transition duration-200" loading="lazy" />
+            <span class="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded bg-black/75 border border-amber-400/50 text-[10px] font-bold text-amber-300">⭐ ${Number(ph.score || 8).toFixed(1)}</span>
+            <span class="absolute bottom-1.5 right-1.5 px-1.5 py-0.5 rounded bg-black/75 text-[9px] text-zinc-200 mono">${escapeHtml(ph.timestamp_str || '')}</span>
+          </div>
+          <div class="p-2 flex-1 flex flex-col justify-between gap-1.5">
+            <div>
+              <div class="text-[10px] text-zinc-400 truncate mono" title="${escapeHtml(ph.clip_name || '')}">${escapeHtml(ph.clip_name || ph.filename)} · ${ph.width}x${ph.height}</div>
+              <div class="text-[11px] text-zinc-200 line-clamp-2 mt-0.5" title="${escapeHtml(ph.reason || '')}">${escapeHtml(ph.reason || '')}</div>
+            </div>
+            <div class="flex items-center justify-between gap-1 pt-1 border-t border-zinc-800/80">
+              <a href="${escapeHtml(ph.download_url)}" download="${escapeHtml(ph.filename)}" class="px-2 py-1 rounded bg-emerald-600/25 hover:bg-emerald-600/45 border border-emerald-500/35 text-[10px] font-semibold text-emerald-200">⬇️ Tải về</a>
+              <button type="button" onclick="deleteBestPhoto('${escapeHtml(pid)}', '${escapeHtml(ph.filename)}')" class="px-2 py-1 rounded bg-rose-600/20 hover:bg-rose-600/40 border border-rose-500/30 text-[10px] text-rose-200">Xóa</button>
+            </div>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    async function loadBestPhotosState(projectId = '') {
+      const pid = projectId || getTab1ProjectId();
+      if (!pid) return null;
+      try {
+        const res = await api(`/api/best-photos/state?project_id=${encodeURIComponent(pid)}`);
+        if (res && res.ok) {
+          state.bestPhotosMap[pid] = res;
+          if (pid === getTab1ProjectId()) renderBestPhotosPanel(pid);
+          if (res.job?.status === 'running') pollBestPhotosJob(pid);
+          return res;
+        }
+      } catch (e) {}
+      return null;
+    }
+
+    async function startBestPhotosExtract() {
+      const pid = getTab1ProjectId();
+      if (!pid) return toast('Chưa xác định Project.', 'warn');
+      const count = parseInt(document.getElementById('bp-count')?.value || '10', 10) || 10;
+      const focus = document.getElementById('bp-focus')?.value || 'auto';
+      const use_ai = !!document.getElementById('bp-use-ai')?.checked;
+      const apply_privacy = !!document.getElementById('bp-apply-privacy')?.checked;
+
+      const cur = state.bestPhotosMap[pid] || { photos: [] };
+      state.bestPhotosMap[pid] = {
+        ...cur,
+        job: { status: 'running', percent: 5, message: 'Đang khởi tạo quét ảnh đẹp...', error: '' },
+      };
+      renderBestPhotosPanel(pid);
+
+      try {
+        const res = await api('/api/best-photos/extract', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ project_id: pid, count, focus, use_ai, apply_privacy }),
+        });
+        state.bestPhotosMap[pid] = { ...(state.bestPhotosMap[pid] || {}), job: res.job || { status: 'running', percent: 10 } };
+        renderBestPhotosPanel(pid);
+        if (res.job?.status === 'running') {
+          if (!res.already_running) toast('AI đang lọc khung hình & chọn ảnh đẹp chạy nền...', 'info');
+          pollBestPhotosJob(pid);
+        } else {
+          await loadBestPhotosState(pid);
+        }
+      } catch (e) {
+        state.bestPhotosMap[pid] = {
+          ...(state.bestPhotosMap[pid] || {}),
+          job: { status: 'error', percent: 0, message: '', error: e.message },
+        };
+        renderBestPhotosPanel(pid);
+        toast('Lỗi cắt ảnh đẹp: ' + e.message, 'error');
+      }
+    }
+
+    function pollBestPhotosJob(pid) {
+      if (!pid) return;
+      if (state.bestPhotosPollTimers[pid]) return;
+      const timerId = setInterval(async () => {
+        try {
+          const res = await api(`/api/best-photos/state?project_id=${encodeURIComponent(pid)}`);
+          if (!res || !res.ok) return;
+          state.bestPhotosMap[pid] = res;
+          if (pid === getTab1ProjectId()) renderBestPhotosPanel(pid);
+          const st = res.job?.status || 'idle';
+          if (st !== 'running') {
+            clearInterval(timerId);
+            delete state.bestPhotosPollTimers[pid];
+            if (st === 'done') {
+              const n = (res.photos || []).length;
+              toast(`Đã trích xuất ${n} ảnh đẹp độ phân giải gốc!`, 'success');
+            } else if (st === 'error') {
+              toast(`Lỗi cắt ảnh đẹp: ${res.job?.error || 'Không rõ'}`, 'error');
+            }
+          }
+        } catch {}
+      }, 1000);
+      state.bestPhotosPollTimers[pid] = timerId;
+    }
+
+    async function deleteBestPhoto(pid, filename) {
+      const targetPid = pid || getTab1ProjectId();
+      if (!targetPid || !filename) return;
+      try {
+        const res = await api(`/api/best-photos/file?project_id=${encodeURIComponent(targetPid)}&filename=${encodeURIComponent(filename)}`, {
+          method: 'DELETE',
+        });
+        if (res && res.ok) {
+          state.bestPhotosMap[targetPid] = { ...(state.bestPhotosMap[targetPid] || {}), ...res };
+          if (targetPid === getTab1ProjectId()) renderBestPhotosPanel(targetPid);
+          closeBestPhotoLightbox();
+          toast(`Đã xóa ${filename}`, 'info');
+        }
+      } catch (e) {
+        toast(e.message, 'error');
+      }
+    }
+
+    function downloadBestPhotosZip() {
+      const pid = getTab1ProjectId();
+      if (!pid) return;
+      window.location.href = `/api/best-photos/download-zip?project_id=${encodeURIComponent(pid)}`;
+    }
+
+    function openBestPhotoLightbox(idx) {
+      const pid = getTab1ProjectId();
+      const photos = state.bestPhotosMap[pid]?.photos || [];
+      const ph = photos[idx];
+      if (!ph) return;
+      state._bpLightboxIdx = idx;
+      const modal = document.getElementById('bp-lightbox');
+      const img = document.getElementById('bp-lb-img');
+      const meta = document.getElementById('bp-lb-meta');
+      const reason = document.getElementById('bp-lb-reason');
+      const dl = document.getElementById('bp-lb-dl');
+      if (img) img.src = ph.url;
+      if (meta) meta.textContent = `${ph.filename} · ${ph.clip_name} (${ph.timestamp_str}) · ${ph.width}x${ph.height} · ⭐ ${Number(ph.score || 8).toFixed(1)}`;
+      if (reason) reason.textContent = ph.reason || '';
+      if (dl) {
+        dl.href = ph.download_url;
+        dl.setAttribute('download', ph.filename);
+      }
+      if (modal) {
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+      }
+    }
+
+    function closeBestPhotoLightbox() {
+      const modal = document.getElementById('bp-lightbox');
+      if (modal) {
+        modal.classList.add('hidden');
+        modal.classList.remove('flex');
+      }
+      state._bpLightboxIdx = -1;
+    }
+
     // Boot
     (async () => {
       try {
@@ -7912,5 +8218,22 @@
       }
     })();
   </script>
+
+  <!-- Best Photo Lightbox Modal -->
+  <div id="bp-lightbox" class="hidden fixed inset-0 z-50 bg-black/85 backdrop-blur-sm items-center justify-center p-4" onclick="if(event.target===this) closeBestPhotoLightbox()">
+    <div class="max-w-4xl w-full bg-zinc-950 border border-zinc-800 rounded-2xl overflow-hidden shadow-2xl flex flex-col max-h-[92vh]">
+      <div class="px-4 py-3 border-b border-zinc-800 flex items-center justify-between gap-2">
+        <div id="bp-lb-meta" class="text-xs text-zinc-200 mono truncate">--</div>
+        <div class="flex items-center gap-2 shrink-0">
+          <a id="bp-lb-dl" href="#" download class="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-xs font-semibold text-white">⬇️ Tải ảnh gốc</a>
+          <button type="button" onclick="closeBestPhotoLightbox()" class="px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-xs text-zinc-200">Đóng</button>
+        </div>
+      </div>
+      <div class="flex-1 bg-black flex items-center justify-center overflow-auto p-2">
+        <img id="bp-lb-img" src="" alt="Preview" class="max-h-[72vh] max-w-full object-contain rounded" />
+      </div>
+      <div id="bp-lb-reason" class="px-4 py-2.5 border-t border-zinc-800 text-xs text-emerald-200 bg-zinc-900/70"></div>
+    </div>
+  </div>
 </body>
 </html>
