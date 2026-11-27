@@ -8907,20 +8907,40 @@
       const stage = document.getElementById('bp-lb-stage');
       const zoomBtn = document.getElementById('bp-lb-zoom-btn');
       if (!img) return;
-      z.scale = Math.max(1, Math.min(4, Number(z.scale) || 1));
+      z.scale = Math.max(1, Math.min(5, Number(z.scale) || 1));
       if (z.scale <= 1.01) {
         z.scale = 1;
         z.tx = 0;
         z.ty = 0;
-      } else if (stage) {
-        const sw = stage.clientWidth || 600;
-        const sh = stage.clientHeight || 600;
-        const maxX = Math.max(80, (sw * (z.scale - 1)) / 2 + 80);
-        const maxY = Math.max(80, (sh * (z.scale - 1)) / 2 + 80);
+        img.style.width = '';
+        img.style.height = '';
+        img.style.maxWidth = '';
+        img.style.maxHeight = '';
+        img.style.transform = '';
+      } else {
+        const sw = stage?.clientWidth || 600;
+        const sh = stage?.clientHeight || 600;
+        const pad = window.innerWidth < 640 ? 8 : 16;
+        const vhRatio = window.innerWidth < 640 ? 0.68 : 0.70;
+        const availW = Math.max(120, sw - pad);
+        const availH = Math.max(120, Math.min(sh - pad, window.innerHeight * vhRatio));
+        const natW = img.naturalWidth || img.clientWidth || 360;
+        const natH = img.naturalHeight || img.clientHeight || 640;
+        const fitRatio = Math.min(availW / natW, availH / natH);
+        const baseW = natW * fitRatio;
+        const baseH = natH * fitRatio;
+        const curW = baseW * z.scale;
+        const curH = baseH * z.scale;
+        const maxX = Math.max(40, (curW - sw) / 2 + 40);
+        const maxY = Math.max(40, (curH - sh) / 2 + 40);
         z.tx = Math.max(-maxX, Math.min(maxX, z.tx));
         z.ty = Math.max(-maxY, Math.min(maxY, z.ty));
+        img.style.maxWidth = 'none';
+        img.style.maxHeight = 'none';
+        img.style.width = `${Math.round(curW)}px`;
+        img.style.height = `${Math.round(curH)}px`;
+        img.style.transform = `translate3d(${Math.round(z.tx)}px, ${Math.round(z.ty)}px, 0)`;
       }
-      img.style.transform = `translate3d(${z.tx}px, ${z.ty}px, 0) scale(${z.scale})`;
       img.style.cursor = z.scale > 1.01 ? (z.dragging ? 'grabbing' : 'grab') : 'zoom-in';
       if (stage) {
         stage.style.touchAction = z.scale > 1.01 ? 'none' : 'auto';
@@ -8969,7 +8989,7 @@
         const z = state._bpZoom;
         const prevScale = z.scale || 1;
         const factor = e.deltaY < 0 ? 1.18 : 1 / 1.18;
-        const nextScale = Math.max(1, Math.min(4, prevScale * factor));
+        const nextScale = Math.max(1, Math.min(5, prevScale * factor));
         if (Math.abs(nextScale - prevScale) < 0.001) return;
         const rect = stage.getBoundingClientRect();
         const cx = e.clientX - (rect.left + rect.width / 2);
@@ -9386,7 +9406,7 @@
 
       <!-- Center Zoom/Pan Stage -->
       <div id="bp-lb-stage" class="relative flex-1 min-h-0 bg-black flex items-center justify-center overflow-hidden select-none p-1 sm:p-2">
-        <img id="bp-lb-img" src="" alt="Preview" draggable="false" class="max-h-[68vh] sm:max-h-[70vh] max-w-full object-contain rounded transition-opacity duration-150 will-change-transform" />
+        <img id="bp-lb-img" src="" alt="Preview" draggable="false" class="shrink-0 max-h-[68vh] sm:max-h-[70vh] max-w-full object-contain rounded transition-opacity duration-150" />
         <div id="bp-lb-loading" class="hidden absolute inset-0 bg-black/60 backdrop-blur-[2px] flex-col items-center justify-center gap-2 z-10 pointer-events-none">
           <div class="w-8 h-8 rounded-full border-2 border-indigo-400 border-t-transparent animate-spin"></div>
           <div id="bp-lb-loading-text" class="text-xs font-semibold text-indigo-100 bg-zinc-900/90 px-3 py-1.5 rounded-full border border-indigo-500/40 shadow">Đang xử lý...</div>
