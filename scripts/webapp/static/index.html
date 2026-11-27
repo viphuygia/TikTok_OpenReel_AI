@@ -2277,7 +2277,7 @@
               </select>
             </div>
             <div>
-              <label class="block text-[10px] text-zinc-400 mb-1">Số ảnh (X)</label>
+              <label class="block text-[10px] text-zinc-400 mb-1">Số ảnh tối đa (X)</label>
               <select id="bp-count" class="w-full rounded-lg bg-zinc-900 border border-zinc-700 px-2.5 py-1.5 text-xs text-zinc-100">
                 <option value="2">2 ảnh</option>
                 <option value="3" selected>3 ảnh</option>
@@ -2305,13 +2305,24 @@
             </div>
           </div>
 
-          <div>
-            <label class="block text-[10px] text-zinc-400 mb-1">Khi tách thêm lần mới (Xử lý ảnh cũ)</label>
-            <select id="bp-save-mode" class="w-full rounded-lg bg-zinc-900 border border-zinc-700 px-2.5 py-1.5 text-xs text-zinc-100">
-              <option value="replace_selected" selected>🔄 Chỉ thay ảnh của video đang chọn (Giữ ảnh video khác)</option>
-              <option value="append">➕ Cộng dồn — Giữ toàn bộ ảnh cũ &amp; thêm ảnh mới</option>
-              <option value="replace_all">🧹 Xóa sạch ảnh cũ cả Project, làm lại từ đầu</option>
-            </select>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-xs">
+            <div>
+              <label class="block text-[10px] text-zinc-400 mb-1">Độ gắt lọc ảnh (Không ép X)</label>
+              <select id="bp-min-score" class="w-full rounded-lg bg-zinc-900 border border-zinc-700 px-2.5 py-1.5 text-xs text-zinc-100">
+                <option value="7.5" selected>⚖️ Cân bằng (&gt;= 7.5đ · Không ép X)</option>
+                <option value="8.0">🔥 Khắt khe (&gt;= 8.0đ · Chỉ ảnh đẹp)</option>
+                <option value="8.5">💎 Siêu gắt (&gt;= 8.5đ · Tuyển cực kỹ)</option>
+                <option value="0">📌 Lấy đủ X ảnh (Ép chỉ tiêu cũ)</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-[10px] text-zinc-400 mb-1">Xử lý ảnh cũ</label>
+              <select id="bp-save-mode" class="w-full rounded-lg bg-zinc-900 border border-zinc-700 px-2.5 py-1.5 text-xs text-zinc-100">
+                <option value="replace_selected" selected>🔄 Thay ảnh video đang chọn</option>
+                <option value="append">➕ Cộng dồn giữ ảnh cũ</option>
+                <option value="replace_all">🧹 Xóa sạch làm lại từ đầu</option>
+              </select>
+            </div>
           </div>
 
           <div class="flex flex-wrap items-center gap-4 text-[11px]">
@@ -8349,6 +8360,8 @@
       }
       const count_mode = document.getElementById('bp-count-mode')?.value || 'per_video';
       const save_mode = document.getElementById('bp-save-mode')?.value || 'replace_selected';
+      const min_score_raw = document.getElementById('bp-min-score')?.value;
+      const min_score = min_score_raw !== undefined ? parseFloat(min_score_raw) : 7.5;
       const count = parseInt(document.getElementById('bp-count')?.value || '3', 10) || 3;
       const focus = document.getElementById('bp-focus')?.value || 'auto';
       const use_ai = !!document.getElementById('bp-use-ai')?.checked;
@@ -8366,7 +8379,7 @@
         const res = await api('/api/best-photos/extract', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ project_id: pid, count, count_mode, save_mode, focus, selected_clips, use_ai, apply_privacy, enhance_mode }),
+          body: JSON.stringify({ project_id: pid, count, count_mode, save_mode, min_score, focus, selected_clips, use_ai, apply_privacy, enhance_mode }),
         });
         state.bestPhotosMap[pid] = { ...(state.bestPhotosMap[pid] || {}), job: res.job || { status: 'running', percent: 10 } };
         renderBestPhotosPanel(pid);
@@ -8401,7 +8414,8 @@
             delete state.bestPhotosPollTimers[pid];
             if (st === 'done') {
               const n = (res.photos || []).length;
-              toast(`Đã trích xuất ${n} ảnh đẹp độ phân giải gốc!`, 'success');
+              const jobMsg = res.job?.message || `Đã trích xuất ${n} ảnh đẹp độ phân giải gốc!`;
+              toast(jobMsg, jobMsg.includes('Không có ảnh nào') ? 'info' : 'success');
               loadOutputGallery(state.galleryProjectId || 'all');
             } else if (st === 'error') {
               toast(`Lỗi cắt ảnh đẹp: ${res.job?.error || 'Không rõ'}`, 'error');

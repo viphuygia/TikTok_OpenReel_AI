@@ -5351,6 +5351,7 @@ class BestPhotosExtractReq(BaseModel):
     count: int = 10
     count_mode: str = "per_video"
     save_mode: str = "replace_selected"
+    min_score: float = 7.5
     focus: str = "auto"
     selected_clips: list[str] = Field(default_factory=list)
     use_ai: bool = True
@@ -5463,6 +5464,7 @@ def api_best_photos_extract(req: BestPhotosExtractReq):
                 count=int(req.count or 10),
                 count_mode=str(req.count_mode or "per_video"),
                 save_mode=str(req.save_mode or "replace_selected"),
+                min_score=float(req.min_score if req.min_score is not None else 7.5),
                 focus=str(req.focus or "auto"),
                 selected_clips=list(req.selected_clips or []),
                 use_ai=bool(req.use_ai),
@@ -5473,11 +5475,18 @@ def api_best_photos_extract(req: BestPhotosExtractReq):
                 agy_fallback=agy_cb,
                 progress_cb=_on_prog,
             )
+            new_cnt = int(res.get("new_count") if res.get("new_count") is not None else len(res.get("photos") or []))
+            tot_cnt = len(res.get("photos") or [])
+            done_msg = (
+                str(res.get("ai_note") or "Không có ảnh nào đạt ngưỡng điểm.")
+                if new_cnt == 0
+                else f"Hoàn tất! Thêm {new_cnt} ảnh (tổng {tot_cnt} ảnh đẹp)."
+            )
             with BEST_PHOTOS_LOCK:
                 BEST_PHOTOS_JOBS[pid] = {
                     "status": "done",
                     "percent": 100,
-                    "message": f"Hoàn tất! Đã xuất {len(res.get('photos') or [])} ảnh đẹp.",
+                    "message": done_msg,
                     "error": "",
                     "updated_at": int(time.time()),
                 }

@@ -223,6 +223,7 @@ def load_best_photos_state(project_root: Path) -> dict[str, Any]:
         "focus": str(data.get("focus") or "auto"),
         "count_mode": str(data.get("count_mode") or "per_video"),
         "save_mode": str(data.get("save_mode") or "replace_selected"),
+        "min_score": float(data.get("min_score") if data.get("min_score") is not None else 7.5),
         "ai_used": bool(data.get("ai_used", False)),
         "ai_channel": str(data.get("ai_channel") or ""),
         "ai_note": str(data.get("ai_note") or ""),
@@ -383,6 +384,7 @@ def _score_candidate_frame(
     face_score = 0.0
     face_count = 0
     best_face_lap = 0.0
+    best_face_norm: tuple[float, float, float, float] | None = None
     if face_engine is not None and focus in ("auto", "portrait"):
         try:
             dets = face_engine.detect_and_embed(frame_small, score_threshold=0.58, min_box_px=20)
@@ -390,7 +392,7 @@ def _score_candidate_frame(
             dets = []
         face_count = len(dets)
         if dets:
-            best_fq = 0.0
+            best_fq = -1.0
             for d in dets:
                 bx, by, bw, bh = d["box"]
                 mx = min(bx, sw - (bx + bw))
@@ -405,10 +407,16 @@ def _score_candidate_frame(
                     face_lap = float(cv2.Laplacian(gray[fy1:fy2, fx1:fx2], cv2.CV_64F).var())
                 face_sharp = min(1.0, face_lap / 260.0)
                 fq = float(d.get("quality", 0.6)) * edge_ok * (0.35 + 0.65 * face_sharp)
-                if fq > best_fq:
+                if fq > best_fq and sw > 0 and sh > 0:
                     best_fq = fq
                     best_face_lap = face_lap
-            face_score = min(1.0, best_fq)
+                    best_face_norm = (
+                        float(fx1) / float(sw),
+                        float(fy1) / float(sh),
+                        float(fx2) / float(sw),
+                        float(fy2) / float(sh),
+                    )
+            face_score = min(1.0, max(0.0, best_fq))
 
     if focus == "portrait":
         local_score = (
@@ -460,8 +468,58 @@ def _score_candidate_frame(
         "sharpness": float(round(sharp_norm, 3)),
         "stability": float(round(stability_norm, 3)),
         "face_count": int(face_count),
+        "best_face_norm": best_face_norm,
         "fp_vec": fp_vec,
     }
+
+
+def _make_candidate_tile(
+    cv2: Any,
+    orig_frame: np.ndarray,
+    best_face_norm: tuple[float, float, float, float] | None,
+    is_portrait: bool,
+) -> np.ndarray:
+    oh, ow = orig_frame.shape[:2]
+    tw, th = (360, 640) if is_portrait else (480, 320)
+    r_tile = min(float(tw) / float(max(1, ow)), float(th) / float(max(1, oh)))
+    nw, nh = max(1, int(round(ow * r_tile))), max(1, int(round(oh * r_tile)))
+    tile_resized = cv2.resize(orig_frame, (nw, nh), interpolation=cv2.INTER_AREA)
+    tile_canvas = np.full((th, tw, 3), 20, dtype=np.uint8)
+    xo, yo = (tw - nw) // 2, (th - nh) // 2
+    tile_canvas[yo : yo + nh, xo : xo + nw] = tile_resized
+
+    if best_face_norm is not None and ow > 32 and oh > 32:
+        nx1, ny1, nx2, ny2 = best_face_norm
+        fx1 = nx1 * ow
+        fy1 = ny1 * oh
+        fx2 = nx2 * ow
+        fy2 = ny2 * oh
+        fw = max(8.0, fx2 - fx1)
+        fh = max(8.0, fy2 - fy1)
+        cx = (fx1 + fx2) * 0.5
+        cy = (fy1 + fy2) * 0.5
+        half_side = max(fw, fh) * 0.95
+        x1 = max(0, int(round(cx - half_side)))
+        y1 = max(0, int(round(cy - half_side)))
+        x2 = min(ow, int(round(cx + half_side)))
+        y2 = min(oh, int(round(cy + half_side)))
+        if (x2 - x1) >= 16 and (y2 - y1) >= 16:
+            crop = orig_frame[y1:y2, x1:x2]
+            inset_sz = 136 if is_portrait else 116
+            ch, cw = crop.shape[:2]
+            scale_in = min(float(inset_sz) / float(cw), float(inset_sz) / float(ch))
+            iw = max(1, int(round(cw * scale_in)))
+            ih = max(1, int(round(ch * scale_in)))
+            inset = cv2.resize(crop, (iw, ih), interpolation=cv2.INTER_AREA)
+            ix = tw - iw - 6
+            iy = th - ih - 6
+            if ix >= 4 and iy >= 4:
+                tile_canvas[iy : iy + ih, ix : ix + iw] = inset
+                cv2.rectangle(tile_canvas, (ix - 1, iy - 1), (ix + iw, iy + ih), (80, 230, 255), 2)
+                cv2.rectangle(tile_canvas, (ix, iy), (ix + 46, iy + 16), (12, 16, 24), -1)
+                cv2.putText(tile_canvas, "ZOOM", (ix + 4, iy + 12), cv2.FONT_HERSHEY_SIMPLEX, 0.38, (120, 240, 255), 1, cv2.LINE_AA)
+
+    return tile_canvas
 
 
 def _collect_candidates(
@@ -483,10 +541,53 @@ def _collect_candidates(
     raw_candidates: list[dict[str, Any]] = []
     face_frame_hits = 0
     total_eval_frames = 0
+
+    def _push_evaluated(
+        vp: Path,
+        rel_name: str,
+        fps: float,
+        fi: int,
+        orig_frame: np.ndarray,
+        prev_tiny: np.ndarray | None,
+    ) -> None:
+        nonlocal face_frame_hits, total_eval_frames
+        oh, ow = orig_frame.shape[:2]
+        if oh <= 0 or ow <= 0:
+            return
+        scale = min(1.0, 640.0 / float(max(oh, ow)))
+        small = (
+            cv2.resize(orig_frame, (max(1, int(round(ow * scale))), max(1, int(round(oh * scale)))), interpolation=cv2.INTER_AREA)
+            if scale < 1.0
+            else orig_frame
+        )
+        metrics = _score_candidate_frame(cv2, small, face_engine, focus, prev_tiny_gray=prev_tiny)
+        total_eval_frames += 1
+        if metrics["face_count"] > 0:
+            face_frame_hits += 1
+        tile_canvas = _make_candidate_tile(
+            cv2,
+            orig_frame,
+            metrics.get("best_face_norm"),
+            is_portrait=(oh > ow),
+        )
+        raw_candidates.append(
+            {
+                "video_path": vp,
+                "clip_rel": rel_name,
+                "clip_name": vp.name,
+                "frame_idx": int(fi),
+                "timestamp_sec": round(float(fi) / fps, 2),
+                "orig_w": int(ow),
+                "orig_h": int(oh),
+                "tile": tile_canvas,
+                **metrics,
+            }
+        )
+
     for c_idx, (vp, rel_name) in enumerate(videos, start=1):
         if progress_cb is not None and pct_span > 0:
             pct = pct_start + int(round((c_idx - 1) / float(max(1, total_clips)) * pct_span))
-            progress_cb(pct, f"Đang quét nét & độ ổn định clip {c_idx}/{total_clips}: {vp.name}...")
+            progress_cb(pct, f"Đang tìm điểm dừng dáng & quét nét clip {c_idx}/{total_clips}: {vp.name}...")
 
         cap = cv2.VideoCapture(str(vp))
         if not cap.isOpened():
@@ -497,72 +598,76 @@ def _collect_candidates(
             if fps < 1.0 or fps > 120.0:
                 fps = 30.0
 
-            sampled: list[tuple[int, np.ndarray, np.ndarray | None]] = []
             if total_frames > 0:
                 lo = min(total_frames - 1, max(0, int(total_frames * 0.03)))
                 hi = max(lo, int(total_frames * 0.96))
                 span = hi - lo + 1
                 want = min(per_clip, max(2, span))
-                indices = sorted(set(int(round(x)) for x in np.linspace(lo, hi, num=want)))
-                idx_set = set(indices)
-                prev_map = {max(0, fi - 2): fi for fi in indices if fi >= 2}
-                max_idx = indices[-1]
-                prev_tiny_buf: dict[int, np.ndarray] = {}
-                for fi in range(max_idx + 1):
-                    need_prev = fi in prev_map
-                    need_cur = fi in idx_set
-                    if need_prev or need_cur:
-                        ok, fr = cap.read()
-                        if not ok or fr is None:
-                            break
-                        if need_prev:
-                            g_p = cv2.cvtColor(cv2.resize(fr, (160, 90), interpolation=cv2.INTER_AREA), cv2.COLOR_BGR2GRAY).astype(np.float32)
-                            prev_tiny_buf[prev_map[fi]] = g_p
-                        if need_cur:
-                            sampled.append((fi, fr, prev_tiny_buf.pop(fi, None)))
+                sub_k = max(1, min(3, 90 // max(1, want)))
+                edges = np.linspace(lo, hi + 1, num=want + 1)
+
+                probe_to_bucket: dict[int, int] = {}
+                bucket_last_fi: dict[int, int] = {}
+                prev_map: dict[int, int] = {}
+                all_probes: list[int] = []
+                for b_idx in range(want):
+                    b_start = max(lo, min(hi, int(round(edges[b_idx]))))
+                    b_end = max(b_start, min(hi, int(round(edges[b_idx + 1])) - 1))
+                    if sub_k == 1 or b_end == b_start:
+                        b_idxs = [(b_start + b_end) // 2]
                     else:
-                        if not cap.grab():
-                            break
+                        b_idxs = sorted(set(int(round(x)) for x in np.linspace(b_start, b_end, num=sub_k)))
+                    for p_fi in b_idxs:
+                        if p_fi not in probe_to_bucket:
+                            probe_to_bucket[p_fi] = b_idx
+                            all_probes.append(p_fi)
+                            if p_fi >= 2:
+                                prev_map[p_fi - 2] = p_fi
+                    bucket_last_fi[b_idx] = b_idxs[-1]
+
+                all_probes.sort()
+                if all_probes:
+                    max_idx = all_probes[-1]
+                    probe_set = set(all_probes)
+                    prev_tiny_buf: dict[int, np.ndarray] = {}
+                    bucket_best: dict[int, tuple[float, int, np.ndarray, np.ndarray | None]] = {}
+                    last_tiny: np.ndarray | None = None
+                    last_tiny_fi = -999
+
+                    for fi in range(max_idx + 1):
+                        need_prev = fi in prev_map
+                        need_probe = fi in probe_set
+                        if need_prev or need_probe:
+                            ok, fr = cap.read()
+                            if not ok or fr is None:
+                                break
+                            tiny_gray = cv2.cvtColor(cv2.resize(fr, (160, 90), interpolation=cv2.INTER_AREA), cv2.COLOR_BGR2GRAY).astype(np.float32)
+                            if need_prev:
+                                prev_tiny_buf[prev_map[fi]] = tiny_gray
+                            if need_probe:
+                                b_idx = probe_to_bucket[fi]
+                                ref_tiny = prev_tiny_buf.pop(fi, None)
+                                if ref_tiny is None and last_tiny is not None and (fi - last_tiny_fi) <= 12:
+                                    ref_tiny = last_tiny
+                                m_diff = float(np.abs(tiny_gray - ref_tiny).mean()) if (ref_tiny is not None and ref_tiny.shape == tiny_gray.shape) else 8.0
+                                cur_b = bucket_best.get(b_idx)
+                                if cur_b is None or m_diff < cur_b[0]:
+                                    bucket_best[b_idx] = (m_diff, fi, fr, ref_tiny)
+                                if fi == bucket_last_fi.get(b_idx) and b_idx in bucket_best:
+                                    _, win_fi, win_fr, win_prev = bucket_best.pop(b_idx)
+                                    _push_evaluated(vp, rel_name, fps, win_fi, win_fr, win_prev)
+                            last_tiny = tiny_gray
+                            last_tiny_fi = fi
+                        else:
+                            if not cap.grab():
+                                break
+
+                    for b_idx in sorted(bucket_best.keys()):
+                        _, win_fi, win_fr, win_prev = bucket_best[b_idx]
+                        _push_evaluated(vp, rel_name, fps, win_fi, win_fr, win_prev)
             else:
                 for fi, fr in _fp._sample_video_frames(cv2, vp, max_samples=per_clip):
-                    sampled.append((fi, fr, None))
-
-            for fi, orig_frame, prev_tiny in sampled:
-                oh, ow = orig_frame.shape[:2]
-                if oh <= 0 or ow <= 0:
-                    continue
-                scale = min(1.0, 640.0 / float(max(oh, ow)))
-                small = (
-                    cv2.resize(orig_frame, (max(1, int(round(ow * scale))), max(1, int(round(oh * scale)))), interpolation=cv2.INTER_AREA)
-                    if scale < 1.0
-                    else orig_frame
-                )
-                metrics = _score_candidate_frame(cv2, small, face_engine, focus, prev_tiny_gray=prev_tiny)
-                total_eval_frames += 1
-                if metrics["face_count"] > 0:
-                    face_frame_hits += 1
-
-                tw, th = 480, 360
-                r_tile = min(float(tw) / float(ow), float(th) / float(oh))
-                nw, nh = max(1, int(round(ow * r_tile))), max(1, int(round(oh * r_tile)))
-                tile_resized = cv2.resize(orig_frame, (nw, nh), interpolation=cv2.INTER_AREA)
-                tile_canvas = np.full((th, tw, 3), 20, dtype=np.uint8)
-                xo, yo = (tw - nw) // 2, (th - nh) // 2
-                tile_canvas[yo : yo + nh, xo : xo + nw] = tile_resized
-
-                raw_candidates.append(
-                    {
-                        "video_path": vp,
-                        "clip_rel": rel_name,
-                        "clip_name": vp.name,
-                        "frame_idx": int(fi),
-                        "timestamp_sec": round(float(fi) / fps, 2),
-                        "orig_w": int(ow),
-                        "orig_h": int(oh),
-                        "tile": tile_canvas,
-                        **metrics,
-                    }
-                )
+                    _push_evaluated(vp, rel_name, fps, fi, fr, None)
         finally:
             cap.release()
 
@@ -618,18 +723,18 @@ def _collect_candidates(
     return chosen, is_back_view
 
 
-def _build_contact_sheets(candidates: list[dict[str, Any]], max_per_sheet: int = 16) -> list[tuple[bytes, list[int]]]:
+def _build_contact_sheets(candidates: list[dict[str, Any]], max_per_sheet: int = 9) -> list[tuple[bytes, list[int]]]:
     cv2 = _fp._ensure_cv2()
     sheets: list[tuple[bytes, list[int]]] = []
     if not candidates:
         return sheets
 
-    tw, th = 480, 360
     pad = 8
     for start in range(0, len(candidates), max_per_sheet):
         chunk = candidates[start : start + max_per_sheet]
         n = len(chunk)
-        cols = 4 if n > 9 else (3 if n > 4 else min(2, max(1, n)))
+        th, tw = chunk[0]["tile"].shape[:2]
+        cols = 3 if n > 4 else (2 if n > 1 else 1)
         rows = (n + cols - 1) // cols
         canvas_w = cols * tw + (cols + 1) * pad
         canvas_h = rows * th + (rows + 1) * pad
@@ -642,6 +747,8 @@ def _build_contact_sheets(candidates: list[dict[str, Any]], max_per_sheet: int =
             x = pad + c * (tw + pad)
             y = pad + r * (th + pad)
             tile = cand["tile"].copy()
+            if tile.shape[:2] != (th, tw):
+                tile = cv2.resize(tile, (tw, th), interpolation=cv2.INTER_AREA)
             cid = int(cand["cid"])
             cids.append(cid)
 
@@ -651,16 +758,16 @@ def _build_contact_sheets(candidates: list[dict[str, Any]], max_per_sheet: int =
             cv2.putText(tile, tag, (16, 36), cv2.FONT_HERSHEY_SIMPLEX, 0.95, (255, 225, 90), 2, cv2.LINE_AA)
             canvas[y : y + th, x : x + tw] = tile
 
-        ok, buf = cv2.imencode(".jpg", canvas, [int(cv2.IMWRITE_JPEG_QUALITY), 88])
+        ok, buf = cv2.imencode(".jpg", canvas, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
         if ok:
             sheets.append((buf.tobytes(), cids))
     return sheets
 
 
-def _parse_ai_picks_json(raw_text: str) -> list[dict[str, Any]]:
+def _parse_ai_picks_response(raw_text: str) -> tuple[list[dict[str, Any]], bool]:
     txt = str(raw_text or "").strip()
     if not txt:
-        return []
+        return [], False
     m = re.search(r"```(?:json)?\s*([\s\S]*?)```", txt, flags=re.I)
     if m:
         txt = m.group(1).strip()
@@ -669,29 +776,41 @@ def _parse_ai_picks_json(raw_text: str) -> list[dict[str, Any]]:
     except Exception:
         m2 = re.search(r"\{[\s\S]*\}", txt)
         if not m2:
-            return []
+            return [], False
         try:
             parsed = json.loads(m2.group(0))
         except Exception:
-            return []
-    picks = parsed.get("picks") if isinstance(parsed, dict) else (parsed if isinstance(parsed, list) else [])
+            return [], False
+    if isinstance(parsed, dict):
+        if "picks" not in parsed or not isinstance(parsed.get("picks"), list):
+            return [], False
+        picks = parsed.get("picks") or []
+    elif isinstance(parsed, list):
+        picks = parsed
+    else:
+        return [], False
+
     out: list[dict[str, Any]] = []
-    if isinstance(picks, list):
-        for item in picks:
-            if not isinstance(item, dict):
-                continue
-            try:
-                cid = int(item.get("id"))
-            except (TypeError, ValueError):
-                continue
-            try:
-                sc = float(item.get("score") or 8.0)
-            except (TypeError, ValueError):
-                sc = 8.0
-            sc = round(max(1.0, min(10.0, sc)), 1)
-            reason = str(item.get("reason") or "").strip()[:140]
-            out.append({"id": cid, "score": sc, "reason": reason})
-    return out
+    for item in picks:
+        if not isinstance(item, dict):
+            continue
+        try:
+            cid = int(item.get("id"))
+        except (TypeError, ValueError):
+            continue
+        try:
+            sc = float(item.get("score") or 8.0)
+        except (TypeError, ValueError):
+            sc = 8.0
+        sc = round(max(1.0, min(10.0, sc)), 1)
+        reason = str(item.get("reason") or "").strip()[:140]
+        out.append({"id": cid, "score": sc, "reason": reason})
+    return out, True
+
+
+def _parse_ai_picks_json(raw_text: str) -> list[dict[str, Any]]:
+    picks, _ = _parse_ai_picks_response(raw_text)
+    return picks
 
 
 def _select_with_ai(
@@ -699,6 +818,7 @@ def _select_with_ai(
     *,
     count: int,
     focus: str,
+    min_score: float = 0.0,
     is_back_view: bool = False,
     rules_text: str = "",
     gemini_api_key: str,
@@ -719,14 +839,24 @@ def _select_with_ai(
     )
     rules_block = (rules_text or load_photo_taste_rules()).strip()
 
-    sheets = _build_contact_sheets(candidates, max_per_sheet=16)
+    sheets = _build_contact_sheets(candidates, max_per_sheet=9)
     if not sheets:
         return [], False, "local", "Không tạo được ảnh lưới ứng viên."
 
+    max_pick = min(count, len(candidates))
+    if min_score > 0:
+        qty_instruction = (
+            f"và chọn TỐI ĐA {max_pick} tấm THẬT SỰ ĐẠT CHUẨN (>= {min_score:.1f} điểm) theo Sổ tay Gu Ảnh dưới đây. "
+            f'TUYỆT ĐỐI KHÔNG lấy thêm ảnh dưới chuẩn để lấp cho đủ số lượng — nếu chỉ có 1-2 tấm đạt chuẩn thì chỉ trả 1-2 tấm; nếu toàn bộ bị lỗi/mờ/tóc rối/nhắm mắt thì trả về `{{"picks": []}}`.'
+        )
+    else:
+        qty_instruction = f"và chọn đúng {max_pick} tấm TỐT NHẤT theo đúng Sổ tay Gu Ảnh dưới đây."
+
     valid_cids = [int(c["cid"]) for c in candidates]
     prompt = (
-        f"Bạn là biên tập viên ảnh khắt khe. Hãy soi kỹ ảnh lưới ứng viên (mã #01, #02...) "
-        f"và chọn đúng {min(count, len(candidates))} tấm TỐT NHẤT theo đúng Sổ tay Gu Ảnh dưới đây.\n"
+        f"Bạn là biên tập viên ảnh khắt khe. Mỗi ô trên ảnh lưới là 1 ứng viên (#01, #02...); "
+        f"nếu ở góc dưới bên phải ô có khung nhỏ `ZOOM` thì đó là ảnh phóng to cận mặt từ video 4K — HÃY SOI KỸ ĐÔI MẮT, MIỆNG VÀ TÓC CON TRÊN KHUNG ZOOM ĐÓ, đồng thời đánh giá dáng & bố cục trên toàn ô, "
+        f"{qty_instruction}\n"
         f"Tiêu chí chế độ hiện tại: {focus_hint}{backview_note}\n\n"
         f"--- SỔ TAY GU ẢNH CỦA CHỦ KÊNH ---\n{rules_block}\n---\n\n"
         f"Trả về DUY NHẤT JSON hợp lệ theo mẫu:\n"
@@ -769,8 +899,8 @@ def _select_with_ai(
                 if cands:
                     out_parts = cands[0].get("content", {}).get("parts") or []
                     txt = "\n".join(str(pt.get("text") or "") for pt in out_parts if isinstance(pt, dict) and pt.get("text"))
-                    picks = _parse_ai_picks_json(txt)
-                    if picks:
+                    picks, parsed_ok = _parse_ai_picks_response(txt)
+                    if parsed_ok and (picks or min_score > 0):
                         return picks, True, "gemini_api", ""
                 err_note = "Gemini API không trả kết quả JSON hợp lệ."
             else:
@@ -798,8 +928,8 @@ def _select_with_ai(
                 + "\n".join(str(sp) for sp in sheet_paths)
             )
             txt = agy_fallback(agy_prompt, sheet_paths)
-            picks = _parse_ai_picks_json(txt)
-            if picks:
+            picks, parsed_ok = _parse_ai_picks_response(txt)
+            if parsed_ok and (picks or min_score > 0):
                 return picks, True, "agy_cli", ""
         except Exception as exc:
             err_note = f"{err_note} · AGY fallback lỗi ({exc})"
@@ -1259,6 +1389,7 @@ def extract_best_photos(
     count: int = 10,
     count_mode: str = "per_video",
     save_mode: str = "replace_selected",
+    min_score: float = 7.5,
     focus: str = "auto",
     selected_clips: list[str] | None = None,
     use_ai: bool = True,
@@ -1283,6 +1414,11 @@ def extract_best_photos(
     if save_mode_clean not in ("replace_selected", "append", "replace_all"):
         save_mode_clean = "replace_selected"
     save_mode = save_mode_clean
+    try:
+        ms_val = float(min_score if min_score is not None else 7.5)
+    except (TypeError, ValueError):
+        ms_val = 7.5
+    min_score = 0.0 if ms_val <= 0.0 else round(max(5.0, min(9.5, ms_val)), 1)
     focus = focus if focus in ("auto", "portrait", "scenic") else "auto"
 
     videos = _collect_source_videos(project_root, selected_clips=selected_clips)
@@ -1294,6 +1430,7 @@ def extract_best_photos(
     ws_tmp = project_root / "04_workspace" / "_best_photos_tmp"
 
     selected_entries: list[tuple[dict[str, Any], float, str, str]] = []
+    skipped_clips: list[str] = []
     ai_used = False
     ai_channel = "local"
     ai_note = ""
@@ -1304,7 +1441,7 @@ def extract_best_photos(
         for v_idx, (vp, rel_name) in enumerate(videos, start=1):
             base_pct = 6 + int(round((v_idx - 1) / float(max(1, total_v)) * 66))
             _rep(base_pct, f"Video {v_idx}/{total_v}: Đang lọc ứng viên {vp.name}...")
-            pool_size = min(16, max(10, count * 3)) if use_ai else count
+            pool_size = min(18, max(9, count * 3)) if use_ai else count
             clip_cands, clip_back_view = _collect_candidates(
                 [(vp, rel_name)],
                 pool_size=pool_size,
@@ -1322,11 +1459,12 @@ def extract_best_photos(
             by_cid = {int(c["cid"]): c for c in clip_cands}
             clip_picks: list[tuple[dict[str, Any], float, str]] = []
             if use_ai:
-                _rep(base_pct + int(round(33 / float(max(1, total_v)))), f"Video {v_idx}/{total_v}: AI đang chọn {count} ảnh từ {vp.name}...")
+                _rep(base_pct + int(round(33 / float(max(1, total_v)))), f"Video {v_idx}/{total_v}: AI đang soi {len(clip_cands)} ứng viên từ {vp.name}...")
                 picks, c_ai_used, c_ai_ch, c_ai_note = _select_with_ai(
                     clip_cands,
                     count=count,
                     focus=focus,
+                    min_score=min_score,
                     is_back_view=clip_back_view,
                     rules_text=rules_text,
                     gemini_api_key=gemini_api_key,
@@ -1341,14 +1479,17 @@ def extract_best_photos(
                     ai_note = c_ai_note
 
                 seen_cids: set[int] = set()
-                for pk in picks:
+                for pk in sorted(picks, key=lambda x: float(x.get("score") or 0.0), reverse=True):
                     cid = int(pk["id"])
+                    sc_val = float(pk["score"])
+                    if c_ai_used and min_score > 0 and sc_val < min_score:
+                        continue
                     if cid in by_cid and cid not in seen_cids:
                         seen_cids.add(cid)
-                        clip_picks.append((by_cid[cid], float(pk["score"]), str(pk.get("reason") or "")))
+                        clip_picks.append((by_cid[cid], sc_val, str(pk.get("reason") or "")))
                         if len(clip_picks) >= count:
                             break
-                if len(clip_picks) < min(count, len(clip_cands)):
+                if (not c_ai_used or min_score <= 0) and len(clip_picks) < min(count, len(clip_cands)):
                     for c in sorted(clip_cands, key=lambda x: x["local_score"], reverse=True):
                         if int(c["cid"]) in seen_cids:
                             continue
@@ -1357,27 +1498,31 @@ def extract_best_photos(
                         clip_picks.append((c, loc_score, "Nét ổn định, bố cục hài hòa (bổ sung Local)"))
                         if len(clip_picks) >= count:
                             break
+                if c_ai_used and min_score > 0 and not clip_picks:
+                    skipped_clips.append(vp.name)
             else:
                 for c in sorted(clip_cands, key=lambda x: x["local_score"], reverse=True)[:count]:
                     loc_score = round(min(9.0, max(5.8, 5.4 + c["local_score"] * 3.8)), 1)
-                    clip_picks.append((c, loc_score, "Nét cao, dáng ổn định & sáng đẹp (Offline)"))
+                    if min_score <= 0 or loc_score >= min_score:
+                        clip_picks.append((c, loc_score, "Nét cao, dáng ổn định & sáng đẹp (Offline)"))
 
             for sub_idx, (cand, sc, reason) in enumerate(clip_picks, start=1):
                 fname = f"{clip_stem}_{sub_idx:02d}.jpg"
                 selected_entries.append((cand, sc, reason, fname))
     else:
-        pool_size = min(32, max(16, count * 2 + 4)) if use_ai else count
+        pool_size = min(27, max(12, count * 2 + 4)) if use_ai else count
         candidates, any_back_view = _collect_candidates(videos, pool_size=pool_size, focus=focus, progress_cb=progress_cb)
         if not candidates:
             raise RuntimeError("Không đọc được khung hình hợp lệ nào từ các video.")
         by_cid = {int(c["cid"]): c for c in candidates}
         clip_picks = []
         if use_ai:
-            _rep(54, f"Đang gửi {len(candidates)} ảnh ứng viên cho AI Vision chọn Top {count}...")
+            _rep(54, f"Đang gửi {len(candidates)} ảnh ứng viên cho AI Vision soi kỹ...")
             picks, ai_used, ai_channel, ai_note = _select_with_ai(
                 candidates,
                 count=count,
                 focus=focus,
+                min_score=min_score,
                 is_back_view=any_back_view,
                 rules_text=rules_text,
                 gemini_api_key=gemini_api_key,
@@ -1386,14 +1531,17 @@ def extract_best_photos(
                 tmp_dir=ws_tmp,
             )
             seen_cids = set()
-            for pk in picks:
+            for pk in sorted(picks, key=lambda x: float(x.get("score") or 0.0), reverse=True):
                 cid = int(pk["id"])
+                sc_val = float(pk["score"])
+                if ai_used and min_score > 0 and sc_val < min_score:
+                    continue
                 if cid in by_cid and cid not in seen_cids:
                     seen_cids.add(cid)
-                    clip_picks.append((by_cid[cid], float(pk["score"]), str(pk.get("reason") or "")))
+                    clip_picks.append((by_cid[cid], sc_val, str(pk.get("reason") or "")))
                     if len(clip_picks) >= count:
                         break
-            if len(clip_picks) < min(count, len(candidates)):
+            if (not ai_used or min_score <= 0) and len(clip_picks) < min(count, len(candidates)):
                 for c in sorted(candidates, key=lambda x: x["local_score"], reverse=True):
                     if int(c["cid"]) in seen_cids:
                         continue
@@ -1405,12 +1553,30 @@ def extract_best_photos(
         else:
             for c in sorted(candidates, key=lambda x: x["local_score"], reverse=True)[:count]:
                 loc_score = round(min(9.0, max(5.8, 5.4 + c["local_score"] * 3.8)), 1)
-                clip_picks.append((c, loc_score, "Độ nét cao, cân bằng sáng & bố cục tốt (Offline)"))
+                if min_score <= 0 or loc_score >= min_score:
+                    clip_picks.append((c, loc_score, "Độ nét cao, cân bằng sáng & bố cục tốt (Offline)"))
 
         for rank_idx, (cand, sc, reason) in enumerate(clip_picks, start=1):
             selected_entries.append((cand, sc, reason, f"photo_{rank_idx:02d}.jpg"))
 
+    if skipped_clips:
+        skip_msg = f"Đã bỏ qua {len(skipped_clips)} clip không đạt >= {min_score:.1f}đ ({', '.join(skipped_clips[:3])}{'...' if len(skipped_clips) > 3 else ''})"
+        ai_note = f"{ai_note} · {skip_msg}".strip(" ·") if ai_note else skip_msg
+
     if not selected_entries:
+        if min_score > 0 and ai_used:
+            prev_st = load_best_photos_state(project_root)
+            zero_msg = f"Không có ảnh nào đạt ngưỡng >= {min_score:.1f}đ (đã giữ nguyên ảnh cũ). Thử hạ 'Độ gắt lọc ảnh' nếu muốn lấy thêm."
+            _rep(100, zero_msg)
+            return {
+                "ok": True,
+                "new_count": 0,
+                **prev_st,
+                "ai_used": True,
+                "ai_channel": ai_channel,
+                "ai_note": zero_msg,
+                "min_score": float(min_score),
+            }
         raise RuntimeError("Không trích xuất được ảnh nào từ các video đã chọn.")
 
     _rep(76, f"Đang xuất {len(selected_entries)} ảnh độ phân giải gốc (JPG 95%)...")
@@ -1571,6 +1737,7 @@ def extract_best_photos(
         "focus": focus,
         "count_mode": count_mode,
         "save_mode": save_mode,
+        "min_score": float(min_score),
         "enhance_mode": enh_mode,
         "ai_used": bool(ai_used),
         "ai_channel": ai_channel,
@@ -1580,4 +1747,4 @@ def extract_best_photos(
     }
     _write_manifest(project_root, state_data)
     _rep(100, f"Hoàn tất! Thêm {len(new_photos)} ảnh (tổng {len(photos_out)} ảnh đẹp).")
-    return {"ok": True, **state_data}
+    return {"ok": True, "new_count": len(new_photos), **state_data}
