@@ -2213,6 +2213,7 @@
           <div class="flex flex-wrap gap-2 text-xs">
             <button type="button" onclick="copyGalleryShareLink()" class="px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold">🔗 Copy Link Kho Video</button>
             <button id="btn-gallery-zip" type="button" onclick="downloadGalleryZip()" class="hidden px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold">📦 Tải cả Project (.ZIP)</button>
+            <button id="btn-gallery-clear-all" type="button" onclick="clearAllGalleryVideos()" class="hidden px-3 py-1.5 rounded-lg bg-rose-600/20 hover:bg-rose-600/40 border border-rose-500/40 text-rose-200 font-semibold">🗑️ Xóa hết video</button>
             <button type="button" onclick="loadOutputGallery()" class="px-3 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-200">🔄 Làm mới</button>
           </div>
         </div>
@@ -2220,8 +2221,50 @@
         <!-- Project Folder Filter Pills -->
         <div id="gallery-project-pills" class="flex flex-wrap gap-2 text-xs"></div>
 
+        <!-- Gallery Toolbar: View Switch, Storage Stats, Batch Select, Filter & Sort -->
+        <div id="gallery-toolbar" class="rounded-xl bg-zinc-950/75 border border-zinc-800 p-3 space-y-2.5 text-xs">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <div class="flex flex-wrap items-center gap-1.5">
+              <button id="gal-view-all" type="button" onclick="setGalleryViewMode('all')" class="px-2.5 py-1 rounded-lg border font-semibold transition">🗂️ Tất cả</button>
+              <button id="gal-view-videos" type="button" onclick="setGalleryViewMode('videos')" class="px-2.5 py-1 rounded-lg border font-semibold transition">🎬 Chỉ Video</button>
+              <button id="gal-view-photos" type="button" onclick="setGalleryViewMode('photos')" class="px-2.5 py-1 rounded-lg border font-semibold transition">📸 Chỉ Ảnh Đẹp</button>
+              <span id="gallery-storage-badge" class="px-2.5 py-1 rounded-lg bg-zinc-900 border border-zinc-700 text-zinc-300 mono text-[11px]">0 video · 0 MB</span>
+            </div>
+            <div class="flex flex-wrap items-center gap-1.5">
+              <button type="button" onclick="selectGalleryPageVideos()" class="px-2.5 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-200">☑️ Chọn trang</button>
+              <button id="btn-gallery-clear-sel" type="button" onclick="clearGallerySelection()" class="hidden px-2.5 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-300">Bỏ chọn</button>
+              <button id="btn-gallery-del-selected" type="button" onclick="deleteSelectedGalleryVideos()" class="hidden px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-500 text-white font-semibold">🗑️ Xóa đã chọn</button>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2">
+            <input id="gallery-search" type="text" oninput="onGalleryFilterChange()" placeholder="🔍 Tìm tên video / project..." class="w-full rounded-lg bg-zinc-900 border border-zinc-700 px-2.5 py-1.5 text-xs text-zinc-100 placeholder-zinc-500 focus:outline-none focus:border-indigo-500" />
+            <select id="gallery-filter-aspect" onchange="onGalleryFilterChange()" class="w-full rounded-lg bg-zinc-900 border border-zinc-700 px-2.5 py-1.5 text-xs text-zinc-100">
+              <option value="all" selected>📐 Mọi tỷ lệ (9:16 &amp; 16:9)</option>
+              <option value="9:16">📱 Chỉ Video Dọc (9:16)</option>
+              <option value="16:9">🖥️ Chỉ Video Ngang (16:9)</option>
+              <option value="has_360p">⚡ Đã có bản 360p</option>
+            </select>
+            <select id="gallery-sort" onchange="onGalleryFilterChange()" class="w-full rounded-lg bg-zinc-900 border border-zinc-700 px-2.5 py-1.5 text-xs text-zinc-100">
+              <option value="newest" selected>🕒 Mới nhất trước</option>
+              <option value="largest">💾 Nặng nhất trước (dễ dọn)</option>
+              <option value="longest">⏱️ Dài nhất trước</option>
+              <option value="name">🔤 Tên A → Z</option>
+            </select>
+            <select id="gallery-page-size" onchange="onGalleryFilterChange()" class="w-full rounded-lg bg-zinc-900 border border-zinc-700 px-2.5 py-1.5 text-xs text-zinc-100">
+              <option value="6">📄 6 video / trang</option>
+              <option value="9" selected>📄 9 video / trang</option>
+              <option value="18">📄 18 video / trang</option>
+              <option value="9999">📄 Hiển thị tất cả</option>
+            </select>
+          </div>
+        </div>
+
         <!-- Gallery Videos Grid -->
         <div id="gallery-output-grid" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4"></div>
+
+        <!-- Pagination Controls -->
+        <div id="gallery-pagination" class="hidden flex-wrap items-center justify-between gap-2 pt-2 border-t border-zinc-800/80 text-xs"></div>
 
         <!-- Gallery Best Photos Section -->
         <div id="gallery-photos-section" class="hidden pt-4 border-t border-zinc-800 space-y-3">
@@ -7704,82 +7747,299 @@
       }
     }
 
+    state._gallerySelected = state._gallerySelected || new Set();
+    state._galleryPage = 1;
+    state._galleryPageSize = 9;
+    state._galleryViewMode = 'all';
+    state._galleryShowEmptyProjects = false;
+    state._galleryQualityMap = state._galleryQualityMap || {};
+
+    function formatStorageSize(mbVal) {
+      const mb = Number(mbVal || 0);
+      if (mb >= 1024) return `${(mb / 1024).toFixed(2)} GB`;
+      return `${mb.toFixed(1)} MB`;
+    }
+
+    function setGalleryViewMode(mode) {
+      state._galleryViewMode = (mode === 'videos' || mode === 'photos') ? mode : 'all';
+      renderOutputGalleryView();
+    }
+
+    function toggleGalleryEmptyProjects() {
+      state._galleryShowEmptyProjects = !state._galleryShowEmptyProjects;
+      renderOutputGalleryView();
+    }
+
+    function onGalleryFilterChange() {
+      state._galleryPage = 1;
+      const sz = parseInt(document.getElementById('gallery-page-size')?.value || '9', 10);
+      state._galleryPageSize = Number.isFinite(sz) && sz > 0 ? sz : 9;
+      renderOutputGalleryView();
+    }
+
+    function setGalleryPage(pageNum) {
+      state._galleryPage = Math.max(1, Number(pageNum) || 1);
+      renderOutputGalleryView();
+      document.getElementById('gallery-toolbar')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+
+    function toggleGallerySelectVideo(key) {
+      if (!key) return;
+      if (state._gallerySelected.has(key)) state._gallerySelected.delete(key);
+      else state._gallerySelected.add(key);
+      renderOutputGalleryView();
+    }
+
+    function selectGalleryPageVideos() {
+      const pageItems = state._galleryCurrentPageItems || [];
+      if (!pageItems.length) return;
+      const allOnPageSelected = pageItems.every((o) => state._gallerySelected.has(`${o.project_id}::${o.name}`));
+      pageItems.forEach((o) => {
+        const key = `${o.project_id}::${o.name}`;
+        if (allOnPageSelected) state._gallerySelected.delete(key);
+        else state._gallerySelected.add(key);
+      });
+      renderOutputGalleryView();
+    }
+
+    function clearGallerySelection() {
+      state._gallerySelected.clear();
+      renderOutputGalleryView();
+    }
+
+    function toggleGalleryVideoQuality(key) {
+      const o = state._galleryOutputsMap?.[key];
+      if (!o || o.review_360_status !== 'ready' || !o.review_360_stream_url) return;
+      const cur = state._galleryQualityMap[key] || '360p';
+      state._galleryQualityMap[key] = cur === '360p' ? '4k' : '360p';
+      renderOutputGalleryView();
+    }
+
+    function getFilteredSortedGalleryOutputs(rawOutputs) {
+      const q = String(document.getElementById('gallery-search')?.value || '').trim().toLowerCase();
+      const aspect = document.getElementById('gallery-filter-aspect')?.value || 'all';
+      const sortBy = document.getElementById('gallery-sort')?.value || 'newest';
+
+      let list = (rawOutputs || []).filter((o) => {
+        if (q) {
+          const hay = `${o.name || ''} ${o.project_name || ''} ${o.project_id || ''}`.toLowerCase();
+          if (!hay.includes(q)) return false;
+        }
+        if (aspect === '9:16' && !(Number(o.height || 0) > Number(o.width || 0))) return false;
+        if (aspect === '16:9' && !(Number(o.width || 0) >= Number(o.height || 0))) return false;
+        if (aspect === 'has_360p' && o.review_360_status !== 'ready') return false;
+        return true;
+      });
+
+      list = [...list].sort((a, b) => {
+        if (sortBy === 'largest') return Number(b.size_mb || 0) - Number(a.size_mb || 0);
+        if (sortBy === 'longest') return Number(b.duration_sec || 0) - Number(a.duration_sec || 0);
+        if (sortBy === 'name') return String(a.name || '').localeCompare(String(b.name || ''));
+        return Number(b.mtime || 0) - Number(a.mtime || 0);
+      });
+      return list;
+    }
+
+    function renderOutputGalleryView() {
+      const res = state._galleryData;
+      if (!res) return;
+      const projectId = state.galleryProjectId || 'all';
+      const projs = res.projects || [];
+      const rawOutputs = res.outputs || [];
+      const photoGroups = res.photo_groups || [];
+      const totalPhotosAll = projs.reduce((acc, p) => acc + Number(p.photo_count || 0), 0);
+      const totalAll = projs.reduce((acc, p) => acc + Number(p.output_count || 0), 0);
+
+      const cntEl = document.getElementById('cnt-tab6');
+      const cntHdrEl = document.getElementById('cnt-header-outputs');
+      if (cntEl) cntEl.textContent = totalAll > 0 ? `(${totalAll})` : '';
+      if (cntHdrEl) cntHdrEl.textContent = totalAll > 0 ? `(${totalAll})` : '';
+
+      const pillsEl = document.getElementById('gallery-project-pills');
+      if (pillsEl) {
+        const allCls = projectId === 'all'
+          ? 'bg-indigo-600 text-white border-indigo-500'
+          : 'bg-zinc-900 text-zinc-300 border-zinc-700 hover:bg-zinc-800';
+        const nonEmpty = projs.filter((p) => Number(p.output_count || 0) > 0 || Number(p.photo_count || 0) > 0 || p.id === projectId);
+        const emptyCount = Math.max(0, projs.length - nonEmpty.length);
+        const shownProjs = state._galleryShowEmptyProjects ? projs : nonEmpty;
+        const pillsHtml = [
+          `<button type="button" onclick="selectGalleryProject('all')" class="px-3 py-1.5 rounded-xl border font-medium transition ${allCls}">📂 Tất cả Project (${totalAll}${totalPhotosAll > 0 ? ` · 📸${totalPhotosAll}` : ''})</button>`,
+          ...shownProjs.map((p) => {
+            const active = projectId === p.id;
+            const cls = active
+              ? 'bg-indigo-600 text-white border-indigo-500'
+              : 'bg-zinc-900 text-zinc-300 border-zinc-700 hover:bg-zinc-800';
+            const pc = Number(p.photo_count || 0);
+            return `<button type="button" onclick="selectGalleryProject('${escapeHtml(p.id)}')" class="px-3 py-1.5 rounded-xl border font-medium transition ${cls}">📁 ${escapeHtml(p.name || p.id)} (${p.output_count || 0}${pc > 0 ? ` · 📸${pc}` : ''})</button>`;
+          }),
+        ];
+        if (emptyCount > 0) {
+          pillsHtml.push(
+            `<button type="button" onclick="toggleGalleryEmptyProjects()" class="px-2.5 py-1.5 rounded-xl border border-dashed border-zinc-700 text-zinc-400 hover:text-zinc-200 hover:border-zinc-500 transition">${state._galleryShowEmptyProjects ? '🔼 Ẩn project trống' : `+ ${emptyCount} trống`}</button>`
+          );
+        }
+        pillsEl.innerHTML = pillsHtml.join('');
+      }
+
+      const viewMode = state._galleryViewMode || 'all';
+      ['all', 'videos', 'photos'].forEach((m) => {
+        const b = document.getElementById(`gal-view-${m}`);
+        if (!b) return;
+        const active = viewMode === m;
+        b.className = `px-2.5 py-1 rounded-lg border font-semibold transition ${
+          active
+            ? 'bg-indigo-600 text-white border-indigo-500'
+            : 'bg-zinc-900 text-zinc-300 border-zinc-700 hover:bg-zinc-800'
+        }`;
+      });
+
+      const zipBtn = document.getElementById('btn-gallery-zip');
+      if (zipBtn) zipBtn.classList.toggle('hidden', projectId === 'all' || !rawOutputs.length);
+
+      const clearAllBtn = document.getElementById('btn-gallery-clear-all');
+      if (clearAllBtn) {
+        clearAllBtn.classList.toggle('hidden', !rawOutputs.length);
+        clearAllBtn.textContent = projectId === 'all'
+          ? `🗑️ Xóa hết (${rawOutputs.length} video)`
+          : `🗑️ Xóa hết Project (${rawOutputs.length})`;
+      }
+
+      const filtered = getFilteredSortedGalleryOutputs(rawOutputs);
+      const totalMb = filtered.reduce((acc, o) => acc + Number(o.size_mb || 0), 0);
+      const storageBadge = document.getElementById('gallery-storage-badge');
+      if (storageBadge) {
+        storageBadge.textContent = `${filtered.length} video · ${formatStorageSize(totalMb)}`;
+      }
+
+      let selMb = 0;
+      state._gallerySelected.forEach((k) => {
+        const item = state._galleryOutputsMap?.[k];
+        if (item) selMb += Number(item.size_mb || 0);
+      });
+      const selCount = state._gallerySelected.size;
+      const delSelBtn = document.getElementById('btn-gallery-del-selected');
+      const clearSelBtn = document.getElementById('btn-gallery-clear-sel');
+      if (delSelBtn) {
+        delSelBtn.classList.toggle('hidden', selCount === 0);
+        delSelBtn.textContent = `🗑️ Xóa ${selCount} đã chọn (${formatStorageSize(selMb)})`;
+      }
+      if (clearSelBtn) clearSelBtn.classList.toggle('hidden', selCount === 0);
+
+      const grid = document.getElementById('gallery-output-grid');
+      const pagEl = document.getElementById('gallery-pagination');
+      const showVideos = viewMode !== 'photos';
+      const showPhotos = viewMode !== 'videos';
+
+      const pageSize = Math.max(1, Number(state._galleryPageSize || 9));
+      const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+      const curPage = Math.max(1, Math.min(totalPages, Number(state._galleryPage || 1)));
+      state._galleryPage = curPage;
+      const startIdx = (curPage - 1) * pageSize;
+      const pageItems = filtered.slice(startIdx, startIdx + pageSize);
+      state._galleryCurrentPageItems = pageItems;
+
+      if (grid) {
+        grid.classList.toggle('hidden', !showVideos);
+        if (showVideos) {
+          grid.innerHTML = pageItems.length
+            ? pageItems.map((o) => {
+                const key = `${o.project_id}::${o.name}`;
+                const isSel = state._gallerySelected.has(key);
+                const has360 = o.review_360_status === 'ready' && !!o.review_360_stream_url;
+                const activeQ = has360 ? (state._galleryQualityMap[key] || '360p') : '4k';
+                const playUrl = (activeQ === '360p' && has360) ? o.review_360_stream_url : o.stream_url;
+                const safeKey = escapeHtml(key).replace(/'/g, '&#39;');
+                return `
+                  <div class="rounded-xl bg-zinc-900 border ${isSel ? 'border-rose-500 ring-1 ring-rose-500/60' : 'border-zinc-800'} overflow-hidden flex flex-col transition">
+                    <div class="relative bg-black">
+                      <video src="${playUrl}" ${o.thumbnail_url ? `poster="${escapeHtml(o.thumbnail_url)}"` : ''} controls playsinline preload="none" class="w-full h-60 bg-black object-contain"></video>
+                      <label class="absolute top-2 left-2 flex items-center gap-1 px-2 py-1 rounded-lg bg-black/75 border ${isSel ? 'border-rose-400 text-rose-200' : 'border-zinc-600/80 text-zinc-200'} text-[10px] font-semibold cursor-pointer select-none shadow">
+                        <input type="checkbox" ${isSel ? 'checked' : ''} onchange="toggleGallerySelectVideo('${safeKey}')" class="rounded bg-zinc-800 border-zinc-500 text-rose-500" />
+                        <span>Chọn</span>
+                      </label>
+                      ${has360 ? `<button type="button" onclick="toggleGalleryVideoQuality('${safeKey}')" title="Chuyển chất lượng xem thử 360p / 4K" class="absolute top-2 right-2 px-2 py-1 rounded-lg bg-black/75 hover:bg-black/90 border border-cyan-500/45 text-[10px] font-semibold text-cyan-200 shadow">${activeQ === '360p' ? '⚡ Đang phát 360p → 4K' : '🎬 Đang phát 4K → 360p'}</button>` : ''}
+                    </div>
+                    <div class="p-3 space-y-2 text-xs">
+                      <div class="flex items-center justify-between gap-2">
+                        <span class="px-2 py-0.5 rounded-md bg-indigo-500/20 border border-indigo-500/35 text-indigo-200 text-[10px] font-semibold truncate">${escapeHtml(o.project_name)}</span>
+                        <span class="mono text-[11px] text-zinc-400 shrink-0">${o.duration_sec}s · ${o.size_mb} MB</span>
+                      </div>
+                      <div class="font-medium text-zinc-100 truncate" title="${escapeHtml(o.name)}">${escapeHtml(o.name)}</div>
+                      <div class="flex items-center justify-between gap-1.5 text-[10px] text-zinc-400 bg-zinc-950/80 border border-zinc-800 rounded-lg px-2 py-1">
+                        <span class="truncate">${o.render_meta ? `🎙️ ${escapeHtml(o.render_meta.voice_preset || '')} · 🎵 ${escapeHtml((o.render_meta.bgm_track || '').replace('bgm_', '').replace('.wav', ''))}` : 'Chưa có SEO & Thumbnail'}</span>
+                        <div class="flex items-center gap-2 shrink-0">
+                          ${o.thumbnail_ready ? `<button type="button" onclick="triggerFileDownload('${escapeHtml(o.thumbnail_rel_path)}', '${escapeHtml(o.project_id)}')" class="text-amber-300 hover:text-amber-200 font-semibold">🖼️ Thumb</button>` : ''}
+                          <button type="button" onclick="openOutputMetaModal('${escapeHtml(o.project_id)}', '${escapeHtml(o.name)}')" class="text-cyan-300 hover:text-cyan-200 font-semibold">📋 Cấu hình &amp; Copy</button>
+                        </div>
+                      </div>
+                      <div class="grid grid-cols-2 gap-1.5">
+                        <button type="button" onclick="triggerFileDownload('${escapeHtml(o.rel_path)}', '${escapeHtml(o.project_id)}')" class="py-1.5 px-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold truncate">⬇️ Tải MP4</button>
+                        <button type="button" onclick="shareOrSaveVideoMobile('${escapeHtml(o.rel_path)}', '${escapeHtml(o.name)}', '${escapeHtml(o.project_id)}')" class="py-1.5 px-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold truncate">📲 Lưu iPhone</button>
+                        ${o.review_360_status === 'ready'
+                          ? `<button type="button" onclick="triggerFileDownload('${escapeHtml(o.review_360_rel_path)}', '${escapeHtml(o.project_id)}')" class="py-1.5 px-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-semibold truncate">⬇️ 360p (${o.review_360_size_mb}MB)</button>
+                             <button type="button" onclick="shareOrSaveVideoMobile('${escapeHtml(o.review_360_rel_path)}', '${escapeHtml(o.name.replace(/\\.mp4$/i, '_360p.mp4'))}', '${escapeHtml(o.project_id)}')" class="py-1.5 px-2 rounded-lg bg-teal-600 hover:bg-teal-500 text-white font-semibold truncate">📲 Lưu 360p</button>`
+                          : (o.review_360_status === 'running'
+                            ? `<button type="button" disabled class="col-span-2 py-1.5 px-2 rounded-lg bg-amber-600/25 border border-amber-500/40 text-amber-200 font-semibold cursor-wait truncate">⏳ Đang nén 360p...</button>`
+                            : `<button type="button" onclick="prepareReview360('${escapeHtml(o.project_id)}', '${escapeHtml(o.name)}')" class="col-span-2 py-1.5 px-2 rounded-lg bg-cyan-500/15 hover:bg-cyan-500/30 border border-cyan-500/35 text-cyan-200 font-semibold truncate">⚙️ Tạo 360p (Review)</button>`)
+                        }
+                        <button type="button" onclick="openProjectOutputInExplorer('${escapeHtml(o.project_id)}', '${escapeHtml(o.rel_path)}')" class="py-1.5 px-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 truncate">📂 Thư mục</button>
+                        <button type="button" onclick="deleteGalleryVideo('${escapeHtml(o.project_id)}', '${escapeHtml(o.name)}')" class="py-1.5 px-2 rounded-lg bg-rose-500/15 hover:bg-rose-500/30 text-rose-300 truncate">🗑️ Xóa</button>
+                      </div>
+                    </div>
+                  </div>`;
+              }).join('')
+            : '<div class="col-span-full p-8 text-center text-xs text-zinc-500 border border-dashed border-zinc-800 rounded-xl">Không có video nào khớp bộ lọc hiện tại.</div>';
+        }
+      }
+
+      if (pagEl) {
+        const showPag = showVideos && totalPages > 1;
+        pagEl.classList.toggle('hidden', !showPag);
+        pagEl.classList.toggle('flex', showPag);
+        if (showPag) {
+          pagEl.innerHTML = `
+            <span class="text-zinc-400">Hiển thị <b class="text-zinc-200">${startIdx + 1}–${Math.min(startIdx + pageItems.length, filtered.length)}</b> / ${filtered.length} video</span>
+            <div class="flex items-center gap-1.5">
+              <button type="button" onclick="setGalleryPage(${curPage - 1})" ${curPage <= 1 ? 'disabled' : ''} class="px-3 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-200 disabled:opacity-40">◀ Trước</button>
+              <span class="px-2.5 py-1 rounded-lg bg-zinc-900 border border-zinc-800 text-zinc-200 mono">Trang ${curPage} / ${totalPages}</span>
+              <button type="button" onclick="setGalleryPage(${curPage + 1})" ${curPage >= totalPages ? 'disabled' : ''} class="px-3 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-zinc-200 disabled:opacity-40">Sau ▶</button>
+            </div>`;
+        }
+      }
+
+      renderGalleryPhotoGroups(photoGroups);
+      const secPhotos = document.getElementById('gallery-photos-section');
+      const wrapPhotos = document.getElementById('gallery-photos-groups');
+      if (secPhotos) {
+        if (!showPhotos) {
+          secPhotos.classList.add('hidden');
+        } else if (viewMode === 'photos') {
+          secPhotos.classList.remove('hidden');
+          if (!photoGroups.length && wrapPhotos) {
+            wrapPhotos.innerHTML = '<div class="p-8 text-center text-xs text-zinc-500 border border-dashed border-zinc-800 rounded-xl">Chưa có ảnh đẹp nào được cắt trong Project này.</div>';
+          }
+        }
+      }
+    }
+
     async function loadOutputGallery(projectId = state.galleryProjectId || 'all') {
       state.galleryProjectId = projectId;
       try {
         const res = await api(`/api/projects/outputs?project_id=${encodeURIComponent(projectId)}`);
-        const projs = res.projects || [];
         const outputs = res.outputs || [];
-        const photoGroups = res.photo_groups || [];
-        const totalPhotosAll = projs.reduce((acc, p) => acc + Number(p.photo_count || 0), 0);
-        const totalAll = projs.reduce((acc, p) => acc + Number(p.output_count || 0), 0);
-        const cntEl = document.getElementById('cnt-tab6');
-        const cntHdrEl = document.getElementById('cnt-header-outputs');
-        if (cntEl) cntEl.textContent = totalAll > 0 ? `(${totalAll})` : '';
-        if (cntHdrEl) cntHdrEl.textContent = totalAll > 0 ? `(${totalAll})` : '';
-
-        const pillsEl = document.getElementById('gallery-project-pills');
-        if (pillsEl) {
-          const allCls = projectId === 'all'
-            ? 'bg-indigo-600 text-white border-indigo-500'
-            : 'bg-zinc-900 text-zinc-300 border-zinc-700 hover:bg-zinc-800';
-          pillsEl.innerHTML = [
-            `<button type="button" onclick="selectGalleryProject('all')" class="px-3 py-1.5 rounded-xl border font-medium transition ${allCls}">📂 Tất cả Project (${totalAll}${totalPhotosAll > 0 ? ` · 📸${totalPhotosAll}` : ''})</button>`,
-            ...projs.map((p) => {
-              const active = projectId === p.id;
-              const cls = active
-                ? 'bg-indigo-600 text-white border-indigo-500'
-                : 'bg-zinc-900 text-zinc-300 border-zinc-700 hover:bg-zinc-800';
-              const pc = Number(p.photo_count || 0);
-              return `<button type="button" onclick="selectGalleryProject('${escapeHtml(p.id)}')" class="px-3 py-1.5 rounded-xl border font-medium transition ${cls}">📁 ${escapeHtml(p.name || p.id)} (${p.output_count || 0}${pc > 0 ? ` · 📸${pc}` : ''})</button>`;
-            }),
-          ].join('');
-        }
-
-        const zipBtn = document.getElementById('btn-gallery-zip');
-        if (zipBtn) {
-          zipBtn.classList.toggle('hidden', projectId === 'all' || !outputs.length);
-        }
-
-        const grid = document.getElementById('gallery-output-grid');
+        state._galleryData = res;
         state._galleryOutputsMap = {};
         outputs.forEach((o) => { state._galleryOutputsMap[`${o.project_id}::${o.name}`] = o; });
-        if (grid) {
-          grid.innerHTML = outputs.length
-            ? outputs.map((o) => `
-              <div class="rounded-xl bg-zinc-900 border border-zinc-800 overflow-hidden flex flex-col">
-                <video src="${o.stream_url}" ${o.thumbnail_url ? `poster="${escapeHtml(o.thumbnail_url)}"` : ''} controls playsinline preload="none" class="w-full h-60 bg-black object-contain"></video>
-                <div class="p-3 space-y-2 text-xs">
-                  <div class="flex items-center justify-between gap-2">
-                    <span class="px-2 py-0.5 rounded-md bg-indigo-500/20 border border-indigo-500/35 text-indigo-200 text-[10px] font-semibold truncate">${escapeHtml(o.project_name)}</span>
-                    <span class="mono text-[11px] text-zinc-400 shrink-0">${o.duration_sec}s · ${o.size_mb} MB</span>
-                  </div>
-                  <div class="font-medium text-zinc-100 truncate" title="${escapeHtml(o.name)}">${escapeHtml(o.name)}</div>
-                  <div class="flex items-center justify-between gap-1.5 text-[10px] text-zinc-400 bg-zinc-950/80 border border-zinc-800 rounded-lg px-2 py-1">
-                    <span class="truncate">${o.render_meta ? `🎙️ ${escapeHtml(o.render_meta.voice_preset || '')} · 🎵 ${escapeHtml((o.render_meta.bgm_track || '').replace('bgm_', '').replace('.wav', ''))}` : 'Chưa có SEO & Thumbnail'}</span>
-                    <div class="flex items-center gap-2 shrink-0">
-                      ${o.thumbnail_ready ? `<button type="button" onclick="triggerFileDownload('${escapeHtml(o.thumbnail_rel_path)}', '${escapeHtml(o.project_id)}')" class="text-amber-300 hover:text-amber-200 font-semibold">🖼️ Thumb</button>` : ''}
-                      <button type="button" onclick="openOutputMetaModal('${escapeHtml(o.project_id)}', '${escapeHtml(o.name)}')" class="text-cyan-300 hover:text-cyan-200 font-semibold">📋 Cấu hình &amp; Copy</button>
-                    </div>
-                  </div>
-                  <div class="grid grid-cols-2 gap-1.5">
-                    <button type="button" onclick="triggerFileDownload('${escapeHtml(o.rel_path)}', '${escapeHtml(o.project_id)}')" class="py-1.5 px-2 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white font-semibold truncate">⬇️ Tải MP4</button>
-                    <button type="button" onclick="shareOrSaveVideoMobile('${escapeHtml(o.rel_path)}', '${escapeHtml(o.name)}', '${escapeHtml(o.project_id)}')" class="py-1.5 px-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold truncate">📲 Lưu iPhone</button>
-                    ${o.review_360_status === 'ready'
-                      ? `<button type="button" onclick="triggerFileDownload('${escapeHtml(o.review_360_rel_path)}', '${escapeHtml(o.project_id)}')" class="py-1.5 px-2 rounded-lg bg-cyan-600 hover:bg-cyan-500 text-white font-semibold truncate">⬇️ 360p (${o.review_360_size_mb}MB)</button>
-                         <button type="button" onclick="shareOrSaveVideoMobile('${escapeHtml(o.review_360_rel_path)}', '${escapeHtml(o.name.replace(/\\.mp4$/i, '_360p.mp4'))}', '${escapeHtml(o.project_id)}')" class="py-1.5 px-2 rounded-lg bg-teal-600 hover:bg-teal-500 text-white font-semibold truncate">📲 Lưu 360p</button>`
-                      : (o.review_360_status === 'running'
-                        ? `<button type="button" disabled class="col-span-2 py-1.5 px-2 rounded-lg bg-amber-600/25 border border-amber-500/40 text-amber-200 font-semibold cursor-wait truncate">⏳ Đang nén 360p...</button>`
-                        : `<button type="button" onclick="prepareReview360('${escapeHtml(o.project_id)}', '${escapeHtml(o.name)}')" class="col-span-2 py-1.5 px-2 rounded-lg bg-cyan-500/15 hover:bg-cyan-500/30 border border-cyan-500/35 text-cyan-200 font-semibold truncate">⚙️ Tạo 360p (Review)</button>`)
-                    }
-                    <button type="button" onclick="openProjectOutputInExplorer('${escapeHtml(o.project_id)}', '${escapeHtml(o.rel_path)}')" class="py-1.5 px-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-200 truncate">📂 Thư mục</button>
-                    <button type="button" onclick="deleteGalleryVideo('${escapeHtml(o.project_id)}', '${escapeHtml(o.name)}')" class="py-1.5 px-2 rounded-lg bg-rose-500/15 hover:bg-rose-500/30 text-rose-300 truncate">🗑️ Xóa</button>
-                  </div>
-                </div>
-              </div>`).join('')
-            : '<div class="col-span-full p-8 text-center text-xs text-zinc-500 border border-dashed border-zinc-800 rounded-xl">Chưa có video output nào trong Project này.</div>';
+
+        if (state._gallerySelected && state._gallerySelected.size > 0) {
+          for (const k of Array.from(state._gallerySelected)) {
+            if (!state._galleryOutputsMap[k]) state._gallerySelected.delete(k);
+          }
         }
-        renderGalleryPhotoGroups(photoGroups);
+
+        renderOutputGalleryView();
+
         if (state._r360PollTimer) {
           clearTimeout(state._r360PollTimer);
           state._r360PollTimer = null;
@@ -7841,8 +8101,60 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ project_id: pid, name }),
         });
+        state._gallerySelected?.delete(`${pid}::${name}`);
         toast(`Đã xóa ${name}.`, 'info');
         await loadOutputGallery(state.galleryProjectId);
+      } catch (e) {
+        toast(e.message, 'error');
+      }
+    }
+
+    async function deleteSelectedGalleryVideos() {
+      const keys = Array.from(state._gallerySelected || []);
+      if (!keys.length) return;
+      const items = keys.map((k) => {
+        const sep = k.indexOf('::');
+        return { project_id: k.slice(0, sep), name: k.slice(sep + 2) };
+      }).filter((x) => x.project_id && x.name);
+      if (!items.length) return;
+      if (!confirm(`Xóa ${items.length} video đã chọn (bao gồm bản 360p & thumbnail đi kèm)?\n(Ảnh đẹp đã cắt sẽ được giữ nguyên)`)) return;
+      try {
+        const res = await api('/api/projects/outputs/delete-batch', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ items }),
+        });
+        state._gallerySelected.clear();
+        toast(`Đã xóa ${res.deleted_count || 0} video (giải phóng ${formatStorageSize(res.freed_mb || 0)}).`, 'success');
+        await loadOutputGallery(state.galleryProjectId);
+      } catch (e) {
+        toast(e.message, 'error');
+      }
+    }
+
+    async function clearAllGalleryVideos() {
+      const pid = state.galleryProjectId || 'all';
+      const outputs = state._galleryData?.outputs || [];
+      if (!outputs.length) return;
+      const totalMb = outputs.reduce((acc, o) => acc + Number(o.size_mb || 0), 0);
+      if (pid === 'all') {
+        const typed = window.prompt(
+          `⚠️ CẢNH BÁO: Thao tác này sẽ xóa TOÀN BỘ ${outputs.length} video (${formatStorageSize(totalMb)}) của TẤT CẢ Project!\n` +
+          `(Ảnh đẹp đã cắt vẫn được giữ nguyên).\nGõ XOA để xác nhận xóa sạch:`
+        );
+        if (String(typed || '').trim().toUpperCase() !== 'XOA') return;
+      } else {
+        if (!confirm(`Xóa toàn bộ ${outputs.length} video (${formatStorageSize(totalMb)}) của Project "${pid}"?\n(Ảnh đẹp đã cắt trong best_photos vẫn được giữ nguyên)`)) return;
+      }
+      try {
+        const res = await api('/api/projects/outputs/delete-batch', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ delete_all_project_id: pid }),
+        });
+        state._gallerySelected.clear();
+        toast(`Đã dọn sạch ${res.deleted_count || 0} video (${formatStorageSize(res.freed_mb || 0)})!`, 'success');
+        await loadOutputGallery(pid);
       } catch (e) {
         toast(e.message, 'error');
       }

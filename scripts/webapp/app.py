@@ -8244,7 +8244,8 @@ def api_list_project_outputs(project_id: str = Query("all")):
             j_info = jobs_snap.get(j_key) or {}
             if r360.exists() and r360.is_file() and r360.stat().st_size > 1024:
                 r360_status = "ready"
-                r360_size = round(r360.stat().st_size / (1024 * 1024), 2)
+                r360_stat = r360.stat()
+                r360_size = round(r360_stat.st_size / (1024 * 1024), 2)
             elif j_info.get("status") == "running":
                 r360_status = "running"
                 r360_size = 0.0
@@ -8277,6 +8278,7 @@ def api_list_project_outputs(project_id: str = Query("all")):
                     "review_360_status": r360_status,
                     "review_360_size_mb": r360_size,
                     "review_360_rel_path": f"05_output/_review_360p/{r360.name}",
+                    "review_360_stream_url": f"/api/projects/outputs/stream?project_id={pid}&name={mp4.name}&quality=360p&t={int(r360_stat.st_mtime)}" if r360_status == "ready" else "",
                     "review_360_error": str(j_info.get("error") or ""),
                 }
             )
@@ -8301,12 +8303,16 @@ def api_list_project_outputs(project_id: str = Query("all")):
 
 
 @app.get("/api/projects/outputs/stream")
-def api_stream_project_output(project_id: str = Query(...), name: str = Query(...)):
+def api_stream_project_output(project_id: str = Query(...), name: str = Query(...), quality: str = "orig"):
     safe_name = Path(name).name
     if not safe_name or ".." in name or not safe_name.lower().endswith(".mp4"):
         raise HTTPException(status_code=400, detail="Tên file không hợp lệ.")
     p_root = get_project_root(project_id).resolve()
     fp = (p_root / "05_output" / safe_name).resolve()
+    if str(quality or "").strip().lower() == "360p":
+        r360 = _review_360_path(p_root, safe_name).resolve()
+        if r360.is_relative_to(p_root) and r360.exists() and r360.is_file() and r360.stat().st_size > 1024:
+            return FileResponse(path=str(r360), media_type="video/mp4")
     if not fp.is_relative_to(p_root) or not fp.exists() or not fp.is_file():
         raise HTTPException(status_code=404, detail="Không tìm thấy video output.")
     return FileResponse(path=str(fp), media_type="video/mp4")
@@ -8424,6 +8430,25 @@ def api_generate_project_output_meta(payload: dict[str, Any]):
     }
 
 
+def _delete_single_output_file(p_root: Path, name: str) -> tuple[bool, int]:
+    safe_name = Path(str(name or "")).name
+    if not safe_name or ".." in str(name or ""):
+        return False, 0
+    fp = (p_root / "05_output" / safe_name).resolve()
+    if not fp.is_relative_to(p_root) or not fp.exists() or not fp.is_file():
+        return False, 0
+    freed = 0
+    for cand_fp in (fp, _review_360_path(p_root, safe_name).resolve(), _thumb_path(p_root, safe_name).resolve()):
+        if cand_fp.is_relative_to(p_root) and cand_fp.exists() and cand_fp.is_file():
+            try:
+                freed += int(cand_fp.stat().st_size)
+            except Exception:
+                pass
+            cand_fp.unlink(missing_ok=True)
+    _remove_render_history(p_root / "04_workspace", safe_name)
+    return True, freed
+
+
 @app.post("/api/projects/outputs/delete")
 def api_delete_project_output(payload: dict[str, Any]):
     pid = str(payload.get("project_id") or "").strip()
@@ -8431,15 +8456,53 @@ def api_delete_project_output(payload: dict[str, Any]):
     if not pid or not name:
         raise HTTPException(status_code=400, detail="Thiếu project_id hoặc tên file.")
     p_root = get_project_root(pid).resolve()
-    fp = (p_root / "05_output" / name).resolve()
-    if not fp.is_relative_to(p_root) or not fp.exists() or not fp.is_file():
+    deleted, _ = _delete_single_output_file(p_root, name)
+    if not deleted:
         raise HTTPException(status_code=404, detail="Không tìm thấy file để xóa.")
-    fp.unlink()
-    r360 = _review_360_path(p_root, name)
-    if r360.exists() and r360.is_file():
-        r360.unlink(missing_ok=True)
-    t_fp = _thumb_path(p_root, name)
-    if t_fp.exists() and t_fp.is_file():
-        t_fp.unlink(missing_ok=True)
-    _remove_render_history(p_root / "04_workspace", name)
     return {"ok": True, "deleted": name, "project_id": pid}
+
+
+@app.post("/api/projects/outputs/delete-batch")
+def api_delete_project_outputs_batch(payload: dict[str, Any]):
+    items = payload.get("items")
+    delete_all_pid = str(payload.get("delete_all_project_id") or "").strip()
+    deleted_count = 0
+    freed_bytes = 0
+
+    if delete_all_pid:
+        if delete_all_pid == "all":
+            target_pids = [str(p.get("id") or "") for p in (pm_list_projects().get("projects") or []) if p.get("id")]
+        else:
+            target_pids = [delete_all_pid]
+        for pid in target_pids:
+            p_root = get_project_root(pid).resolve()
+            out_dir = p_root / "05_output"
+            if not out_dir.exists():
+                continue
+            for mp4 in list(out_dir.glob("*.mp4")):
+                if mp4.is_file():
+                    ok, sz = _delete_single_output_file(p_root, mp4.name)
+                    if ok:
+                        deleted_count += 1
+                        freed_bytes += sz
+    elif isinstance(items, list) and items:
+        for row in items:
+            if not isinstance(row, dict):
+                continue
+            pid = str(row.get("project_id") or "").strip()
+            name = str(row.get("name") or "").strip()
+            if not pid or not name:
+                continue
+            p_root = get_project_root(pid).resolve()
+            ok, sz = _delete_single_output_file(p_root, name)
+            if ok:
+                deleted_count += 1
+                freed_bytes += sz
+    else:
+        raise HTTPException(status_code=400, detail="Thiếu danh sách video hoặc project_id cần xóa.")
+
+    return {
+        "ok": True,
+        "deleted_count": int(deleted_count),
+        "freed_mb": round(float(freed_bytes) / (1024.0 * 1024.0), 2),
+    }
