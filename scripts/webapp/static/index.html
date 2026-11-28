@@ -543,7 +543,11 @@
             </div>
             <div>
               <label class="block text-[11px] text-zinc-400 mb-1">Nhạc Nền (BGM)</label>
-              <select id="auto-bgm-track" class="w-full rounded-lg bg-zinc-950 border border-zinc-700 px-2.5 py-1.5 text-xs text-zinc-100"></select>
+              <div class="flex items-center gap-1.5">
+                <select id="auto-bgm-track" class="flex-1 min-w-0 rounded-lg bg-zinc-950 border border-zinc-700 px-2.5 py-1.5 text-xs text-zinc-100"></select>
+                <button type="button" onclick="previewBgmTrack('auto-bgm-track')" title="Nghe thử nhạc nền đang chọn" class="px-2 py-1.5 rounded-lg bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-xs text-cyan-200 shrink-0">🔊</button>
+                <button type="button" onclick="openBgmUploadModal('auto-bgm-track')" title="Upload nhạc riêng (.mp3/.wav) & quản lý nhạc của bạn" class="px-2 py-1.5 rounded-lg bg-indigo-600/25 hover:bg-indigo-600/45 border border-indigo-500/45 text-xs text-indigo-200 shrink-0">⬆️ Upload</button>
+              </div>
             </div>
           </div>
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
@@ -728,6 +732,45 @@
         <div class="flex items-center gap-2 ml-auto">
           <button type="button" onclick="closeAutoPipelineModal()" class="px-4 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-xs text-zinc-200">Hủy</button>
           <button id="btn-confirm-auto-pipeline" type="button" onclick="confirmRunOneClickPipeline()" class="px-5 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-xs font-semibold text-white shadow-lg">✅ Xác nhận &amp; Bắt đầu Tạo Video</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Custom BGM Upload & Manager Modal -->
+  <div id="bgm-upload-modal" class="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm hidden items-center justify-center p-4" onclick="closeBgmUploadModal()">
+    <div class="w-full max-w-lg bg-studio-card border border-zinc-700 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[88vh]" onclick="event.stopPropagation()">
+      <div class="px-5 py-4 border-b border-zinc-800 flex items-center justify-between">
+        <div>
+          <h3 class="text-base font-semibold text-white">🎵 Kho Nhạc Nền Riêng (Upload BGM)</h3>
+          <p class="text-[11px] text-zinc-400">Upload file .mp3 / .wav / .m4a (tối đa 30MB) &amp; gắn Mood để AI ưu tiên chọn theo kịch bản</p>
+        </div>
+        <button type="button" onclick="closeBgmUploadModal()" class="px-2.5 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-xs text-zinc-300">Đóng</button>
+      </div>
+      <div class="p-5 space-y-4 text-xs overflow-y-auto">
+        <div class="space-y-3 p-3.5 rounded-xl bg-zinc-900/75 border border-zinc-800">
+          <div>
+            <label class="block text-zinc-300 font-medium mb-1">1. Chọn file nhạc (.mp3, .wav, .m4a)</label>
+            <input id="bgm-upload-file" type="file" accept=".mp3,.wav,.m4a,audio/*" class="w-full text-xs text-zinc-300 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:bg-indigo-600/30 file:text-indigo-200 hover:file:bg-indigo-600/50 cursor-pointer" />
+          </div>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+            <div>
+              <label class="block text-zinc-400 mb-1">2. Gắn Mood cho AI nhận diện</label>
+              <select id="bgm-upload-mood" class="w-full rounded-lg bg-zinc-950 border border-zinc-700 px-2.5 py-1.5 text-xs text-zinc-100"></select>
+            </div>
+            <div>
+              <label class="block text-zinc-400 mb-1">3. Tên hiển thị (tùy chọn)</label>
+              <input id="bgm-upload-label" type="text" placeholder="Vd: Nhạc Review Dịu Êm..." class="w-full rounded-lg bg-zinc-950 border border-zinc-700 px-2.5 py-1.5 text-xs text-zinc-100" />
+            </div>
+          </div>
+          <button id="btn-bgm-upload-submit" type="button" onclick="uploadCustomBgm()" class="w-full py-2 rounded-xl bg-gradient-to-r from-indigo-600 to-cyan-600 hover:from-indigo-500 hover:to-cyan-500 text-xs font-semibold text-white shadow">⬆️ Tải lên Kho Nhạc BGM</button>
+        </div>
+        <div class="space-y-2">
+          <div class="font-semibold text-zinc-300 flex items-center justify-between">
+            <span>⭐ Nhạc bạn đã Upload</span>
+            <span class="text-[11px] text-zinc-500">Kho sẵn có gồm 12 bản CC0 nhạc thật + 46 bản synth</span>
+          </div>
+          <div id="custom-bgm-list" class="space-y-1.5 max-h-52 overflow-y-auto"></div>
         </div>
       </div>
     </div>
@@ -2099,7 +2142,8 @@
                 <option value="bgm_chill_lofi.wav">🌿 Chill Lo-Fi Review (88 BPM · Không bản quyền)</option>
                 <option value="bgm_flash_sale.wav">⚡ Flash Sale Săn Deal (126 BPM · Không bản quyền)</option>
               </select>
-              <button type="button" onclick="previewBgmTrack()" class="px-3 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-xs text-cyan-200 whitespace-nowrap">🔊 Nghe</button>
+              <button type="button" onclick="previewBgmTrack('rm-bgm-track')" class="px-3 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 text-xs text-cyan-200 whitespace-nowrap">🔊 Nghe</button>
+              <button type="button" onclick="openBgmUploadModal('rm-bgm-track')" title="Upload nhạc riêng (.mp3/.wav)" class="px-3 py-2 rounded-xl bg-indigo-600/25 hover:bg-indigo-600/45 border border-indigo-500/45 text-xs text-indigo-200 whitespace-nowrap">⬆️ Upload</button>
             </div>
             <audio id="rm-bgm-preview-audio" class="hidden"></audio>
           </div>
@@ -3720,7 +3764,7 @@
       const color_preset = document.getElementById('rm-color-preset')?.value || 'natural';
       const creative_mode = document.getElementById('rm-creative-mode')?.value || 'breakthrough_ai';
       const camera_intensity = document.getElementById('rm-camera-intensity')?.value || 'dynamic_ai';
-      const bgm_track = document.getElementById('rm-bgm-track')?.value || 'bgm_upbeat_tiktok.wav';
+      const bgm_track = document.getElementById('rm-bgm-track')?.value || 'auto_ai';
       try {
         const res = await api('/api/workshop/select-script', {
           method: 'POST',
@@ -4387,7 +4431,7 @@
         color_preset: document.getElementById('rm-color-preset')?.value || 'natural',
         creative_mode: document.getElementById('rm-creative-mode')?.value || 'breakthrough_ai',
         camera_intensity: document.getElementById('rm-camera-intensity')?.value || 'dynamic_ai',
-        bgm_track: document.getElementById('rm-bgm-track')?.value || 'bgm_upbeat_tiktok.wav',
+        bgm_track: document.getElementById('rm-bgm-track')?.value || 'auto_ai',
         render_engine: document.getElementById('rm-render-engine')?.value || 'remotion_classic',
         innovation_preset: document.getElementById('rm-innovation-preset')?.value || 'kinetic_pop',
         transition_level: document.getElementById('rm-transition-level')?.value || 'balanced',
@@ -4403,8 +4447,12 @@
       };
     }
 
-    function previewBgmTrack() {
-      const sel = document.getElementById('rm-bgm-track')?.value || 'bgm_upbeat_tiktok.wav';
+    function previewBgmTrack(selectId = 'rm-bgm-track') {
+      const sel = document.getElementById(selectId)?.value || 'auto_ai';
+      if (sel === 'auto_ai') {
+        toast('🤖 Đang chọn AI Tự Chọn: Hệ thống sẽ tự phân tích kịch bản & Vibe để chọn bài CC0/nhạc riêng khớp nhất khi Tạo Video!', 'info');
+        return;
+      }
       const audio = document.getElementById('rm-bgm-preview-audio');
       if (!audio) return;
       const targetUrl = `/files/06_assets_audio/bgm/${encodeURIComponent(sel)}`;
@@ -5171,25 +5219,128 @@
       if (tab3Eng) tab3Eng.value = engine;
     }
 
-    function populateBgmSelects(tracks) {
+    state.bgmTracks = state.bgmTracks || [];
+    state.bgmMoodPresets = state.bgmMoodPresets || [];
+    state._bgmUploadTargetSelect = 'auto-bgm-track';
+
+    function populateBgmSelects(tracks, moodPresets = null) {
+      if (Array.isArray(moodPresets) && moodPresets.length) {
+        state.bgmMoodPresets = moodPresets;
+        const mSel = document.getElementById('bgm-upload-mood');
+        if (mSel) {
+          const curM = mSel.value;
+          mSel.innerHTML = moodPresets.map(m => `<option value="${escapeHtml(m.id)}">${escapeHtml(m.label)}</option>`).join('');
+          if (curM) mSel.value = curM;
+        }
+      }
       if (!Array.isArray(tracks) || !tracks.length) return;
-      const html = tracks.map(t => `<option value="${escapeHtml(t.id)}">${escapeHtml(t.label)}</option>`).join('');
+      state.bgmTracks = tracks;
+      const autoOpt = `<option value="auto_ai">🤖 AI Tự Chọn (Khớp Kịch bản &amp; Vibe)</option>`;
+      const html = autoOpt + tracks.map(t => `<option value="${escapeHtml(t.id)}">${escapeHtml(t.label)}</option>`).join('');
       for (const id of ['rm-bgm-track', 'auto-bgm-track']) {
         const el = document.getElementById(id);
         if (!el) continue;
         const cur = el.value;
         el.innerHTML = html;
-        if (cur && tracks.some(t => t.id === cur)) el.value = cur;
+        if (cur === 'auto_ai' || (cur && tracks.some(t => t.id === cur))) {
+          el.value = cur;
+        } else {
+          el.value = 'auto_ai';
+        }
       }
+      renderCustomBgmManager();
     }
 
     async function loadBgmTracks() {
       try {
         const res = await api('/api/bgm/tracks');
         if (Array.isArray(res?.bgm_tracks) && res.bgm_tracks.length) {
-          populateBgmSelects(res.bgm_tracks);
+          populateBgmSelects(res.bgm_tracks, res.mood_presets || null);
         }
       } catch (e) {}
+    }
+
+    function renderCustomBgmManager() {
+      const box = document.getElementById('custom-bgm-list');
+      if (!box) return;
+      const customTracks = (state.bgmTracks || []).filter(t => t.is_custom || String(t.id || '').startsWith('custom_'));
+      if (!customTracks.length) {
+        box.innerHTML = '<div class="text-zinc-500 text-center py-4 border border-dashed border-zinc-800 rounded-xl">Chưa có file nhạc riêng nào được upload.</div>';
+        return;
+      }
+      box.innerHTML = customTracks.map(t => `
+        <div class="flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-zinc-900 border border-zinc-800">
+          <div class="min-w-0">
+            <div class="text-zinc-100 font-medium truncate">${escapeHtml(t.label || t.id)}</div>
+            <div class="text-[10px] text-zinc-400 truncate">${escapeHtml(t.id)} · mood: ${escapeHtml(t.mood || 'review_upbeat')}</div>
+          </div>
+          <div class="flex items-center gap-1.5 shrink-0">
+            <button type="button" onclick="(function(){ const s=document.getElementById('rm-bgm-track'); if(s) s.value='${escapeHtml(t.id)}'; previewBgmTrack('rm-bgm-track'); })()" class="px-2 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-cyan-200">🔊</button>
+            <button type="button" onclick="deleteCustomBgmTrack('${escapeHtml(t.id)}')" class="px-2 py-1 rounded-lg bg-rose-500/15 hover:bg-rose-500/35 text-rose-300">🗑️</button>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    async function openBgmUploadModal(targetSelectId = 'auto-bgm-track') {
+      state._bgmUploadTargetSelect = targetSelectId;
+      await loadBgmTracks();
+      renderCustomBgmManager();
+      const m = document.getElementById('bgm-upload-modal');
+      if (m) {
+        m.classList.remove('hidden');
+        m.classList.add('flex');
+      }
+    }
+
+    function closeBgmUploadModal() {
+      const m = document.getElementById('bgm-upload-modal');
+      if (m) {
+        m.classList.add('hidden');
+        m.classList.remove('flex');
+      }
+    }
+
+    async function uploadCustomBgm() {
+      const fileInput = document.getElementById('bgm-upload-file');
+      const f = fileInput?.files?.[0];
+      if (!f) return toast('Vui lòng chọn file nhạc (.mp3, .wav, .m4a)!', 'warn');
+      const mood = document.getElementById('bgm-upload-mood')?.value || 'review_upbeat';
+      const label = document.getElementById('bgm-upload-label')?.value?.trim() || '';
+      const btn = document.getElementById('btn-bgm-upload-submit');
+      if (btn) { btn.disabled = true; btn.textContent = '⏳ Đang tải lên...'; }
+      try {
+        const fd = new FormData();
+        fd.append('file', f);
+        fd.append('mood', mood);
+        fd.append('label', label);
+        const res = await fetch('/api/bgm/upload', { method: 'POST', body: fd });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data?.detail || 'Upload nhạc thất bại.');
+        populateBgmSelects(data.bgm_tracks || [], data.mood_presets || null);
+        const targetId = state._bgmUploadTargetSelect || 'auto-bgm-track';
+        const targetEl = document.getElementById(targetId);
+        if (targetEl && data.track?.id) targetEl.value = data.track.id;
+        if (fileInput) fileInput.value = '';
+        const lblEl = document.getElementById('bgm-upload-label');
+        if (lblEl) lblEl.value = '';
+        toast(`✅ Đã upload "${data.track?.label || f.name}" vào Kho Nhạc BGM!`, 'success');
+      } catch (e) {
+        toast(e.message, 'error');
+      } finally {
+        if (btn) { btn.disabled = false; btn.textContent = '⬆️ Tải lên Kho Nhạc BGM'; }
+      }
+    }
+
+    async function deleteCustomBgmTrack(trackId) {
+      if (!trackId) return;
+      try {
+        const res = await api(`/api/bgm/${encodeURIComponent(trackId)}`, { method: 'DELETE' });
+        populateBgmSelects(res.bgm_tracks || [], res.mood_presets || null);
+        toast('🗑️ Đã xóa bài nhạc khỏi Kho Nhạc Riêng.', 'info');
+      } catch (e) {
+        toast(e.message, 'error');
+      }
     }
 
     async function openAutoPipelineModal() {
@@ -5259,7 +5410,7 @@
       const innoPreset = document.getElementById('auto-innovation-preset')?.value || 'kinetic_pop';
       const transLevel = document.getElementById('auto-transition-level')?.value || 'balanced';
       const themeVal = document.getElementById('auto-badge-theme')?.value || 'auto';
-      const bgmVal = document.getElementById('auto-bgm-track')?.value || 'bgm_upbeat_tiktok.wav';
+      const bgmVal = document.getElementById('auto-bgm-track')?.value || 'auto_ai';
       const batchMode = state.pipelineCategory === 'long_vlog' ? 'single' : (document.querySelector('input[name="auto-batch-mode"]:checked')?.value || 'single');
 
       // Sync back to Tab 3 controls
@@ -5535,7 +5686,7 @@
         sticker_density: document.getElementById('auto-sticker-density')?.value || 'normal',
         sticker_style: document.getElementById('auto-sticker-style')?.value || 'pill_minimal',
         visual_theme: document.getElementById('auto-badge-theme')?.value || 'auto',
-        bgm_track: document.getElementById('auto-bgm-track')?.value || 'bgm_upbeat_tiktok.wav',
+        bgm_track: document.getElementById('auto-bgm-track')?.value || 'auto_ai',
         preserve_clips: !!document.getElementById('chk-preserve-clips')?.checked,
         regenerate_script: !!document.getElementById('chk-pipeline-regen')?.checked,
         mute_voice: !!document.getElementById('chk-mute-voice')?.checked,
@@ -6236,7 +6387,7 @@
       const color_preset = document.getElementById('rm-color-preset')?.value || 'natural';
       const creative_mode = document.getElementById('rm-creative-mode')?.value || 'breakthrough_ai';
       const camera_intensity = document.getElementById('rm-camera-intensity')?.value || 'dynamic_ai';
-      const bgm_track = document.getElementById('rm-bgm-track')?.value || 'bgm_upbeat_tiktok.wav';
+      const bgm_track = document.getElementById('rm-bgm-track')?.value || 'auto_ai';
       const render_engine = document.getElementById('rm-render-engine')?.value || 'remotion_classic';
       const innovation_preset = document.getElementById('rm-innovation-preset')?.value || 'kinetic_pop';
       const transition_level = document.getElementById('auto-transition-level')?.value || 'balanced';

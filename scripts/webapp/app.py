@@ -46,7 +46,14 @@ SCRIPTS_DIR = PROJECT_ROOT / "scripts"
 if str(SCRIPTS_DIR) not in sys.path:
     sys.path.insert(0, str(SCRIPTS_DIR))
 
-from audio_bgm import ensure_royalty_free_bgm_library
+from audio_bgm import (
+    BGM_MOOD_PRESETS,
+    DIR_BGM,
+    delete_custom_bgm,
+    ensure_royalty_free_bgm_library,
+    register_custom_bgm,
+    select_ai_bgm_track,
+)
 from style_dna import (
     FILE_CRITIC_REPORT,
     FILE_SCRIPT_OPTIONS,
@@ -1197,7 +1204,7 @@ class OneClickPipelineReq(BaseModel):
     color_preset: str = "natural"
     creative_mode: str = "breakthrough_ai"
     camera_intensity: str = "dynamic_ai"
-    bgm_track: str = "bgm_upbeat_tiktok.wav"
+    bgm_track: str = "auto_ai"
     render_engine: str = "remotion_classic"
     innovation_preset: str = "kinetic_pop"
     transition_level: str = "balanced"
@@ -4662,7 +4669,100 @@ def api_openreel_start():
 # ---------------------------------------------------------------------------
 
 
-def _apply_remotion_req_to_overrides(req: RemotionRenderReq) -> dict[str, Any]:
+def _recent_rendered_bgm_tracks(ws_dir: Path, limit: int = 4) -> list[str]:
+    hist_p = ws_dir / "render_history.json"
+    if not hist_p.exists():
+        return []
+    try:
+        loaded = json.loads(hist_p.read_text(encoding="utf-8-sig"))
+        if not isinstance(loaded, dict):
+            return []
+        entries = [v for v in loaded.values() if isinstance(v, dict) and str(v.get("bgm_track") or "").strip()]
+        entries.sort(key=lambda x: str(x.get("created_at") or ""), reverse=True)
+        return [str(x["bgm_track"]).strip() for x in entries[:limit]]
+    except Exception:
+        return []
+
+
+def _resolve_pipeline_bgm_track(
+    bgm_track: str,
+    *,
+    script_text: str = "",
+    content_vibe: str = "learned_dna",
+    pacing_preset: str = "auto",
+    pipeline_category: str = "short_tiktok",
+    title: str = "",
+    product_note: str = "",
+    extra_recent: list[str] | None = None,
+    use_ai: bool = True,
+    log_to_pipeline: bool = True,
+) -> tuple[str, dict[str, Any] | None]:
+    raw_bgm = str(bgm_track or "").strip()
+    if raw_bgm and raw_bgm != "auto_ai":
+        cand = DIR_BGM / Path(raw_bgm).name
+        if cand.exists() and cand.is_file():
+            return cand.name, None
+
+    if raw_bgm in ("", "auto_ai"):
+        recent = _recent_rendered_bgm_tracks(DIR_WORKSPACE, limit=4)
+        if extra_recent:
+            recent = [str(x) for x in extra_recent if str(x).strip()] + recent
+        cfg = load_config()
+        api_key = str(cfg.get("gemini_api_key") or "").strip() if use_ai else ""
+        agy_caller = None
+        if use_ai and find_agy_executable():
+            agy_model = str(cfg.get("agy_model") or "").strip() or None
+            agy_effort = str(cfg.get("agy_effort") or "").strip() or None
+            agy_caller = lambda p: str(
+                call_agy_cli(
+                    p,
+                    model=agy_model,
+                    effort=agy_effort,
+                    mode="auto",
+                    disable_slash_commands=True,
+                    timeout=35,
+                ).get("response")
+                or ""
+            )
+        pick = select_ai_bgm_track(
+            script_text=script_text,
+            content_vibe=content_vibe,
+            pacing_preset=pacing_preset,
+            pipeline_category=pipeline_category,
+            title=title,
+            product_note=product_note,
+            recent_tracks=recent,
+            gemini_api_key=api_key,
+            agy_caller=agy_caller,
+        )
+        picked_id = str(pick.get("track_id") or "bgm_upbeat_tiktok.wav")
+        if log_to_pipeline:
+            src_lbl = "AI" if pick.get("source") == "ai" else "Tự động"
+            _update_pipeline(
+                log_line=f"[AI BGM · {src_lbl}] Chọn `{picked_id}` ({pick.get('reason') or 'khớp kịch bản & vibe'})."
+            )
+        return picked_id, pick
+
+    for fb in ("cc0_review_upbeat_clean.mp3", "bgm_upbeat_tiktok.wav"):
+        if (DIR_BGM / fb).exists():
+            return fb, None
+    tracks = ensure_royalty_free_bgm_library()
+    return (tracks[0]["id"] if tracks else "bgm_upbeat_tiktok.wav"), None
+
+
+def _apply_remotion_req_to_overrides(req: RemotionRenderReq, resolve_ai: bool = False) -> dict[str, Any]:
+    raw_bgm = str(req.bgm_track or "auto_ai").strip()
+    eff_bgm = raw_bgm
+    if raw_bgm in ("", "auto_ai"):
+        script_txt = FILE_SCRIPT.read_text(encoding="utf-8-sig") if FILE_SCRIPT.exists() else ""
+        eff_bgm, _ = _resolve_pipeline_bgm_track(
+            raw_bgm,
+            script_text=script_txt,
+            content_vibe=req.content_vibe,
+            pipeline_category="short_tiktok",
+            use_ai=resolve_ai,
+            log_to_pipeline=False,
+        )
     ov: dict[str, Any] = {
         "badge_style": req.badge_style,
         "visual_theme": req.visual_theme,
@@ -4670,7 +4770,7 @@ def _apply_remotion_req_to_overrides(req: RemotionRenderReq) -> dict[str, Any]:
         "color_preset": req.color_preset,
         "creative_mode": req.creative_mode,
         "camera_intensity": req.camera_intensity,
-        "bgm_track": req.bgm_track,
+        "bgm_track": eff_bgm,
         "hook_y": req.hook_y,
         "subtitle_active_color": req.subtitle_active_color,
         "render_engine": req.render_engine,
@@ -4704,7 +4804,7 @@ def _apply_remotion_req_to_overrides(req: RemotionRenderReq) -> dict[str, Any]:
             "color_preset": req.color_preset,
             "creative_mode": req.creative_mode,
             "camera_intensity": req.camera_intensity,
-            "bgm_track": req.bgm_track,
+            "bgm_track": eff_bgm,
             "hook_y": req.hook_y,
             "subtitle_active_color": req.subtitle_active_color,
             "render_engine": req.render_engine,
@@ -5656,7 +5756,59 @@ def api_style_vibes():
 
 @app.get("/api/bgm/tracks")
 def api_bgm_tracks():
-    return {"ok": True, "bgm_tracks": ensure_royalty_free_bgm_library()}
+    return {
+        "ok": True,
+        "bgm_tracks": ensure_royalty_free_bgm_library(),
+        "mood_presets": list(BGM_MOOD_PRESETS.values()),
+    }
+
+
+@app.post("/api/bgm/upload")
+async def api_bgm_upload(
+    file: UploadFile = File(...),
+    mood: str = Form("review_upbeat"),
+    label: str = Form(""),
+):
+    import uuid as _uuid
+
+    orig_name = Path(file.filename or "bgm.mp3").name
+    ext = Path(orig_name).suffix.lower()
+    if ext not in (".mp3", ".wav", ".m4a"):
+        raise HTTPException(status_code=400, detail="Chỉ hỗ trợ file nhạc .mp3, .wav hoặc .m4a.")
+
+    raw_bytes = await file.read()
+    if not raw_bytes:
+        raise HTTPException(status_code=400, detail="File nhạc rỗng.")
+    if len(raw_bytes) > 30 * 1024 * 1024:
+        raise HTTPException(status_code=400, detail="File nhạc vượt quá giới hạn 30 MB.")
+
+    stem_slug = re.sub(r"[^a-zA-Z0-9_-]+", "_", Path(orig_name).stem).strip("_").lower()[:36] or "track"
+    dest_name = f"custom_{stem_slug}_{_uuid.uuid4().hex[:6]}{ext}"
+    DIR_BGM.mkdir(parents=True, exist_ok=True)
+    (DIR_BGM / dest_name).write_bytes(raw_bytes)
+
+    entry = register_custom_bgm(dest_name, label=label or Path(orig_name).stem, mood=mood)
+    return {
+        "ok": True,
+        "track": entry,
+        "bgm_tracks": ensure_royalty_free_bgm_library(),
+        "mood_presets": list(BGM_MOOD_PRESETS.values()),
+    }
+
+
+@app.delete("/api/bgm/{track_id}")
+def api_bgm_delete(track_id: str):
+    fname = Path(track_id or "").name
+    if not fname.startswith("custom_"):
+        raise HTTPException(status_code=400, detail="Chỉ có thể xóa nhạc do bạn tự upload (custom_*).")
+    if not delete_custom_bgm(fname):
+        raise HTTPException(status_code=404, detail="Không tìm thấy bài nhạc cần xóa.")
+    return {
+        "ok": True,
+        "deleted": fname,
+        "bgm_tracks": ensure_royalty_free_bgm_library(),
+        "mood_presets": list(BGM_MOOD_PRESETS.values()),
+    }
 
 
 @app.get("/api/voice/catalog")
@@ -5762,7 +5914,7 @@ def api_engines_status():
 
 @app.post("/api/remotion/render")
 def api_remotion_render(req: RemotionRenderReq):
-    ov = _apply_remotion_req_to_overrides(req)
+    ov = _apply_remotion_req_to_overrides(req, resolve_ai=True)
     props = build_remotion_props(overrides=ov)
     try:
         res = _render_by_engine(req.render_engine)
@@ -6667,16 +6819,17 @@ def _execute_longform_vlog_pipeline(
             log_line=f"[Bước 3/5] Hoàn tất giọng ({voice_res['preset_label']}{sfx_note}), đồng bộ {voice_res['srt_lines']} dòng phụ đề.",
         )
 
-    bgm_name = str(req.bgm_track or "bgm_upbeat_tiktok.wav").strip()
-    if bgm_name == "bgm_upbeat_tiktok.wav" and vp_prof.get("force_vfx"):
-        if req_vibe in ("detective_mystery", "field_report"):
-            cand_bgm = PROJECT_ROOT / "06_assets_audio" / "bgm" / "bgm_tiktok_retro_synth.wav"
-        elif req_vibe in ("pov_comedy", "creative_internet"):
-            cand_bgm = PROJECT_ROOT / "06_assets_audio" / "bgm" / "bgm_tiktok_dance_bounce.wav"
-        else:
-            cand_bgm = PROJECT_ROOT / "06_assets_audio" / "bgm" / "bgm_piano_midnight_letters.wav"
-        if cand_bgm.exists():
-            bgm_name = cand_bgm.name
+    bgm_name, _ = _resolve_pipeline_bgm_track(
+        str(req.bgm_track or "auto_ai"),
+        script_text=disp_txt,
+        content_vibe=req_vibe,
+        pacing_preset=req_pacing,
+        pipeline_category="long_vlog",
+        title=str(ch_script.get("video_title") or req_vlog_title or ""),
+        product_note=str(req.product_note or ""),
+        use_ai=True,
+        log_to_pipeline=True,
+    )
     bgm_file = PROJECT_ROOT / "06_assets_audio" / "bgm" / Path(bgm_name).name
     if not bgm_file.exists():
         bgm_cand = sorted((PROJECT_ROOT / "06_assets_audio" / "bgm").glob("*.wav"))
@@ -6838,11 +6991,10 @@ def _run_single_project_pipeline(req: OneClickPipelineReq) -> None:
         if getattr(req, "pipeline_category", "short_tiktok") == "long_vlog" or float(req.target_duration_sec or 0) > 90.0:
             if bool(getattr(req, "longform_random_mode", False)):
                 import random as _rnd
-                from audio_bgm import ensure_royalty_free_bgm_library
-
                 n_rand = max(1, min(5, int(getattr(req, "longform_random_count", 1) or 1)))
                 all_bgms = ensure_royalty_free_bgm_library()
-                vlog_bgms = [
+                real_or_custom = [b["id"] for b in all_bgms if b.get("is_custom") or b.get("is_real")]
+                vlog_bgms = real_or_custom or [
                     b["id"]
                     for b in all_bgms
                     if any(tag in b["label"] for tag in ("[Vlog]", "[Du Lịch]", "[Piano]", "[Lo-Fi]", "[Lifestyle]", "[Jazz]", "[Ambient]", "Chill", "Acoustic", "[TikTok]", "Retro", "Future"))
@@ -7186,6 +7338,7 @@ def _run_single_project_pipeline(req: OneClickPipelineReq) -> None:
             used_wc_palettes: list[str] = []
             used_wc_hooks: list[str] = []
             used_wc_subs: list[str] = []
+            used_batch_bgms: list[str] = []
             try:
                 for b_idx, b_opt in enumerate(batch_opts, start=1):
                     _check_pipeline_cancelled()
@@ -7204,7 +7357,7 @@ def _run_single_project_pipeline(req: OneClickPipelineReq) -> None:
                             "color_preset": req.color_preset or "natural",
                             "creative_mode": req.creative_mode or "breakthrough_ai",
                             "camera_intensity": req.camera_intensity or "dynamic_ai",
-                            "bgm_track": req.bgm_track or "bgm_upbeat_tiktok.wav",
+                            "bgm_track": req.bgm_track or "auto_ai",
                             "subtitle_active_color": "#FFE500",
                             "tts_speed": 1.08,
                             "clip_order_mode": "original",
@@ -7220,6 +7373,25 @@ def _run_single_project_pipeline(req: OneClickPipelineReq) -> None:
                         step_status=(3, "running", f"{opt_id} ({b_idx}/{n_total})"),
                         log_line=f"[Batch {b_idx}/{n_total}] {opt_title} · {mix_prof['name']}",
                     )
+                    raw_slot_bgm = str(req.bgm_track or "auto_ai").strip() if not req.mix_variants else str(mix_prof.get("bgm_track") or "auto_ai").strip()
+                    if raw_slot_bgm in ("", "auto_ai") or str(req.bgm_track or "auto_ai").strip() in ("", "auto_ai"):
+                        slot_script_txt = str(b_opt.get("script_display") or b_opt.get("script_text") or "")
+                        slot_bgm, _ = _resolve_pipeline_bgm_track(
+                            "auto_ai",
+                            script_text=slot_script_txt,
+                            content_vibe=req_vibe,
+                            pacing_preset=getattr(req, "pacing_preset", "auto") or "auto",
+                            pipeline_category="short_tiktok",
+                            title=opt_title,
+                            product_note=note,
+                            extra_recent=used_batch_bgms,
+                            use_ai=True,
+                            log_to_pipeline=True,
+                        )
+                    else:
+                        slot_bgm, _ = _resolve_pipeline_bgm_track(raw_slot_bgm, use_ai=False, log_to_pipeline=False)
+                    used_batch_bgms.insert(0, slot_bgm)
+                    mix_prof["bgm_track"] = slot_bgm
                     api_workshop_select_script(
                         SelectScriptReq(
                             option_id=opt_id,
@@ -7232,7 +7404,7 @@ def _run_single_project_pipeline(req: OneClickPipelineReq) -> None:
                             color_preset=mix_prof.get("color_preset", "natural"),
                             creative_mode=mix_prof["creative_mode"],
                             camera_intensity=mix_prof["camera_intensity"],
-                            bgm_track=mix_prof["bgm_track"],
+                            bgm_track=slot_bgm,
                         )
                     )
                     sync_voice_clone_files()
@@ -7588,6 +7760,18 @@ def _run_single_project_pipeline(req: OneClickPipelineReq) -> None:
             if single_engine in ("remotion_innovation", "hyperframes")
             else None
         )
+        single_script_txt = FILE_SCRIPT.read_text(encoding="utf-8-sig") if FILE_SCRIPT.exists() else ""
+        single_bgm, _ = _resolve_pipeline_bgm_track(
+            str(req.bgm_track or "auto_ai"),
+            script_text=single_script_txt,
+            content_vibe=req_vibe,
+            pacing_preset=getattr(req, "pacing_preset", "auto") or "auto",
+            pipeline_category="short_tiktok",
+            title=str(brief.get("product_line") or brief.get("brand") or ""),
+            product_note=note,
+            use_ai=True,
+            log_to_pipeline=True,
+        )
         build_remotion_props(
             {
                 "badge_style": req.badge_style,
@@ -7596,7 +7780,7 @@ def _run_single_project_pipeline(req: OneClickPipelineReq) -> None:
                 "color_preset": req.color_preset or "natural",
                 "creative_mode": req.creative_mode or "breakthrough_ai",
                 "camera_intensity": effective_camera,
-                "bgm_track": req.bgm_track or "bgm_upbeat_tiktok.wav",
+                "bgm_track": single_bgm,
                 "render_engine": single_engine,
                 "innovation_preset": req.innovation_preset or "kinetic_pop",
                 "transition_level": req.transition_level or "balanced",
@@ -7625,7 +7809,7 @@ def _run_single_project_pipeline(req: OneClickPipelineReq) -> None:
                 "aspect_ratio": req_aspect,
                 "duration_sec": render_res.get("duration_sec"),
                 "voice_preset": "muted" if bool(getattr(req, "mute_voice", False)) else str(getattr(req, "voice_preset", "") or "random_neural"),
-                "bgm_track": req.bgm_track or "bgm_upbeat_tiktok.wav",
+                "bgm_track": single_bgm,
                 "title": str(sel_meta.get("label") or ""),
                 "visual_theme": req.visual_theme or "auto",
                 "badge_style": req.badge_style,

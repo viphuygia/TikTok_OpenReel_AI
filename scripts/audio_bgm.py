@@ -489,6 +489,259 @@ _EXTRA_BGM_PRESETS: list[dict[str, Any]] = [
 
 BGM_TRACK_CATALOG.extend({"id": p["id"], "label": p["label"]} for p in _EXTRA_BGM_PRESETS)
 
+CUSTOM_BGM_META_FILE = DIR_BGM / "custom_bgm_meta.json"
+
+BGM_MOOD_PRESETS: dict[str, dict[str, Any]] = {
+    "review_upbeat": {
+        "id": "review_upbeat",
+        "label": "🛍️ Review Sản phẩm / Unbox Sạch sẽ",
+        "vibes": ["learned_dna", "creative_internet", "daily_story"],
+        "pacing": "auto",
+    },
+    "tiktok_sale": {
+        "id": "tiktok_sale",
+        "label": "⚡ Săn Deal / Flash Sale Bùng nổ",
+        "vibes": ["creative_internet", "learned_dna"],
+        "pacing": "fast",
+    },
+    "comedy_pov": {
+        "id": "comedy_pov",
+        "label": "😂 POV Hài hước / Tấu hài Dí dỏm",
+        "vibes": ["pov_comedy", "creative_internet"],
+        "pacing": "fast",
+    },
+    "detective_mystery": {
+        "id": "detective_mystery",
+        "label": "🕵️ Thám tử / Bí ẩn / Soi chi tiết",
+        "vibes": ["detective_mystery"],
+        "pacing": "auto",
+    },
+    "field_report": {
+        "id": "field_report",
+        "label": "🎙️ Phóng sự / Tin nóng Hiện trường",
+        "vibes": ["field_report"],
+        "pacing": "fast",
+    },
+    "vlog_acoustic": {
+        "id": "vlog_acoustic",
+        "label": "🏕️ Vlog Dã ngoại / Acoustic Ấm áp",
+        "vibes": ["outdoor_picnic", "daily_story"],
+        "pacing": "chill",
+    },
+    "travel_adventure": {
+        "id": "travel_adventure",
+        "label": "✈️ Du lịch / Phiêu lưu Phóng khoáng",
+        "vibes": ["travel_vlog", "outdoor_picnic"],
+        "pacing": "auto",
+    },
+    "cafe_chill": {
+        "id": "cafe_chill",
+        "label": "🍜 Ẩm thực / Cafe / Lo-Fi Thư giãn",
+        "vibes": ["food_cafe", "daily_story"],
+        "pacing": "chill",
+    },
+    "cinema_piano": {
+        "id": "cinema_piano",
+        "label": "🎬 Điện ảnh / Piano Sâu lắng Cảm xúc",
+        "vibes": ["cinematic_deep", "daily_story"],
+        "pacing": "chill",
+    },
+}
+
+CC0_BGM_CATALOG: list[dict[str, Any]] = [
+    {
+        "id": "cc0_review_upbeat_clean.mp3",
+        "label": "🌟 [CC0 Nhạc Thật] Review Tươi Sáng Sạch Sẽ (Upbeat Pop)",
+        "mood": "review_upbeat",
+        "vibes": ["learned_dna", "daily_story", "outdoor_picnic"],
+        "pacing": "auto",
+        "keywords": ["review", "unbox", "mở hộp", "sạch", "tươi", "gọn", "skincare", "gia dụng", "mẹo", "chăm sóc"],
+        "is_real": True,
+    },
+    {
+        "id": "cc0_tiktok_electronic_beat.mp3",
+        "label": "⚡ [CC0 Nhạc Thật] TikTok Săn Deal Điện Tử (Electronic Beat)",
+        "mood": "tiktok_sale",
+        "vibes": ["creative_internet", "learned_dna"],
+        "pacing": "fast",
+        "keywords": ["deal", "sale", "giảm giá", "giỏ hàng", "chốt đơn", "voucher", "freeship", "bùng nổ", "sốc", "rẻ"],
+        "is_real": True,
+    },
+    {
+        "id": "cc0_comedy_pov_mischief.mp3",
+        "label": "😂 [CC0 Nhạc Thật] POV Hài Hước Tinh Nghịch (Mischief)",
+        "mood": "comedy_pov",
+        "vibes": ["pov_comedy", "creative_internet"],
+        "pacing": "fast",
+        "keywords": ["hài", "cười", "tấu", "bất ngờ", "ngáo", "trời ơi", "lầy", "troll", "pov", "bạn thân"],
+        "is_real": True,
+    },
+    {
+        "id": "cc0_comedy_light_quirky.mp3",
+        "label": "😜 [CC0 Nhạc Thật] Đời Thường Vui Nhộn Dí Dỏm (Quirky)",
+        "mood": "comedy_pov",
+        "vibes": ["pov_comedy", "daily_story", "food_cafe"],
+        "pacing": "auto",
+        "keywords": ["vui", "dí dỏm", "dễ thương", "bé", "ăn vặt", "nhí nhảnh", "tò mò", "sinh nhật"],
+        "is_real": True,
+    },
+    {
+        "id": "cc0_detective_heist_mystery.mp3",
+        "label": "🕵️ [CC0 Nhạc Thật] Thám Tử Bí Ẩn Soi Manh Mối (Heist Mystery)",
+        "mood": "detective_mystery",
+        "vibes": ["detective_mystery", "field_report"],
+        "pacing": "auto",
+        "keywords": ["bí ẩn", "manh mối", "thám tử", "nghi", "phát hiện", "soi", "sự thật", "lộ", "ẩn số", "tò mò"],
+        "is_real": True,
+    },
+    {
+        "id": "cc0_news_field_report.mp3",
+        "label": "🎙️ [CC0 Nhạc Thật] Phóng Sự Hiện Trường Tin Nóng (News Beat)",
+        "mood": "field_report",
+        "vibes": ["field_report", "detective_mystery"],
+        "pacing": "fast",
+        "keywords": ["hiện trường", "phóng sự", "khẩn", "cảnh báo", "tin", "thực tế", "kiểm chứng", "bóc phốt", "sự cố"],
+        "is_real": True,
+    },
+    {
+        "id": "cc0_action_city_run.mp3",
+        "label": "🔥 [CC0 Nhạc Thật] Nhịp Nhanh Kịch Tính Cao Trào (City Run)",
+        "mood": "tiktok_sale",
+        "vibes": ["field_report", "creative_internet", "travel_vlog"],
+        "pacing": "turbo",
+        "keywords": ["nhanh", "gấp", "chạy", "đua", "cao trào", "kịch tính", "cực", "đỉnh", "test", "so sánh"],
+        "is_real": True,
+    },
+    {
+        "id": "cc0_vlog_slice_of_life.mp3",
+        "label": "🌿 [CC0 Nhạc Thật] Nhật Ký Đời Thường Nhẹ Nhàng (Slice of Life)",
+        "mood": "vlog_acoustic",
+        "vibes": ["daily_story", "outdoor_picnic", "learned_dna"],
+        "pacing": "chill",
+        "keywords": ["nhật ký", "một ngày", "cuối tuần", "gia đình", "bình yên", "trải nghiệm", "kể", "chia sẻ"],
+        "is_real": True,
+    },
+    {
+        "id": "cc0_camping_bonfire_acoustic.mp3",
+        "label": "🏕️ [CC0 Nhạc Thật] Dã Ngoại Lửa Trại Mộc Mạc (Bonfire)",
+        "mood": "vlog_acoustic",
+        "vibes": ["outdoor_picnic", "travel_vlog"],
+        "pacing": "chill",
+        "keywords": ["cắm trại", "camping", "picnic", "lửa trại", "rừng", "biển", "nướng", "thiên nhiên", "ngoài trời"],
+        "is_real": True,
+    },
+    {
+        "id": "cc0_travel_adventure.mp3",
+        "label": "✈️ [CC0 Nhạc Thật] Du Lịch Phiêu Lưu Hào Hứng (Adventure)",
+        "mood": "travel_adventure",
+        "vibes": ["travel_vlog", "outdoor_picnic"],
+        "pacing": "auto",
+        "keywords": ["du lịch", "chuyến đi", "khám phá", "hành trình", "cảnh đẹp", "đường", "núi", "bay", "check-in"],
+        "is_real": True,
+    },
+    {
+        "id": "cc0_cafe_food_chill.mp3",
+        "label": "☕ [CC0 Nhạc Thật] Ẩm Thực Quán Cafe Thư Thái (Baguette Chill)",
+        "mood": "cafe_chill",
+        "vibes": ["food_cafe", "daily_story"],
+        "pacing": "chill",
+        "keywords": ["quán", "cafe", "cà phê", "món ăn", "ngon", "bếp", "nấu", "chill", "trà", "bánh", "ăn"],
+        "is_real": True,
+    },
+    {
+        "id": "cc0_cinema_lovely_piano.mp3",
+        "label": "🎬 [CC0 Nhạc Thật] Điện Ảnh Piano Sâu Lắng (Lovely Piano)",
+        "mood": "cinema_piano",
+        "vibes": ["cinematic_deep", "daily_story"],
+        "pacing": "chill",
+        "keywords": ["cảm xúc", "kỷ niệm", "tâm sự", "sâu lắng", "đêm", "hoàng hôn", "điện ảnh", "nhớ", "trân trọng"],
+        "is_real": True,
+    },
+]
+
+_SYNTH_HINTS: dict[str, tuple[str, list[str], str]] = {
+    "bgm_upbeat_tiktok.wav": ("review_upbeat", ["learned_dna", "creative_internet"], "auto"),
+    "bgm_chill_lofi.wav": ("cafe_chill", ["food_cafe", "daily_story"], "chill"),
+    "bgm_flash_sale.wav": ("tiktok_sale", ["creative_internet"], "fast"),
+    "bgm_acoustic_warm.wav": ("vlog_acoustic", ["outdoor_picnic", "daily_story", "learned_dna"], "chill"),
+    "bgm_funky_groove.wav": ("comedy_pov", ["pov_comedy", "food_cafe"], "fast"),
+    "bgm_tech_minimal.wav": ("review_upbeat", ["learned_dna", "field_report"], "auto"),
+    "bgm_luxury_piano.wav": ("cinema_piano", ["cinematic_deep", "daily_story"], "chill"),
+    "bgm_trap_hype.wav": ("tiktok_sale", ["creative_internet"], "turbo"),
+    "bgm_bossa_cafe.wav": ("cafe_chill", ["food_cafe"], "chill"),
+    "bgm_kpop_sparkle.wav": ("tiktok_sale", ["creative_internet", "pov_comedy"], "fast"),
+    "bgm_cyber_pulse.wav": ("field_report", ["detective_mystery", "field_report"], "fast"),
+    "bgm_happy_ukulele.wav": ("comedy_pov", ["outdoor_picnic", "pov_comedy", "daily_story"], "auto"),
+    "bgm_cinematic_rise.wav": ("cinema_piano", ["cinematic_deep"], "chill"),
+    "bgm_tropical_house.wav": ("travel_adventure", ["travel_vlog", "outdoor_picnic"], "auto"),
+    "bgm_deep_focus.wav": ("detective_mystery", ["detective_mystery", "cinematic_deep"], "chill"),
+    "bgm_tiktok_retro_synth.wav": ("detective_mystery", ["detective_mystery", "field_report"], "auto"),
+    "bgm_tiktok_dance_bounce.wav": ("comedy_pov", ["pov_comedy", "creative_internet"], "fast"),
+    "bgm_piano_midnight_letters.wav": ("cinema_piano", ["cinematic_deep", "daily_story"], "chill"),
+    "bgm_vlog_campfire_guitar.wav": ("vlog_acoustic", ["outdoor_picnic", "travel_vlog"], "chill"),
+    "bgm_vlog_weekend_picnic.wav": ("vlog_acoustic", ["outdoor_picnic"], "auto"),
+    "bgm_travel_coastal_drive.wav": ("travel_adventure", ["travel_vlog"], "auto"),
+    "bgm_lifestyle_unbox_clean.wav": ("review_upbeat", ["learned_dna"], "auto"),
+    "bgm_lifestyle_skincare_silk.wav": ("review_upbeat", ["learned_dna", "cinematic_deep"], "chill"),
+    "bgm_lifestyle_kitchen_vibe.wav": ("cafe_chill", ["food_cafe"], "auto"),
+}
+
+
+def load_custom_bgm_meta() -> dict[str, dict[str, Any]]:
+    import json
+
+    if not CUSTOM_BGM_META_FILE.exists():
+        return {}
+    try:
+        data = json.loads(CUSTOM_BGM_META_FILE.read_text(encoding="utf-8-sig"))
+        return data if isinstance(data, dict) else {}
+    except Exception:
+        return {}
+
+
+def save_custom_bgm_meta(meta: dict[str, dict[str, Any]]) -> None:
+    import json
+
+    DIR_BGM.mkdir(parents=True, exist_ok=True)
+    CUSTOM_BGM_META_FILE.write_text(
+        json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+
+
+def register_custom_bgm(filename: str, label: str = "", mood: str = "review_upbeat") -> dict[str, Any]:
+    fname = Path(filename).name
+    m_key = mood if mood in BGM_MOOD_PRESETS else "review_upbeat"
+    m_info = BGM_MOOD_PRESETS[m_key]
+    clean_lbl = (label or "").strip() or Path(fname).stem.replace("custom_", "").replace("_", " ").strip()
+    entry = {
+        "id": fname,
+        "label": f"⭐ [Nhạc Của Tôi] {clean_lbl}",
+        "mood": m_key,
+        "vibes": list(m_info.get("vibes") or ["learned_dna"]),
+        "pacing": str(m_info.get("pacing") or "auto"),
+    }
+    meta = load_custom_bgm_meta()
+    meta[fname] = entry
+    save_custom_bgm_meta(meta)
+    return entry
+
+
+def delete_custom_bgm(filename: str) -> bool:
+    fname = Path(filename).name
+    if not fname.startswith("custom_"):
+        return False
+    p = DIR_BGM / fname
+    removed = False
+    if p.exists() and p.is_file():
+        p.unlink()
+        removed = True
+    meta = load_custom_bgm_meta()
+    if fname in meta:
+        meta.pop(fname, None)
+        save_custom_bgm_meta(meta)
+        removed = True
+    return removed
+
 
 def ensure_royalty_free_bgm_library(force: bool = False) -> list[dict[str, Any]]:
     DIR_BGM.mkdir(parents=True, exist_ok=True)
@@ -576,20 +829,260 @@ def ensure_royalty_free_bgm_library(force: bool = False) -> list[dict[str, Any]]
             fn(p)
 
     out: list[dict[str, Any]] = []
-    known = {item["id"]: item["label"] for item in BGM_TRACK_CATALOG}
+    known_synth = {item["id"]: item["label"] for item in BGM_TRACK_CATALOG}
+    cc0_map = {item["id"]: item for item in CC0_BGM_CATALOG}
+    custom_meta = load_custom_bgm_meta()
+
     for p in sorted(DIR_BGM.iterdir()):
-        if p.is_file() and p.suffix.lower() in (".wav", ".mp3", ".m4a"):
+        if not (p.is_file() and p.suffix.lower() in (".wav", ".mp3", ".m4a")):
+            continue
+        fname = p.name
+        if fname in custom_meta:
+            cm = custom_meta[fname]
             out.append(
                 {
-                    "id": p.name,
-                    "label": known.get(p.name, f"🎶 {p.name}"),
-                    "url": f"/files/06_assets_audio/bgm/{p.name}",
+                    "id": fname,
+                    "label": str(cm.get("label") or f"⭐ [Nhạc Của Tôi] {fname}"),
+                    "url": f"/files/06_assets_audio/bgm/{fname}",
+                    "is_custom": True,
+                    "is_real": True,
+                    "mood": str(cm.get("mood") or "review_upbeat"),
+                    "vibes": list(cm.get("vibes") or ["learned_dna"]),
+                    "pacing": str(cm.get("pacing") or "auto"),
+                    "keywords": [],
                 }
             )
-    # Sort preferred tracks first
-    order = {item["id"]: i for i, item in enumerate(BGM_TRACK_CATALOG)}
-    out.sort(key=lambda x: order.get(x["id"], 99))
+        elif fname.startswith("custom_"):
+            out.append(
+                {
+                    "id": fname,
+                    "label": f"⭐ [Nhạc Của Tôi] {p.stem.replace('custom_', '').replace('_', ' ')}",
+                    "url": f"/files/06_assets_audio/bgm/{fname}",
+                    "is_custom": True,
+                    "is_real": True,
+                    "mood": "review_upbeat",
+                    "vibes": ["learned_dna"],
+                    "pacing": "auto",
+                    "keywords": [],
+                }
+            )
+        elif fname in cc0_map:
+            cm = cc0_map[fname]
+            out.append(
+                {
+                    "id": fname,
+                    "label": cm["label"],
+                    "url": f"/files/06_assets_audio/bgm/{fname}",
+                    "is_custom": False,
+                    "is_real": True,
+                    "mood": cm["mood"],
+                    "vibes": list(cm["vibes"]),
+                    "pacing": cm["pacing"],
+                    "keywords": list(cm.get("keywords") or []),
+                }
+            )
+        else:
+            s_hint = _SYNTH_HINTS.get(fname)
+            out.append(
+                {
+                    "id": fname,
+                    "label": known_synth.get(fname, f"🎶 {fname}"),
+                    "url": f"/files/06_assets_audio/bgm/{fname}",
+                    "is_custom": False,
+                    "is_real": fname.endswith(".mp3"),
+                    "mood": s_hint[0] if s_hint else "review_upbeat",
+                    "vibes": list(s_hint[1]) if s_hint else ["learned_dna"],
+                    "pacing": s_hint[2] if s_hint else "auto",
+                    "keywords": [],
+                }
+            )
+
+    cc0_order = {item["id"]: i for i, item in enumerate(CC0_BGM_CATALOG)}
+    synth_order = {item["id"]: i for i, item in enumerate(BGM_TRACK_CATALOG)}
+
+    def _sort_key(item: dict[str, Any]) -> tuple[int, int, str]:
+        if item.get("is_custom"):
+            return (0, 0, item["id"])
+        if item["id"] in cc0_order:
+            return (1, cc0_order[item["id"]], item["id"])
+        if item.get("is_real"):
+            return (1, 50, item["id"])
+        return (2, synth_order.get(item["id"], 999), item["id"])
+
+    out.sort(key=_sort_key)
     return out
+
+
+def select_ai_bgm_track(
+    *,
+    script_text: str = "",
+    content_vibe: str = "learned_dna",
+    pacing_preset: str = "auto",
+    pipeline_category: str = "short_tiktok",
+    title: str = "",
+    product_note: str = "",
+    recent_tracks: list[str] | None = None,
+    gemini_api_key: str = "",
+    agy_caller: Any = None,
+) -> dict[str, Any]:
+    """Select the best matching BGM track using Tier 1 AI (optional) + Tier 2 scored heuristic."""
+    import json
+    import re
+    import urllib.request
+
+    tracks = ensure_royalty_free_bgm_library()
+    if not tracks:
+        return {"track_id": "bgm_upbeat_tiktok.wav", "label": "Default", "source": "heuristic", "reason": "Kho nhạc trống."}
+
+    track_map = {t["id"]: t for t in tracks}
+    vibe_clean = str(content_vibe or "learned_dna").strip() or "learned_dna"
+    pacing_clean = str(pacing_preset or "auto").strip().lower() or "auto"
+    recent_list = [str(x).strip() for x in (recent_tracks or []) if str(x).strip()]
+    recent_top = recent_list[:2]
+
+    text_blob = f"{title} {product_note} {script_text}".lower()
+
+    vibe_mood_pref: dict[str, list[str]] = {
+        "learned_dna": ["review_upbeat", "tiktok_sale", "comedy_pov"],
+        "creative_internet": ["tiktok_sale", "comedy_pov", "review_upbeat"],
+        "pov_comedy": ["comedy_pov", "tiktok_sale"],
+        "detective_mystery": ["detective_mystery", "field_report"],
+        "field_report": ["field_report", "detective_mystery", "tiktok_sale"],
+        "outdoor_picnic": ["vlog_acoustic", "travel_adventure"],
+        "travel_vlog": ["travel_adventure", "vlog_acoustic"],
+        "food_cafe": ["cafe_chill", "comedy_pov"],
+        "daily_story": ["vlog_acoustic", "review_upbeat", "cinema_piano"],
+        "cinematic_deep": ["cinema_piano", "vlog_acoustic"],
+    }
+
+    scored: list[tuple[float, dict[str, Any], str]] = []
+    pref_moods = vibe_mood_pref.get(vibe_clean, ["review_upbeat"])
+    for t in tracks:
+        score = 0.0
+        reasons: list[str] = []
+        if t.get("is_custom"):
+            score += 5.0
+            reasons.append("nhạc tự upload")
+        elif t.get("is_real"):
+            score += 4.0
+            reasons.append("CC0 nhạc thật")
+
+        t_vibes = t.get("vibes") or []
+        if vibe_clean in t_vibes:
+            score += 4.5
+            reasons.append(f"khớp vibe {vibe_clean}")
+        elif t.get("mood") in pref_moods:
+            idx_m = pref_moods.index(t["mood"])
+            score += max(1.5, 3.5 - idx_m * 0.8)
+
+        t_pac = str(t.get("pacing") or "auto")
+        if pacing_clean != "auto" and t_pac == pacing_clean:
+            score += 2.2
+            reasons.append(f"khớp nhịp {pacing_clean}")
+        elif pacing_clean == "auto" and pipeline_category == "long_vlog" and t_pac in ("chill", "auto"):
+            score += 1.0
+        elif pacing_clean == "auto" and pipeline_category != "long_vlog" and t_pac in ("fast", "auto"):
+            score += 1.0
+
+        kw_hits = [kw for kw in (t.get("keywords") or []) if kw in text_blob]
+        if kw_hits:
+            score += min(3.6, len(kw_hits) * 1.2)
+            reasons.append(f"khớp từ khóa ({', '.join(kw_hits[:2])})")
+
+        if any(w in text_blob for w in ("deal", "sale", "giảm giá", "freeship", "chốt đơn", "voucher")):
+            if t.get("mood") == "tiktok_sale":
+                score += 2.5
+        elif any(w in text_blob for w in ("bí ẩn", "manh mối", "thám tử", "kiểm chứng")):
+            if t.get("mood") in ("detective_mystery", "field_report"):
+                score += 2.5
+        elif any(w in text_blob for w in ("hài", "cười", "pov", "troll")):
+            if t.get("mood") == "comedy_pov":
+                score += 2.5
+
+        if t["id"] in recent_top:
+            score -= 3.8
+
+        reason_str = ", ".join(reasons) if reasons else "cân bằng tổng thể"
+        scored.append((score, t, reason_str))
+
+    scored.sort(key=lambda x: x[0], reverse=True)
+    best_h = scored[0][1]
+    best_h_reason = scored[0][2]
+
+    has_ai = bool(agy_caller or str(gemini_api_key or "").strip())
+    if has_ai and text_blob.strip():
+        custom_cands = [t for t in tracks if t.get("is_custom")]
+        cc0_cands = [t for t in tracks if not t.get("is_custom") and t.get("is_real")]
+        synth_top = [x[1] for x in scored if not x[1].get("is_real")][:6]
+        seen_ids: set[str] = set()
+        candidates: list[dict[str, Any]] = []
+        for t in [*custom_cands, *cc0_cands, *synth_top]:
+            if t["id"] not in seen_ids:
+                seen_ids.add(t["id"])
+                candidates.append(t)
+
+        cand_lines = "\n".join(
+            f"- {t['id']} | {t['label']} | mood={t.get('mood')} | vibes={','.join(t.get('vibes') or [])} | pacing={t.get('pacing')}"
+            for t in candidates
+        )
+        avoid_txt = f"Tránh chọn lại các bài vừa dùng gần đây nếu có lựa chọn phù hợp khác: {', '.join(recent_top)}." if recent_top else ""
+        prompt = (
+            "Bạn là Đạo diễn Âm nhạc cho video TikTok/Vlog.\n"
+            "Hãy chọn 1 track_id nhạc nền phù hợp NHẤT với nội dung dưới đây.\n"
+            f"- Định dạng: {'Video Dài Vlog' if pipeline_category == 'long_vlog' else 'Video Ngắn TikTok'}\n"
+            f"- Vibe: {vibe_clean} | Tiết tấu: {pacing_clean}\n"
+            f"- Tiêu đề / Note: {(title + ' ' + product_note).strip()[:300]}\n"
+            f"- Trích đoạn Kịch bản: {script_text.strip()[:900]}\n"
+            f"{avoid_txt}\n\n"
+            "Ưu tiên nhạc [Nhạc Của Tôi] hoặc [CC0 Nhạc Thật] nếu hợp mood.\n"
+            f"Danh sách ứng viên:\n{cand_lines}\n\n"
+            'Chỉ trả về JSON thuần: {"track_id": "<đúng id ở trên>", "reason": "<lý do ngắn tiếng Việt tối đa 18 từ>"}'
+        )
+
+        raw_resp = ""
+        if agy_caller:
+            try:
+                raw_resp = str(agy_caller(prompt) or "")
+            except Exception:
+                raw_resp = ""
+        if not raw_resp and str(gemini_api_key or "").strip():
+            try:
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={gemini_api_key.strip()}"
+                payload = json.dumps({
+                    "contents": [{"parts": [{"text": prompt}]}],
+                    "generationConfig": {"temperature": 0.25, "responseMimeType": "application/json"},
+                }).encode("utf-8")
+                req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"})
+                with urllib.request.urlopen(req, timeout=15) as resp:
+                    body = json.loads(resp.read().decode("utf-8"))
+                    raw_resp = (
+                        ((body.get("candidates") or [{}])[0].get("content") or {}).get("parts") or [{}]
+                    )[0].get("text", "")
+            except Exception:
+                raw_resp = ""
+
+        if raw_resp:
+            m = re.search(r"\{.*\}", raw_resp, flags=re.DOTALL)
+            if m:
+                try:
+                    parsed = json.loads(m.group(0))
+                    picked_id = Path(str(parsed.get("track_id") or "")).name
+                    if picked_id in track_map:
+                        return {
+                            "track_id": picked_id,
+                            "label": track_map[picked_id]["label"],
+                            "source": "ai",
+                            "reason": str(parsed.get("reason") or "AI chọn theo kịch bản & vibe").strip()[:140],
+                        }
+                except Exception:
+                    pass
+
+    return {
+        "track_id": best_h["id"],
+        "label": best_h["label"],
+        "source": "heuristic",
+        "reason": best_h_reason,
+    }
 
 
 if __name__ == "__main__":
