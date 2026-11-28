@@ -7952,14 +7952,17 @@
                 const safeKey = escapeHtml(key).replace(/'/g, '&#39;');
                 return `
                   <div class="rounded-xl bg-zinc-900 border ${isSel ? 'border-rose-500 ring-1 ring-rose-500/60' : 'border-zinc-800'} overflow-hidden flex flex-col transition">
-                    <div class="relative bg-black">
-                      <video src="${playUrl}" ${o.thumbnail_url ? `poster="${escapeHtml(o.thumbnail_url)}"` : ''} controls playsinline preload="none" class="w-full h-60 bg-black object-contain"></video>
-                      <label class="absolute top-2 left-2 flex items-center gap-1 px-2 py-1 rounded-lg bg-black/75 border ${isSel ? 'border-rose-400 text-rose-200' : 'border-zinc-600/80 text-zinc-200'} text-[10px] font-semibold cursor-pointer select-none shadow">
+                    <div class="px-2.5 py-1.5 bg-zinc-950/90 border-b border-zinc-800 flex items-center justify-between gap-2">
+                      <label class="flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-zinc-900 border ${isSel ? 'border-rose-400 text-rose-200' : 'border-zinc-700 text-zinc-300'} text-[10px] font-semibold cursor-pointer select-none">
                         <input type="checkbox" ${isSel ? 'checked' : ''} onchange="toggleGallerySelectVideo('${safeKey}')" class="rounded bg-zinc-800 border-zinc-500 text-rose-500" />
                         <span>Chọn</span>
                       </label>
-                      ${has360 ? `<button type="button" onclick="toggleGalleryVideoQuality('${safeKey}')" title="Chuyển chất lượng xem thử 360p / 4K" class="absolute top-2 right-2 px-2 py-1 rounded-lg bg-black/75 hover:bg-black/90 border border-cyan-500/45 text-[10px] font-semibold text-cyan-200 shadow">${activeQ === '360p' ? '⚡ Đang phát 360p → 4K' : '🎬 Đang phát 4K → 360p'}</button>` : ''}
+                      ${has360
+                        ? `<button type="button" onclick="toggleGalleryVideoQuality('${safeKey}')" title="Chuyển chất lượng xem thử 360p / 4K" class="px-2 py-0.5 rounded-md bg-cyan-950/70 hover:bg-cyan-900/70 border border-cyan-500/40 text-[10px] font-semibold text-cyan-200">${activeQ === '360p' ? '⚡ Đang phát 360p → 4K' : '🎬 Đang phát 4K → 360p'}</button>`
+                        : `<span class="text-[10px] text-zinc-500 mono">4K</span>`
+                      }
                     </div>
+                    <video src="${playUrl}" ${o.thumbnail_url ? `poster="${escapeHtml(o.thumbnail_url)}"` : ''} controls playsinline preload="none" class="w-full h-60 bg-black object-contain"></video>
                     <div class="p-3 space-y-2 text-xs">
                       <div class="flex items-center justify-between gap-2">
                         <span class="px-2 py-0.5 rounded-md bg-indigo-500/20 border border-indigo-500/35 text-indigo-200 text-[10px] font-semibold truncate">${escapeHtml(o.project_name)}</span>
