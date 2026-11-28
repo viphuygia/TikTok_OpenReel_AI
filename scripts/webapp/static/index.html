@@ -1238,7 +1238,15 @@
           <div id="pipeline-progress-bar" class="h-full bg-gradient-to-r from-indigo-500 via-emerald-400 to-teal-400 transition-all duration-300" style="width: 0%"></div>
         </div>
         <div id="pipeline-steps-row" class="grid grid-cols-2 sm:grid-cols-5 gap-2 text-[11px]"></div>
+        <div id="pipeline-session-summary" class="hidden pt-1 space-y-1"></div>
         <div id="pipeline-live-queue" class="hidden pt-1 space-y-1"></div>
+        <details id="pipeline-log-drawer" class="hidden rounded-xl bg-zinc-950/90 border border-zinc-800 px-2.5 py-1.5 text-[11px]">
+          <summary class="cursor-pointer select-none font-semibold text-zinc-300 hover:text-white flex items-center justify-between gap-2">
+            <span id="pipeline-log-title">📜 Xem Log tiến trình (0 dòng)</span>
+            <span class="text-[10px] text-zinc-500">Bấm để mở / đóng</span>
+          </summary>
+          <pre id="pipeline-log-box" class="mt-2 max-h-44 overflow-y-auto mono text-[10px] leading-relaxed text-zinc-300 whitespace-pre-wrap break-words bg-zinc-900/70 rounded-lg p-2 border border-zinc-800/80"></pre>
+        </details>
       </div>
     </div>
 
@@ -5137,18 +5145,73 @@
         stopHardBtn.textContent = p.cancelling ? '⏳ Đang dừng ngay...' : '⏹️ Dừng ngay';
         stopHardBtn.classList.toggle('opacity-50', !!p.cancelling);
       }
+      const sessEl = document.getElementById('pipeline-session-summary');
+      if (sessEl) {
+        const hist = Array.isArray(p.session_history) ? p.session_history : [];
+        if (hist.length > 0 && (p.stopped || !p.running || hist.length > 1)) {
+          sessEl.classList.remove('hidden');
+          sessEl.innerHTML = `<div class="text-[10px] text-cyan-300 font-semibold">📊 Kết quả trong lượt chạy (${hist.length} tác vụ):</div>` + hist.map((hItem) => {
+            const isL = hItem.pipeline_category === 'long_vlog';
+            const stIcon = hItem.status === 'done' ? '✅' : (hItem.status === 'stopped' ? '⏹️' : '❌');
+            const stCls = hItem.status === 'done'
+              ? 'border-emerald-500/35 bg-emerald-950/25 text-emerald-200'
+              : (hItem.status === 'stopped' ? 'border-amber-500/35 bg-amber-950/25 text-amber-200' : 'border-rose-500/35 bg-rose-950/25 text-rose-200');
+            const filesTxt = Array.isArray(hItem.output_files) && hItem.output_files.length ? hItem.output_files.join(', ') : (hItem.detail || '');
+            return `<div class="flex flex-wrap items-center justify-between gap-2 px-2.5 py-1 rounded-lg border text-[11px] ${stCls}">
+              <div class="flex items-center gap-1.5 min-w-0">
+                <span>${stIcon}</span>
+                <span class="font-semibold truncate">${escapeHtml(hItem.project_name || hItem.project_id)}</span>
+                <span class="text-[10px] opacity-80">(${isL ? '🎬 Dài' : '⚡ Ngắn'})</span>
+                <span class="text-[10px] opacity-90 truncate">· ${escapeHtml(filesTxt)}</span>
+              </div>
+              <div class="flex items-center gap-1.5 shrink-0 text-[10px] opacity-85">
+                ${hItem.status === 'done' ? `<button type="button" onclick="switchTab('tab6')" class="px-1.5 py-0.5 rounded bg-emerald-500/20 hover:bg-emerald-500/35 text-emerald-200">🎬 Mở Kho Video</button>` : ''}
+                <span class="mono">${escapeHtml(hItem.finished_at || '')}</span>
+              </div>
+            </div>`;
+          }).join('');
+        } else {
+          sessEl.classList.add('hidden');
+          sessEl.innerHTML = '';
+        }
+      }
+      const logDrawer = document.getElementById('pipeline-log-drawer');
+      const logTitle = document.getElementById('pipeline-log-title');
+      const logBox = document.getElementById('pipeline-log-box');
+      if (logDrawer && logBox) {
+        const logs = Array.isArray(p.logs) ? p.logs : [];
+        if (logs.length > 0 && (p.running || p.stopped || p.error || p.percent > 0)) {
+          logDrawer.classList.remove('hidden');
+          if (logTitle) logTitle.textContent = `📜 Xem Log tiến trình (${logs.length} dòng)`;
+          logBox.textContent = logs.join('\n');
+          logBox.scrollTop = logBox.scrollHeight;
+        } else {
+          logDrawer.classList.add('hidden');
+        }
+      }
       if (liveQEl) {
         const pq = Array.isArray(p.pending_queue) ? p.pending_queue : [];
-        if (p.running && pq.length > 0) {
+        if (pq.length > 0) {
           liveQEl.classList.remove('hidden');
-          liveQEl.innerHTML = `<div class="text-[10px] text-amber-300 font-semibold">📋 Đang xếp hàng chờ chạy tiếp (${pq.length} tác vụ):</div>` + pq.map((qItem, idx) => {
+          const headerBar = p.running
+            ? `<div class="text-[10px] text-amber-300 font-semibold">📋 Đang xếp hàng chờ chạy tiếp (${pq.length} tác vụ):</div>`
+            : `<div class="flex flex-wrap items-center justify-between gap-2 px-2.5 py-1.5 rounded-xl bg-amber-950/30 border border-amber-500/40 text-[11px]">
+                <span class="font-semibold text-amber-200">⏸️ Hàng đợi đang tạm dừng (${pq.length} tác vụ)</span>
+                <div class="flex items-center gap-1.5">
+                  <button type="button" onclick="resumePipelineQueue()" class="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white font-semibold transition">▶️ Tiếp tục hàng đợi (${pq.length})</button>
+                  <button type="button" onclick="clearLivePipelineQueue()" class="px-2.5 py-1 rounded-lg bg-zinc-800 hover:bg-rose-600/35 border border-zinc-700 text-zinc-200 hover:text-rose-200 transition">🗑️ Xóa hàng đợi</button>
+                </div>
+              </div>`;
+          liveQEl.innerHTML = headerBar + pq.map((qItem, idx) => {
             const isL = qItem.pipeline_category === 'long_vlog';
             const durTxt = isL ? `${Math.round(Number(qItem.duration_sec || 300) / 60)}p` : `${Math.round(Number(qItem.duration_sec || 30))}s`;
             const vLbl = getVibeLabel(qItem.content_vibe);
+            const intrBadge = qItem.interrupted ? '<span class="px-1.5 py-0.5 rounded bg-amber-500/25 border border-amber-400/50 text-amber-200 text-[10px] font-semibold shrink-0">⏸️ Dừng dở</span>' : '';
             return `<div class="flex items-center justify-between gap-2 px-2.5 py-1 rounded-lg bg-zinc-900/75 border border-zinc-800 text-[11px]">
               <div class="flex items-center gap-2 min-w-0">
                 <span class="mono text-zinc-400">#${idx + 1}</span>
                 <span class="px-1.5 py-0.5 rounded border text-[10px] font-semibold shrink-0 ${isL ? 'bg-amber-500/15 border-amber-500/35 text-amber-200' : 'bg-emerald-500/15 border-emerald-500/35 text-emerald-200'}">${isL ? '🎬 Dài' : '⚡ Ngắn'} · ${durTxt}</span>
+                ${intrBadge}
                 <span class="text-zinc-200 font-medium truncate">${escapeHtml(qItem.project_name || qItem.project_id)}</span>
                 <span class="text-zinc-400 truncate hidden sm:inline">· ${escapeHtml(vLbl)}${qItem.auto_render_360p ? ' · 360p' : ''}</span>
               </div>
@@ -5178,12 +5241,13 @@
       }
 
       if (row && Array.isArray(p.steps)) {
-        const iconMap = { idle: '⚪', running: '⏳', done: '✅', error: '❌' };
+        const iconMap = { idle: '⚪', running: '⏳', done: '✅', error: '❌', stopped: '⏹️' };
         const clsMap = {
           idle: 'bg-zinc-900/70 border-zinc-800 text-zinc-400',
           running: 'bg-amber-950/50 border-amber-500/60 text-amber-200 animate-pulse',
           done: 'bg-emerald-950/40 border-emerald-500/50 text-emerald-200',
-          error: 'bg-rose-950/50 border-rose-500/60 text-rose-200'
+          error: 'bg-rose-950/50 border-rose-500/60 text-rose-200',
+          stopped: 'bg-zinc-900/90 border-zinc-500/60 text-zinc-200'
         };
         row.innerHTML = p.steps.map(s => `
           <div onclick="switchTab('${s.tab}')" class="cursor-pointer rounded-xl border px-2.5 py-2 ${clsMap[s.status] || clsMap.idle} transition">
@@ -5209,6 +5273,9 @@
         } else if (tabSteps.some(s => s.status === 'running')) {
           pill.textContent = '⏳';
           pill.className = 'text-[10px] px-1.5 py-0.5 rounded-full font-semibold bg-amber-500/30 text-amber-200';
+        } else if (tabSteps.some(s => s.status === 'stopped')) {
+          pill.textContent = '⏹️';
+          pill.className = 'text-[10px] px-1.5 py-0.5 rounded-full font-semibold bg-zinc-700/70 text-zinc-200';
         } else if (tabSteps.every(s => s.status === 'done')) {
           pill.textContent = '✓';
           pill.className = 'text-[10px] px-1.5 py-0.5 rounded-full font-semibold bg-emerald-500/30 text-emerald-200';
@@ -6839,6 +6906,27 @@
         const res = await api(`/api/pipeline/queue/${encodeURIComponent(jobId)}`, { method: 'DELETE' });
         renderPipelineState(res);
         toast('🗑️ Đã xóa tác vụ khỏi hàng đợi chờ.', 'info');
+      } catch (e) {
+        toast(e.message, 'error');
+      }
+    }
+
+    async function resumePipelineQueue() {
+      try {
+        const res = await api('/api/pipeline/resume', { method: 'POST' });
+        renderPipelineState(res);
+        toast('▶️ Đã tiếp tục chạy hàng đợi đang tạm dừng!', 'success');
+        pollPipelineStatus(false);
+      } catch (e) {
+        toast(e.message, 'error');
+      }
+    }
+
+    async function clearLivePipelineQueue() {
+      try {
+        const res = await api('/api/pipeline/queue', { method: 'DELETE' });
+        renderPipelineState(res);
+        toast('🗑️ Đã xóa sạch hàng đợi chờ.', 'info');
       } catch (e) {
         toast(e.message, 'error');
       }

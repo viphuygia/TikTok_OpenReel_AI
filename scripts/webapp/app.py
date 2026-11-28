@@ -6202,6 +6202,7 @@ PIPELINE_STATE: dict[str, Any] = {
     "stopped": False,
     "active_job": None,
     "pending_queue": [],
+    "session_history": [],
     "queue_completed": 0,
     "queue_total": 0,
     "current_step": 0,
@@ -6333,7 +6334,7 @@ def _update_pipeline(
                     if det:
                         item["detail"] = det
         if log_line:
-            PIPELINE_STATE["logs"] = (PIPELINE_STATE["logs"] + [log_line])[-40:]
+            PIPELINE_STATE["logs"] = (PIPELINE_STATE["logs"] + [log_line])[-80:]
 
 
 def _job_summary(item: dict[str, Any]) -> dict[str, Any]:
@@ -6363,6 +6364,7 @@ def _job_summary(item: dict[str, Any]) -> dict[str, Any]:
         "hide_subtitles": bool(getattr(jreq, "hide_subtitles", False)),
         "face_blur_enabled": bool(getattr(jreq, "face_blur_enabled", False)),
         "plate_blur_enabled": bool(getattr(jreq, "plate_blur_enabled", False)),
+        "interrupted": bool(item.get("interrupted", False)),
         "batch_all_scripts": bool(getattr(jreq, "batch_all_scripts", False)),
     }
 
@@ -6371,25 +6373,53 @@ def _sync_pending_queue_locked() -> None:
     PIPELINE_STATE["pending_queue"] = [_job_summary(j) for j in LIVE_PIPELINE_QUEUE]
 
 
-def _reset_pipeline_state_locked() -> None:
+def _extract_result_output_files(res: Any) -> list[str]:
+    if not isinstance(res, dict):
+        return []
+    files: list[str] = []
+    if isinstance(res.get("exported"), list):
+        for item in res["exported"]:
+            if isinstance(item, dict) and item.get("filename"):
+                files.append(Path(str(item["filename"])).name)
+    if isinstance(res.get("batch"), list):
+        for item in res["batch"]:
+            if isinstance(item, dict) and item.get("output_filename"):
+                files.append(Path(str(item["output_filename"])).name)
+    if isinstance(res.get("render"), dict) and res["render"].get("output_filename"):
+        files.append(Path(str(res["render"]["output_filename"])).name)
+    elif res.get("output_file"):
+        files.append(Path(str(res["output_file"])).name)
+    return list(dict.fromkeys(files))
+
+
+def _reset_pipeline_state_locked(
+    *, preserve_queue: bool = False, preserve_history: bool = False
+) -> None:
     PIPELINE_CANCEL_EVENT.clear()
     PIPELINE_STOP_AFTER_CURRENT.clear()
-    LIVE_PIPELINE_QUEUE.clear()
+    if not preserve_queue:
+        LIVE_PIPELINE_QUEUE.clear()
+        PIPELINE_STATE["pending_queue"] = []
+    if not preserve_history:
+        PIPELINE_STATE["session_history"] = []
+        PIPELINE_STATE["queue_completed"] = 0
+        PIPELINE_STATE["logs"] = []
     PIPELINE_STATE["running"] = True
     PIPELINE_STATE["stop_after_current"] = False
     PIPELINE_STATE["cancelling"] = False
     PIPELINE_STATE["stopped"] = False
     PIPELINE_STATE["active_job"] = None
-    PIPELINE_STATE["pending_queue"] = []
-    PIPELINE_STATE["queue_completed"] = 0
-    PIPELINE_STATE["queue_total"] = 0
+    PIPELINE_STATE["queue_total"] = (
+        int(PIPELINE_STATE.get("queue_completed") or 0) + len(LIVE_PIPELINE_QUEUE)
+        if preserve_queue
+        else 0
+    )
     PIPELINE_STATE["current_step"] = 1
     PIPELINE_STATE["current_tab"] = "tab4"
     PIPELINE_STATE["percent"] = 5
     PIPELINE_STATE["message"] = "Khởi động luồng dựng tự động theo Kế hoạch AI..."
     PIPELINE_STATE["error"] = ""
     PIPELINE_STATE["result"] = None
-    PIPELINE_STATE["logs"] = []
     for s in PIPELINE_STATE["steps"]:
         s["status"] = "idle"
         s["detail"] = ""
@@ -8013,12 +8043,12 @@ def _run_pipeline_worker(_initial_req: OneClickPipelineReq | None = None) -> Non
 
             with PIPELINE_LOCK:
                 if PIPELINE_STOP_AFTER_CURRENT.is_set() and batch_summary:
-                    LIVE_PIPELINE_QUEUE.clear()
                     _sync_pending_queue_locked()
                     break
                 if not LIVE_PIPELINE_QUEUE:
                     break
                 job_item = LIVE_PIPELINE_QUEUE.pop(0)
+                job_item["interrupted"] = False
                 _sync_pending_queue_locked()
                 job_summary = _job_summary(job_item)
                 PIPELINE_STATE["active_job"] = job_summary
@@ -8052,7 +8082,23 @@ def _run_pipeline_worker(_initial_req: OneClickPipelineReq | None = None) -> Non
                     last_single_result = PIPELINE_STATE.get("result")
                     last_single_message = str(PIPELINE_STATE.get("message") or "")
                     last_single_tab = str(PIPELINE_STATE.get("current_tab") or "tab5")
+                    out_files = _extract_result_output_files(last_single_result)
                     PIPELINE_STATE["queue_completed"] = int(PIPELINE_STATE.get("queue_completed") or 0) + 1
+                    PIPELINE_STATE["session_history"] = (
+                        PIPELINE_STATE.get("session_history", [])
+                        + [
+                            {
+                                "project_id": pid,
+                                "project_name": pname,
+                                "pipeline_category": job_summary["pipeline_category"],
+                                "duration_sec": job_summary["duration_sec"],
+                                "status": "done" if not err else "error",
+                                "output_files": out_files,
+                                "detail": err or (", ".join(out_files) if out_files else "Hoàn tất"),
+                                "finished_at": time.strftime("%H:%M:%S"),
+                            }
+                        ]
+                    )[-30:]
                 batch_summary.append({
                     "project_id": pid,
                     "project_name": pname,
@@ -8062,6 +8108,34 @@ def _run_pipeline_worker(_initial_req: OneClickPipelineReq | None = None) -> Non
                 })
             except PipelineCancelledError:
                 cancelled_mid_job = True
+                with PIPELINE_LOCK:
+                    cur_step = int(PIPELINE_STATE.get("current_step") or 1)
+                    job_item["interrupted"] = True
+                    LIVE_PIPELINE_QUEUE.insert(0, job_item)
+                    _sync_pending_queue_locked()
+                    for st_s in PIPELINE_STATE["steps"]:
+                        if st_s.get("status") == "running":
+                            st_s["status"] = "stopped"
+                            st_s["detail"] = "Đã dừng bởi người dùng"
+                    PIPELINE_STATE["session_history"] = (
+                        PIPELINE_STATE.get("session_history", [])
+                        + [
+                            {
+                                "project_id": pid,
+                                "project_name": pname,
+                                "pipeline_category": job_summary["pipeline_category"],
+                                "duration_sec": job_summary["duration_sec"],
+                                "status": "stopped",
+                                "output_files": [],
+                                "detail": f"Dừng dở ở Bước {cur_step} (đã xếp lại đầu hàng đợi)",
+                                "finished_at": time.strftime("%H:%M:%S"),
+                            }
+                        ]
+                    )[-30:]
+                    PIPELINE_STATE["logs"] = (
+                        PIPELINE_STATE.get("logs", [])
+                        + [f"[DỪNG DỞ] `{pname}` dừng ở Bước {cur_step} và được đưa lại lên đầu hàng đợi chờ."]
+                    )[-80:]
                 batch_summary.append({
                     "project_id": pid,
                     "project_name": pname,
@@ -8074,6 +8148,21 @@ def _run_pipeline_worker(_initial_req: OneClickPipelineReq | None = None) -> Non
             except Exception as exc:
                 with PIPELINE_LOCK:
                     PIPELINE_STATE["queue_completed"] = int(PIPELINE_STATE.get("queue_completed") or 0) + 1
+                    PIPELINE_STATE["session_history"] = (
+                        PIPELINE_STATE.get("session_history", [])
+                        + [
+                            {
+                                "project_id": pid,
+                                "project_name": pname,
+                                "pipeline_category": job_summary["pipeline_category"],
+                                "duration_sec": job_summary["duration_sec"],
+                                "status": "error",
+                                "output_files": [],
+                                "detail": str(exc)[:140],
+                                "finished_at": time.strftime("%H:%M:%S"),
+                            }
+                        ]
+                    )[-30:]
                 batch_summary.append({
                     "project_id": pid,
                     "project_name": pname,
@@ -8088,8 +8177,16 @@ def _run_pipeline_worker(_initial_req: OneClickPipelineReq | None = None) -> Non
         soft_stopped = PIPELINE_STOP_AFTER_CURRENT.is_set() and not cancelled_mid_job
 
         with PIPELINE_LOCK:
-            LIVE_PIPELINE_QUEUE.clear()
-            PIPELINE_STATE["pending_queue"] = []
+            if not (cancelled_mid_job or soft_stopped):
+                LIVE_PIPELINE_QUEUE.clear()
+            _sync_pending_queue_locked()
+            paused_cnt = len(LIVE_PIPELINE_QUEUE)
+            done_names = [
+                str(h.get("project_name") or h.get("project_id"))
+                for h in (PIPELINE_STATE.get("session_history") or [])
+                if h.get("status") == "done"
+            ]
+            done_preview = ", ".join(done_names[-3:]) + ("..." if len(done_names) > 3 else "")
             PIPELINE_STATE["active_job"] = None
             PIPELINE_STATE["running"] = False
             PIPELINE_STATE["stop_after_current"] = False
@@ -8098,19 +8195,24 @@ def _run_pipeline_worker(_initial_req: OneClickPipelineReq | None = None) -> Non
             if cancelled_mid_job:
                 PIPELINE_STATE["stopped"] = True
                 PIPELINE_STATE["error"] = ""
-                PIPELINE_STATE["message"] = (
-                    f"⏹️ Đã dừng ngay (đã hoàn tất {ok_cnt} tác vụ trước đó)." if ok_cnt > 0
-                    else "⏹️ Đã dừng tiến trình render ngay lập tức."
-                )
-                PIPELINE_STATE["logs"] = (PIPELINE_STATE["logs"] + [f"[ĐÃ DỪNG NGAY] {PIPELINE_STATE['message']}"])[-40:]
+                parts = ["⏹️ Đã dừng ngay"]
+                if done_names:
+                    parts.append(f"Đã xong {len(done_names)}: {done_preview}")
+                if paused_cnt > 0:
+                    parts.append(f"Đang tạm dừng {paused_cnt} tác vụ (bấm ▶️ Tiếp tục để chạy tiếp)")
+                PIPELINE_STATE["message"] = " · ".join(parts)
+                PIPELINE_STATE["logs"] = (PIPELINE_STATE["logs"] + [f"[ĐÃ DỪNG NGAY] {PIPELINE_STATE['message']}"])[-80:]
             elif soft_stopped:
                 PIPELINE_STATE["stopped"] = True
                 PIPELINE_STATE["error"] = ""
-                PIPELINE_STATE["percent"] = 100
+                PIPELINE_STATE["percent"] = 100 if paused_cnt == 0 else PIPELINE_STATE.get("percent", 50)
                 PIPELINE_STATE["current_step"] = 5
                 PIPELINE_STATE["current_tab"] = last_single_tab or "tab5"
-                PIPELINE_STATE["message"] = f"⏭️ Đã dừng sau video hiện tại ({ok_cnt} tác vụ hoàn tất)."
-                PIPELINE_STATE["logs"] = (PIPELINE_STATE["logs"] + [f"[ĐÃ DỪNG SAU VIDEO NÀY] {PIPELINE_STATE['message']}"])[-40:]
+                parts = [f"⏭️ Đã dừng sau video hiện tại (Xong: {done_preview or f'{ok_cnt} tác vụ'})"]
+                if paused_cnt > 0:
+                    parts.append(f"Còn {paused_cnt} tác vụ đang tạm dừng chờ Tiếp tục")
+                PIPELINE_STATE["message"] = " · ".join(parts)
+                PIPELINE_STATE["logs"] = (PIPELINE_STATE["logs"] + [f"[ĐÃ DỪNG SAU VIDEO NÀY] {PIPELINE_STATE['message']}"])[-80:]
                 if len(batch_summary) > 1:
                     PIPELINE_STATE["result"] = {"multi_project": batch_summary}
             elif len(batch_summary) <= 1:
@@ -8272,30 +8374,68 @@ def api_pipeline_stop(req: PipelineStopReq):
     with PIPELINE_LOCK:
         if not PIPELINE_STATE.get("running"):
             return {"ok": True, "already_stopped": True, **json.loads(json.dumps(PIPELINE_STATE))}
-        dropped = len(LIVE_PIPELINE_QUEUE)
-        LIVE_PIPELINE_QUEUE.clear()
+        kept = len(LIVE_PIPELINE_QUEUE)
         _sync_pending_queue_locked()
         if mode == "after_current":
             PIPELINE_STOP_AFTER_CURRENT.set()
             PIPELINE_STATE["stop_after_current"] = True
-            PIPELINE_STATE["message"] = "⏭️ Sẽ dừng ngay sau khi xong video hiện tại..."
+            PIPELINE_STATE["message"] = (
+                f"⏭️ Sẽ dừng sau video hiện tại (giữ lại {kept} tác vụ chờ)..."
+                if kept > 0
+                else "⏭️ Sẽ dừng ngay sau khi xong video hiện tại..."
+            )
             PIPELINE_STATE["logs"] = (
                 PIPELINE_STATE.get("logs", [])
-                + [f"[Dừng mềm] Đã bật dừng sau video này (hủy {dropped} tác vụ đang chờ)."]
-            )[-40:]
-            return {"ok": True, "mode": mode, "dropped_queue": dropped, **json.loads(json.dumps(PIPELINE_STATE))}
+                + [f"[Dừng mềm] Đã bật dừng sau video này (giữ nguyên {kept} tác vụ chờ)."]
+            )[-80:]
+            return {"ok": True, "mode": mode, "kept_queue": kept, **json.loads(json.dumps(PIPELINE_STATE))}
         PIPELINE_CANCEL_EVENT.set()
         PIPELINE_STOP_AFTER_CURRENT.set()
         PIPELINE_STATE["cancelling"] = True
         PIPELINE_STATE["stop_after_current"] = True
-        PIPELINE_STATE["message"] = "⏹️ Đang dừng ngay tiến trình render..."
+        PIPELINE_STATE["message"] = "⏹️ Đang dừng ngay tiến trình render (giữ lại hàng đợi để tiếp tục sau)..."
         PIPELINE_STATE["logs"] = (
             PIPELINE_STATE.get("logs", [])
-            + [f"[Dừng ngay] Đang ngắt tiến trình render (hủy {dropped} tác vụ chờ)."]
-        )[-40:]
+            + [f"[Dừng ngay] Đang ngắt tiến trình render (giữ lại {kept} tác vụ chờ + tác vụ dở hiện tại)."]
+        )[-80:]
     _kill_active_pipeline_procs()
     with PIPELINE_LOCK:
-        return {"ok": True, "mode": mode, "dropped_queue": dropped, **json.loads(json.dumps(PIPELINE_STATE))}
+        return {"ok": True, "mode": mode, "kept_queue": kept, **json.loads(json.dumps(PIPELINE_STATE))}
+
+
+@app.post("/api/pipeline/resume")
+def api_pipeline_resume():
+    with PIPELINE_LOCK:
+        if PIPELINE_STATE.get("running"):
+            raise HTTPException(status_code=409, detail="Pipeline đang chạy rồi.")
+        if not LIVE_PIPELINE_QUEUE:
+            raise HTTPException(status_code=400, detail="Không có tác vụ nào đang chờ trong hàng đợi để tiếp tục.")
+        cnt = len(LIVE_PIPELINE_QUEUE)
+        _reset_pipeline_state_locked(preserve_queue=True, preserve_history=True)
+        PIPELINE_STATE["message"] = f"▶️ Đang tiếp tục hàng đợi ({cnt} tác vụ còn lại)..."
+        PIPELINE_STATE["logs"] = (
+            PIPELINE_STATE.get("logs", [])
+            + [f"[TIẾP TỤC HÀNG ĐỢI] Chạy tiếp {cnt} tác vụ đang tạm dừng."]
+        )[-80:]
+    t = threading.Thread(target=_run_pipeline_worker, args=(None,), daemon=True)
+    t.start()
+    return api_pipeline_status()
+
+
+@app.delete("/api/pipeline/queue")
+def api_pipeline_queue_clear_all():
+    with PIPELINE_LOCK:
+        cnt = len(LIVE_PIPELINE_QUEUE)
+        LIVE_PIPELINE_QUEUE.clear()
+        _sync_pending_queue_locked()
+        done_n = int(PIPELINE_STATE.get("queue_completed") or 0)
+        act_n = 1 if PIPELINE_STATE.get("active_job") else 0
+        PIPELINE_STATE["queue_total"] = max(done_n + act_n, 0)
+        PIPELINE_STATE["logs"] = (
+            PIPELINE_STATE.get("logs", [])
+            + [f"[Hàng đợi] Đã xóa sạch {cnt} tác vụ đang chờ."]
+        )[-80:]
+        return {"ok": True, "cleared": cnt, **json.loads(json.dumps(PIPELINE_STATE))}
 
 
 @app.get("/api/pipeline/queue/{job_id}")
