@@ -867,7 +867,7 @@ def generate_longform_chapter_script(
     # Group timeline segments & representative frames strictly by Chapter so AI sees what happens in EACH chapter
     chapter_frame_specs: list[dict[str, Any]] = []
     chap_desc_lines: list[str] = []
-    frames_per_chap = 3 if n_chap <= 4 else 2
+    frames_per_chap = 4 if (eff_pacing in ("fast", "turbo") or vp_prof.get("tight_pacing")) else (3 if n_chap <= 4 else 2)
     for ch in chapters_plan:
         ch_idx = int(ch.get("index") or 1)
         ch_st = float(ch.get("start_sec") or 0.0)
@@ -887,7 +887,12 @@ def generate_longform_chapter_script(
         chap_desc_lines.append(f"- Chương {ch_idx} ({ch_st:.0f}s -> {ch_en:.0f}s){clip_tag}")
 
         if ch_segs:
-            ratios = [0.18, 0.52, 0.84] if frames_per_chap == 3 else [0.24, 0.72]
+            if frames_per_chap >= 4:
+                ratios = [0.10, 0.36, 0.64, 0.88]
+            elif frames_per_chap == 3:
+                ratios = [0.18, 0.52, 0.84]
+            else:
+                ratios = [0.24, 0.72]
             picked_indices: list[int] = []
             for r in ratios:
                 si = min(len(ch_segs) - 1, max(0, int(round(r * (len(ch_segs) - 1)))))
@@ -947,6 +952,7 @@ def generate_longform_chapter_script(
         f"Danh sách clip thô theo thứ tự: {clip_summary}\n\n"
         "YÊU CẦU CỰC KỲ QUAN TRỌNG:\n"
         "- ĐÚNG NGỮ CẢNH TỪNG CHƯƠNG: Lời bình của Chương nào CHỈ được mô tả đúng hình ảnh thực tế của Chương đó (dựa trên các khung hình được gắn nhãn [Chương X]). TUYỆT ĐỐI không kể trước sự việc của Chương sau (ví dụ chưa đốt lửa thì không được nói lửa tắt).\n"
+        "- ĐỒNG BỘ HÌNH – TIẾNG TUYỆT ĐỐI: Các `narration_blocks` trong mỗi chương phải đặt `offset_ratio` tăng dần đều từ ~0.06 tới ~0.85; mỗi đoạn CHỈ nói về hình ảnh xuất hiện TẠI hoặc TRƯỚC mốc `offset_ratio` đó, TUYỆT ĐỐI không nói trước cảnh sau khi hình chưa lên.\n"
         "- PHONG CÁCH ĐẠO DIỄN: Nếu Chủ đề/Ghi chú có chỉ định vai diễn đột phá (như Thám tử điều tra, POV Hài hước, Phóng sự kịch tính...), hãy nhập vai TRIỆT ĐỂ giọng điệu đó (đặt câu hỏi bí ẩn, châm biếm duyên dáng hoặc dẫn dắt hồi hộp); nếu không chỉ định thì giữ giọng kể chuyện tự nhiên.\n"
         f"{director_rules}"
         f"{pacing_prompt_rule}"
@@ -1137,9 +1143,24 @@ def generate_longform_chapter_script(
     def_ts, def_ss, def_ac = vibe_visual_defaults.get(
         content_vibe, all_style_combos[4]
     )
+    vibe_style_pools: dict[str, list[str]] = {
+        "detective_mystery": ["detective_noir", "cinema_letterbox", "cinematic_glass", "editorial_minimal"],
+        "pov_comedy": ["comic_pop", "adventure_bold", "pastel_soft", "cinematic_glass"],
+        "field_report": ["detective_noir", "adventure_bold", "editorial_minimal", "cinema_letterbox"],
+        "cinematic_deep": ["cinema_letterbox", "cinematic_glass", "editorial_minimal", "pastel_soft"],
+        "outdoor_picnic": ["campfire_warm", "adventure_bold", "cinematic_glass", "editorial_minimal"],
+        "travel_vlog": ["adventure_bold", "cinematic_glass", "campfire_warm", "comic_pop"],
+        "vlog_genz": ["adventure_bold", "comic_pop", "cinematic_glass", "pastel_soft"],
+        "food_cafe": ["pastel_soft", "campfire_warm", "editorial_minimal", "cinematic_glass"],
+        "daily_story": ["editorial_minimal", "cinematic_glass", "pastel_soft", "campfire_warm"],
+        "creative_internet": ["comic_pop", "adventure_bold", "cinematic_glass", "editorial_minimal"],
+    }
+    pool_for_vibe = vibe_style_pools.get(content_vibe, [c[0] for c in all_style_combos])
     if avoid_title_style and def_ts == avoid_title_style:
-        idx_cur = next((i for i, c in enumerate(all_style_combos) if c[0] == avoid_title_style), 0)
-        def_ts, def_ss, def_ac = all_style_combos[(idx_cur + 1) % len(all_style_combos)]
+        if avoid_title_style in pool_for_vibe:
+            def_ts = pool_for_vibe[(pool_for_vibe.index(avoid_title_style) + 1) % len(pool_for_vibe)]
+        else:
+            def_ts = pool_for_vibe[0]
     raw_vd = (parsed_ai or {}).get("visual_direction") if isinstance((parsed_ai or {}).get("visual_direction"), dict) else {}
     valid_title_styles = {
         "cinematic_glass", "editorial_minimal", "campfire_warm",
@@ -1151,18 +1172,25 @@ def generate_longform_chapter_script(
     raw_ss = str(raw_vd.get("subtitle_style") or "").strip().split("|")[0].strip()
     raw_ac = str(raw_vd.get("accent_color") or "").strip()
     picked_ts = raw_ts if raw_ts in valid_title_styles else def_ts
-    if avoid_title_style and picked_ts == avoid_title_style:
-        picked_ts = def_ts
     picked_ss = raw_ss if raw_ss in valid_sub_styles else def_ss
     picked_ac = raw_ac if re.fullmatch(r"#[0-9a-fA-F]{6}", raw_ac) else def_ac
-    if vp_prof.get("force_vfx") and not preferred_title_style:
-        picked_ts = str(vp_prof.get("title_style") or picked_ts)
+    pref_ts_clean = str(preferred_title_style or "").strip()
+    pref_ss_clean = str(preferred_subtitle_style or "").strip()
+    if pref_ts_clean in valid_title_styles:
+        picked_ts = pref_ts_clean
+    else:
+        if vp_prof.get("force_vfx"):
+            picked_ts = str(vp_prof.get("title_style") or picked_ts)
+            picked_ac = str(vp_prof.get("accent_color") or picked_ac)
+        if avoid_title_style and picked_ts == avoid_title_style:
+            if avoid_title_style in pool_for_vibe:
+                picked_ts = pool_for_vibe[(pool_for_vibe.index(avoid_title_style) + 1) % len(pool_for_vibe)]
+            else:
+                picked_ts = def_ts
+    if pref_ss_clean in valid_sub_styles:
+        picked_ss = pref_ss_clean
+    elif vp_prof.get("force_vfx"):
         picked_ss = str(vp_prof.get("subtitle_style") or picked_ss)
-        picked_ac = str(vp_prof.get("accent_color") or picked_ac)
-    if preferred_title_style in valid_title_styles:
-        picked_ts = preferred_title_style
-    if preferred_subtitle_style in valid_sub_styles:
-        picked_ss = preferred_subtitle_style
     if re.fullmatch(r"#[0-9a-fA-F]{6}", str(preferred_accent_color or "").strip()):
         picked_ac = str(preferred_accent_color).strip()
     final_visual_dir = {
@@ -2021,9 +2049,28 @@ def build_longform_voice_and_srt(
                         ]
         lead_gap, gap_after_each = _compute_chapter_pacing(win_st, win_en, ch_blocks, vp_prof)
         cursor_t = win_st + lead_gap
+        min_gap = 0.20 if tight_mode else max(0.35, min(0.85, gap_after_each * 0.45))
+        block_durs = [float(x["duration"]) for x in ch_blocks]
 
-        for b_info in ch_blocks:
+        for b_idx_c, b_info in enumerate(ch_blocks):
             b_pcm = b_info["pcm"]
+            if n_c >= 2:
+                even_ratio = float(b_idx_c) / float(n_c)
+                raw_off = b_info.get("offset_ratio")
+                if raw_off is not None and 0.0 <= float(raw_off) <= 0.92:
+                    target_ratio = max(
+                        max(0.0, even_ratio - 0.10),
+                        min(min(0.88, even_ratio + 0.10), 0.60 * even_ratio + 0.40 * float(raw_off)),
+                    )
+                else:
+                    target_ratio = even_ratio
+                anchor_t = win_st + target_ratio * ch_span
+                rem_speech = sum(block_durs[b_idx_c:])
+                rem_gaps = 0.14 * max(0, n_c - 1 - b_idx_c)
+                latest_start = max(win_st, win_en - rem_speech - rem_gaps)
+                max_early_lead = 0.75 if tight_mode else 1.25
+                desired_t = min(latest_start, max(win_st, anchor_t - max_early_lead))
+                cursor_t = max(cursor_t, desired_t)
             if cursor_t + 0.8 >= win_en:
                 break
             max_samples_in_win = max(0, int(round((win_en - cursor_t) * sr)))
@@ -2054,7 +2101,7 @@ def build_longform_voice_and_srt(
                     )
                     chaps_with_inline_sfx.add(ch_idx)
 
-            cursor_t += (copy_len / float(sr)) + gap_after_each
+            cursor_t += (copy_len / float(sr)) + min_gap
 
     out_wav_path.parent.mkdir(parents=True, exist_ok=True)
     raw_master = out_wav_path.with_name(f"{out_wav_path.stem}_raw.wav")

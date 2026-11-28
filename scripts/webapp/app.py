@@ -1227,6 +1227,9 @@ class OneClickPipelineReq(BaseModel):
     auto_fit_duration: bool = False
     quality_preset: str = "auto_source"
     vlog_title: str = ""
+    title_style: str = "auto"
+    subtitle_style: str = "auto"
+    auto_render_360p: bool = False
     preserve_longform_script: bool = False
     longform_random_mode: bool = False
     longform_random_count: int = 1
@@ -6341,8 +6344,25 @@ def _job_summary(item: dict[str, Any]) -> dict[str, Any]:
         "project_id": item["project_id"],
         "project_name": item.get("project_name") or item["project_id"],
         "pipeline_category": "long_vlog" if is_long else "short_tiktok",
+        "target_duration_sec": float(getattr(jreq, "target_duration_sec", 30.0) or 30.0),
         "duration_sec": float(getattr(jreq, "target_duration_sec", 30.0) or 30.0),
         "content_vibe": str(getattr(jreq, "content_vibe", "") or ""),
+        "pacing_preset": str(getattr(jreq, "pacing_preset", "auto") or "auto"),
+        "title_style": str(getattr(jreq, "title_style", "auto") or "auto"),
+        "subtitle_style": str(getattr(jreq, "subtitle_style", "auto") or "auto"),
+        "quality_preset": str(getattr(jreq, "quality_preset", "auto_source") or "auto_source"),
+        "aspect_ratio": str(getattr(jreq, "aspect_ratio", "9:16") or "9:16"),
+        "voice_preset": str(getattr(jreq, "voice_preset", "random_neural") or "random_neural"),
+        "bgm_track": str(getattr(jreq, "bgm_track", "auto_ai") or "auto_ai"),
+        "subtitle_lang": str(getattr(jreq, "subtitle_lang", "vi") or "vi"),
+        "vlog_title": str(getattr(jreq, "vlog_title", "") or ""),
+        "product_note": str(getattr(jreq, "product_note", "") or ""),
+        "auto_render_360p": bool(getattr(jreq, "auto_render_360p", False)),
+        "keep_clip_audio": bool(getattr(jreq, "keep_clip_audio", False)),
+        "mute_voice": bool(getattr(jreq, "mute_voice", False)),
+        "hide_subtitles": bool(getattr(jreq, "hide_subtitles", False)),
+        "face_blur_enabled": bool(getattr(jreq, "face_blur_enabled", False)),
+        "plate_blur_enabled": bool(getattr(jreq, "plate_blur_enabled", False)),
         "batch_all_scripts": bool(getattr(jreq, "batch_all_scripts", False)),
     }
 
@@ -6687,8 +6707,10 @@ def _execute_longform_vlog_pipeline(
         except Exception:
             prev_lf_cfg = {}
     avoid_ts = str(prev_lf_cfg.get("last_title_style") or "").strip()
-    pref_ts = forced_style[0] if forced_style else str(prev_lf_cfg.get("preferred_title_style") or "").strip()
-    pref_ss = forced_style[1] if forced_style else str(prev_lf_cfg.get("preferred_subtitle_style") or "").strip()
+    req_ts = str(getattr(req, "title_style", "auto") or "auto").strip()
+    req_ss = str(getattr(req, "subtitle_style", "auto") or "auto").strip()
+    pref_ts = forced_style[0] if forced_style else ("" if req_ts in ("", "auto") else req_ts)
+    pref_ss = forced_style[1] if forced_style else ("" if req_ss in ("", "auto") else req_ss)
     pref_ac = forced_style[2] if forced_style else str(prev_lf_cfg.get("preferred_accent_color") or "").strip()
     req_color_raw = str(getattr(req, "color_preset", "") or "natural").strip()
     disable_vf = bool(getattr(req, "disable_vibe_filter", False))
@@ -6819,7 +6841,7 @@ def _execute_longform_vlog_pipeline(
             log_line=f"[Bước 3/5] Hoàn tất giọng ({voice_res['preset_label']}{sfx_note}), đồng bộ {voice_res['srt_lines']} dòng phụ đề.",
         )
 
-    bgm_name, _ = _resolve_pipeline_bgm_track(
+    bgm_name, bgm_pick_info = _resolve_pipeline_bgm_track(
         str(req.bgm_track or "auto_ai"),
         script_text=disp_txt,
         content_vibe=req_vibe,
@@ -6928,9 +6950,11 @@ def _execute_longform_vlog_pipeline(
                 "duration_sec": render_res.get("duration_sec"),
                 "voice_preset": "muted" if req_mute_voice else str(getattr(req, "voice_preset", "") or "edge_hoaimy_koc"),
                 "bgm_track": bgm_file.name if bgm_file.exists() else "",
+                "bgm_reason": str((bgm_pick_info or {}).get("reason") or ""),
                 "title": str(ch_script.get("video_title") or req_vlog_title or ""),
                 "title_style": str(vd.get("title_style") or "cinematic_glass"),
                 "subtitle_style": str(vd.get("subtitle_style") or "editorial_clean"),
+                "subtitle_lang": req_sub_lang,
                 "color_preset": eff_color_preset,
                 "content_vibe": req_vibe,
                 "pacing_preset": req_pacing,
@@ -6940,6 +6964,13 @@ def _execute_longform_vlog_pipeline(
                 "mute_voice": req_mute_voice,
                 "hide_subtitles": req_hide_subs,
                 "keep_clip_audio": bool(getattr(req, "keep_clip_audio", False)),
+                "enable_motion_zoom": bool(getattr(req, "enable_motion_zoom", False)),
+                "disable_vibe_filter": disable_vf,
+                "disclaimer_text": eff_disclaimer,
+                "face_blur_enabled": bool(fp_cfg.get("enabled")),
+                "face_blur_mode": str(fp_cfg.get("mode") or ""),
+                "plate_blur_enabled": bool(fp_cfg.get("plate_blur_enabled")),
+                "auto_render_360p": bool(getattr(req, "auto_render_360p", False)),
                 "product_note": str(req.product_note or "")[:240],
                 "chapters_summary": [
                     f"C{c.get('index')}: {c.get('chapter_title')}" for c in (ch_script.get("chapters") or [])
@@ -6952,6 +6983,8 @@ def _execute_longform_vlog_pipeline(
             ),
         )
         _record_render_history(DIR_WORKSPACE, out_mp4.name, lf_meta)
+        if bool(getattr(req, "auto_render_360p", False)):
+            _maybe_schedule_auto_360p(ACTIVE_PROJECT_ROOT, out_mp4)
         exported_list.append({"filename": out_mp4.name, "aspect_ratio": cur_ar, "duration_sec": render_res.get("duration_sec")})
         last_out_mp4 = out_mp4
         last_render_res = render_res
@@ -7376,7 +7409,7 @@ def _run_single_project_pipeline(req: OneClickPipelineReq) -> None:
                     raw_slot_bgm = str(req.bgm_track or "auto_ai").strip() if not req.mix_variants else str(mix_prof.get("bgm_track") or "auto_ai").strip()
                     if raw_slot_bgm in ("", "auto_ai") or str(req.bgm_track or "auto_ai").strip() in ("", "auto_ai"):
                         slot_script_txt = str(b_opt.get("script_display") or b_opt.get("script_text") or "")
-                        slot_bgm, _ = _resolve_pipeline_bgm_track(
+                        slot_bgm, slot_bgm_pick = _resolve_pipeline_bgm_track(
                             "auto_ai",
                             script_text=slot_script_txt,
                             content_vibe=req_vibe,
@@ -7389,7 +7422,7 @@ def _run_single_project_pipeline(req: OneClickPipelineReq) -> None:
                             log_to_pipeline=True,
                         )
                     else:
-                        slot_bgm, _ = _resolve_pipeline_bgm_track(raw_slot_bgm, use_ai=False, log_to_pipeline=False)
+                        slot_bgm, slot_bgm_pick = _resolve_pipeline_bgm_track(raw_slot_bgm, use_ai=False, log_to_pipeline=False)
                     used_batch_bgms.insert(0, slot_bgm)
                     mix_prof["bgm_track"] = slot_bgm
                     api_workshop_select_script(
@@ -7584,18 +7617,28 @@ def _run_single_project_pipeline(req: OneClickPipelineReq) -> None:
                             "duration_sec": r_res.get("duration_sec"),
                             "voice_preset": "muted" if bool(getattr(req, "mute_voice", False)) else str(slot_preset["id"] if slot_preset else req.voice_preset),
                             "bgm_track": mix_prof.get("bgm_track"),
+                            "bgm_reason": str((slot_bgm_pick or {}).get("reason") or ""),
                             "title": opt_title,
                             "visual_theme": mix_prof.get("visual_theme"),
+                            "color_preset": mix_prof.get("color_preset", "natural"),
                             "badge_style": mix_prof.get("badge_style"),
+                            "content_vibe": req_vibe,
+                            "pacing_preset": str(getattr(req, "pacing_preset", "auto") or "auto"),
+                            "subtitle_lang": str(getattr(req, "subtitle_lang", "vi") or "vi"),
                             "sticker_density": req.sticker_density or "normal",
                             "mute_voice": bool(getattr(req, "mute_voice", False)),
                             "hide_subtitles": bool(getattr(req, "hide_subtitles", False)),
+                            "face_blur_enabled": bool(fp_short_cfg.get("enabled")),
+                            "plate_blur_enabled": bool(fp_short_cfg.get("plate_blur_enabled")),
+                            "auto_render_360p": bool(getattr(req, "auto_render_360p", False)),
                             "product_note": str(req.product_note or "")[:240],
                         },
                         script_text=str(b_opt.get("script_display") or b_opt.get("script_text") or ""),
                         brand_brief=None if is_story_mode else brief,
                     )
                     _record_render_history(DIR_WORKSPACE, b_out_name, b_meta)
+                    if bool(getattr(req, "auto_render_360p", False)) and b_out_name:
+                        _maybe_schedule_auto_360p(ACTIVE_PROJECT_ROOT, DIR_OUTPUT / b_out_name)
                     rendered_batch.append(
                         {
                             "option_id": opt_id,
@@ -7761,7 +7804,7 @@ def _run_single_project_pipeline(req: OneClickPipelineReq) -> None:
             else None
         )
         single_script_txt = FILE_SCRIPT.read_text(encoding="utf-8-sig") if FILE_SCRIPT.exists() else ""
-        single_bgm, _ = _resolve_pipeline_bgm_track(
+        single_bgm, single_bgm_pick = _resolve_pipeline_bgm_track(
             str(req.bgm_track or "auto_ai"),
             script_text=single_script_txt,
             content_vibe=req_vibe,
@@ -7810,18 +7853,28 @@ def _run_single_project_pipeline(req: OneClickPipelineReq) -> None:
                 "duration_sec": render_res.get("duration_sec"),
                 "voice_preset": "muted" if bool(getattr(req, "mute_voice", False)) else str(getattr(req, "voice_preset", "") or "random_neural"),
                 "bgm_track": single_bgm,
+                "bgm_reason": str((single_bgm_pick or {}).get("reason") or ""),
                 "title": str(sel_meta.get("label") or ""),
                 "visual_theme": req.visual_theme or "auto",
+                "color_preset": req.color_preset or "natural",
                 "badge_style": req.badge_style,
+                "content_vibe": req_vibe,
+                "pacing_preset": str(getattr(req, "pacing_preset", "auto") or "auto"),
+                "subtitle_lang": str(getattr(req, "subtitle_lang", "vi") or "vi"),
                 "sticker_density": req.sticker_density or "normal",
                 "mute_voice": bool(getattr(req, "mute_voice", False)),
                 "hide_subtitles": bool(getattr(req, "hide_subtitles", False)),
+                "face_blur_enabled": bool(fp_short_cfg.get("enabled")),
+                "plate_blur_enabled": bool(fp_short_cfg.get("plate_blur_enabled")),
+                "auto_render_360p": bool(getattr(req, "auto_render_360p", False)),
                 "product_note": str(req.product_note or "")[:240],
             },
             script_text=(FILE_SCRIPT.read_text(encoding="utf-8-sig") if FILE_SCRIPT.exists() else ""),
             brand_brief=None if is_story_mode else brief,
         )
         _record_render_history(DIR_WORKSPACE, out_fname, s_meta)
+        if bool(getattr(req, "auto_render_360p", False)) and out_fname:
+            _maybe_schedule_auto_360p(ACTIVE_PROJECT_ROOT, DIR_OUTPUT / out_fname)
         frames = _collect_remotion_preview_frames()
         _q_managed = threading.get_ident() == _PIPELINE_THREAD_ID
         _update_pipeline(
@@ -7857,7 +7910,7 @@ def _req_for_project(req: OneClickPipelineReq, pid: str, multi_projects: bool) -
         if isinstance(pc.get("ordered_clips"), list):
             upd["ordered_clips"] = [str(x) for x in pc["ordered_clips"] if str(x).strip()]
         str_fields = (
-            "pipeline_category", "vlog_title", "product_note", "quality_preset", "aspect_ratio", "content_vibe", "pacing_preset",
+            "pipeline_category", "vlog_title", "title_style", "subtitle_style", "product_note", "quality_preset", "aspect_ratio", "content_vibe", "pacing_preset",
             "short_content_mode", "voice_preset", "tts_engine", "edge_voice", "bgm_track", "sticker_density", "sticker_style",
             "render_engine", "innovation_preset", "sfx_level", "transition_level",
             "icon_density", "visual_theme", "subtitle_lang", "disclaimer_text",
@@ -7867,7 +7920,7 @@ def _req_for_project(req: OneClickPipelineReq, pid: str, multi_projects: bool) -
             if sf_k in pc and pc[sf_k] is not None:
                 upd[sf_k] = str(pc[sf_k]).strip()
         bool_fields = (
-            "auto_fit_duration", "keep_clip_audio", "preserve_longform_script",
+            "auto_fit_duration", "keep_clip_audio", "auto_render_360p", "preserve_longform_script",
             "longform_random_mode", "mute_voice", "hide_subtitles", "enable_motion_zoom", "disable_vibe_filter",
             "disclaimer_enabled",
             "batch_all_scripts", "mix_variants", "mix_engines",
@@ -8243,6 +8296,39 @@ def api_pipeline_stop(req: PipelineStopReq):
     _kill_active_pipeline_procs()
     with PIPELINE_LOCK:
         return {"ok": True, "mode": mode, "dropped_queue": dropped, **json.loads(json.dumps(PIPELINE_STATE))}
+
+
+@app.get("/api/pipeline/queue/{job_id}")
+def api_pipeline_queue_get(job_id: str):
+    jid = str(job_id or "").strip()
+    with PIPELINE_LOCK:
+        item = next((i for i in LIVE_PIPELINE_QUEUE if i.get("id") == jid), None)
+        if item is None:
+            raise HTTPException(status_code=404, detail="Không tìm thấy tác vụ trong hàng đợi chờ (có thể đã bắt đầu chạy).")
+        return {"ok": True, "job": _job_summary(item)}
+
+
+@app.put("/api/pipeline/queue/{job_id}")
+def api_pipeline_queue_update(job_id: str, updates: dict[str, Any]):
+    jid = str(job_id or "").strip()
+    valid_fields = set(OneClickPipelineReq.model_fields.keys()) - {"queue_jobs", "project_ids", "project_configs", "sync"}
+    clean_upd = {k: v for k, v in (updates or {}).items() if k in valid_fields and v is not None}
+    if not clean_upd:
+        raise HTTPException(status_code=400, detail="Không có trường cấu hình hợp lệ để cập nhật.")
+    with PIPELINE_LOCK:
+        item = next((i for i in LIVE_PIPELINE_QUEUE if i.get("id") == jid), None)
+        if item is None:
+            raise HTTPException(status_code=404, detail="Tác vụ không còn trong hàng đợi chờ (đã chạy hoặc đã bị xóa).")
+        try:
+            item["req"] = item["req"].model_copy(update=clean_upd)
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=f"Dữ liệu cấu hình không hợp lệ: {exc}") from exc
+        _sync_pending_queue_locked()
+        PIPELINE_STATE["logs"] = (
+            PIPELINE_STATE.get("logs", [])
+            + [f"[Hàng đợi] Đã cập nhật cấu hình `{item.get('project_name') or item.get('project_id')}`."]
+        )[-40:]
+        return {"ok": True, "job": _job_summary(item), **json.loads(json.dumps(PIPELINE_STATE))}
 
 
 @app.delete("/api/pipeline/queue/{job_id}")
@@ -8765,6 +8851,29 @@ def _run_review_360_transcode(job_key: str, src_path: Path, dest_path: Path) -> 
             tmp_path.unlink(missing_ok=True)
         with REVIEW_360_LOCK:
             REVIEW_360_JOBS[job_key] = {"status": "error", "error": str(exc)}
+
+
+def _maybe_schedule_auto_360p(p_root: Path, src_mp4: Path) -> bool:
+    """Schedule background 360p transcoding for a freshly exported MP4 without blocking the pipeline queue."""
+    if not src_mp4.exists() or not src_mp4.is_file():
+        return False
+    dest_path = _review_360_path(p_root, src_mp4.name)
+    if dest_path.exists() and dest_path.stat().st_size > 1024:
+        return False
+    job_key = f"{p_root.name}::{src_mp4.name}"
+    with REVIEW_360_LOCK:
+        cur = REVIEW_360_JOBS.get(job_key)
+        if cur and cur.get("status") == "running":
+            return False
+        REVIEW_360_JOBS[job_key] = {"status": "running", "error": ""}
+    _update_pipeline(log_line=f"[Auto 360p] Bắt đầu tạo bản xem nhanh 360p cho `{src_mp4.name}`...")
+    t = threading.Thread(
+        target=_run_review_360_transcode,
+        args=(job_key, src_mp4, dest_path),
+        daemon=True,
+    )
+    t.start()
+    return True
 
 
 @app.get("/api/projects/outputs")

@@ -312,6 +312,33 @@
                 <label class="block text-[11px] text-amber-200 font-medium mb-1">🎬 Tiêu đề Intro Vlog (Tùy chọn)</label>
                 <input id="longform-title" type="text" placeholder="Để trống để AI tự đặt tiêu đề hay..." class="w-full rounded-lg bg-zinc-950 border border-zinc-700 px-2.5 py-2 text-xs text-zinc-100 placeholder-zinc-500" />
               </div>
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                <div>
+                  <label class="block text-[11px] text-amber-200 font-medium mb-1">🎨 Kiểu Khung Tiêu Đề Intro</label>
+                  <select id="longform-title-style" class="w-full rounded-lg bg-zinc-950 border border-zinc-700 px-2.5 py-2 text-xs text-zinc-100">
+                    <option value="auto" selected>🎲 Tự động đa dạng (Tránh lặp video trước)</option>
+                    <option value="cinematic_glass">🧊 Cinematic Glass (Kính mờ hiện đại)</option>
+                    <option value="detective_noir">🕵️ Detective Noir (Khung điều tra đậm)</option>
+                    <option value="comic_pop">💥 Comic Pop (Năng động nổi bật)</option>
+                    <option value="cinema_letterbox">🎬 Cinema Letterbox (Màn ảnh điện ảnh)</option>
+                    <option value="campfire_warm">🔥 Campfire Warm (Ấm áp lửa trại)</option>
+                    <option value="adventure_bold">🧭 Adventure Bold (Khám phá mạnh mẽ)</option>
+                    <option value="editorial_minimal">📰 Editorial Minimal (Tạp chí tối giản)</option>
+                    <option value="pastel_soft">🌸 Pastel Soft (Nhẹ nhàng dịu mắt)</option>
+                  </select>
+                </div>
+                <div>
+                  <label class="block text-[11px] text-amber-200 font-medium mb-1">💬 Kiểu Khung Phụ Đề</label>
+                  <select id="longform-subtitle-style" class="w-full rounded-lg bg-zinc-950 border border-zinc-700 px-2.5 py-2 text-xs text-zinc-100">
+                    <option value="auto" selected>🤖 Tự động khớp theo Vibe</option>
+                    <option value="editorial_clean">📰 Editorial Clean (Sạch rõ dễ đọc)</option>
+                    <option value="highlight_bold">⚡ Highlight Bold (To rõ bắt mắt)</option>
+                    <option value="warm_vlog_gold">☀️ Warm Vlog Gold (Vàng ấm vlog)</option>
+                    <option value="mint_nature">🌿 Mint Nature (Xanh bạc hà tươi)</option>
+                    <option value="cinema_box">🎬 Cinema Box (Hộp nền điện ảnh)</option>
+                  </select>
+                </div>
+              </div>
               <div>
                 <label class="block text-[11px] text-amber-200 font-medium mb-1">📝 AI Brief / Nội dung &amp; Bối cảnh Vlog (Để AI viết sát cảnh &amp; đúng ý)</label>
                 <textarea id="longform-topic-note" rows="4" placeholder="Mô tả chi tiết chuyến đi / bối cảnh, địa điểm, nhân vật, cảm xúc từng chặng, lưu ý từ cấm hoặc thông điệp muốn nhấn mạnh..." class="w-full rounded-lg bg-zinc-950 border border-zinc-700 px-3 py-2 text-xs text-zinc-100 placeholder-zinc-500 leading-relaxed"></textarea>
@@ -591,6 +618,10 @@
               <input id="chk-disable-flash-shake" type="checkbox" checked class="rounded bg-zinc-800 border-cyan-500 text-cyan-500" />
               <span>🛡️ Chống chớp &amp; Chống rung (Tắt chớp trắng Flash, Rung camera &amp; Motion Trail)</span>
             </label>
+            <label class="flex items-center gap-2 text-teal-300 cursor-pointer sm:col-span-2">
+              <input id="chk-auto-render-360p" type="checkbox" onchange="try{localStorage.setItem('openreel_auto_360p',this.checked?'1':'0')}catch(e){}" class="rounded bg-zinc-800 border-teal-500 text-teal-500" />
+              <span>📱 Tự động tạo luôn bản xem nhanh 360p sau khi xuất MP4 (xem mượt iPhone / LAN)</span>
+            </label>
             <div id="wrap-disclaimer-box" class="sm:col-span-2 pt-1 border-t border-zinc-800/80 space-y-2">
               <label class="flex items-center gap-2 text-amber-200 font-medium cursor-pointer">
                 <input id="chk-disclaimer-enabled" type="checkbox" onchange="onDisclaimerToggleChange()" class="rounded bg-zinc-800 border-amber-500 text-amber-500" />
@@ -733,6 +764,83 @@
           <button type="button" onclick="closeAutoPipelineModal()" class="px-4 py-2 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-xs text-zinc-200">Hủy</button>
           <button id="btn-confirm-auto-pipeline" type="button" onclick="confirmRunOneClickPipeline()" class="px-5 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-500 hover:from-emerald-500 hover:to-teal-400 text-xs font-semibold text-white shadow-lg">✅ Xác nhận &amp; Bắt đầu Tạo Video</button>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Queue Job Config Viewer & Editor Modal -->
+  <div id="queue-job-edit-modal" class="fixed inset-0 z-50 bg-black/85 backdrop-blur-sm hidden items-center justify-center p-4" onclick="closeQueueJobEditModal()">
+    <div class="w-full max-w-2xl bg-studio-card border border-zinc-700 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]" onclick="event.stopPropagation()">
+      <div class="px-5 py-3.5 border-b border-zinc-800 flex items-center justify-between gap-2">
+        <div class="min-w-0">
+          <h3 id="qedit-modal-title" class="text-sm sm:text-base font-semibold text-white truncate">✏️ Chi tiết &amp; Chỉnh sửa Cấu hình Hàng đợi</h3>
+          <p id="qedit-modal-sub" class="text-[11px] text-zinc-400 truncate"></p>
+        </div>
+        <button type="button" onclick="closeQueueJobEditModal()" class="px-2.5 py-1 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-xs text-zinc-300 shrink-0">Đóng</button>
+      </div>
+      <div class="p-5 space-y-3 text-xs overflow-y-auto">
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+          <div>
+            <label class="block text-[11px] text-pink-300 mb-1">🎬 Vibe Nội dung</label>
+            <select id="qedit-vibe" class="w-full rounded-lg bg-zinc-950 border border-zinc-700 px-2.5 py-1.5 text-xs text-zinc-100"></select>
+          </div>
+          <div>
+            <label class="block text-[11px] text-amber-300 mb-1">⚡ Tiết tấu &amp; Độ dày thoại</label>
+            <select id="qedit-pacing" class="w-full rounded-lg bg-zinc-950 border border-zinc-700 px-2.5 py-1.5 text-xs text-zinc-100"></select>
+          </div>
+          <div>
+            <label class="block text-[11px] text-cyan-300 mb-1">🎙️ Giọng Đọc AI</label>
+            <select id="qedit-voice" class="w-full rounded-lg bg-zinc-950 border border-zinc-700 px-2.5 py-1.5 text-xs text-zinc-100"></select>
+          </div>
+          <div>
+            <label class="block text-[11px] text-emerald-300 mb-1">🎵 Nhạc Nền (BGM)</label>
+            <select id="qedit-bgm" class="w-full rounded-lg bg-zinc-950 border border-zinc-700 px-2.5 py-1.5 text-xs text-zinc-100"></select>
+          </div>
+          <div>
+            <label class="block text-[11px] text-amber-200 mb-1">🎨 Kiểu Tiêu Đề Intro</label>
+            <select id="qedit-title-style" class="w-full rounded-lg bg-zinc-950 border border-zinc-700 px-2.5 py-1.5 text-xs text-zinc-100"></select>
+          </div>
+          <div>
+            <label class="block text-[11px] text-sky-300 mb-1">📐 Tỷ lệ Khung hình</label>
+            <select id="qedit-aspect" class="w-full rounded-lg bg-zinc-950 border border-zinc-700 px-2.5 py-1.5 text-xs text-zinc-100">
+              <option value="9:16">📱 9:16 Dọc (TikTok / Reels)</option>
+              <option value="16:9">🖥️ 16:9 Ngang (YouTube / Vlog)</option>
+              <option value="both">🔄 Cả 2: 16:9 + 9:16</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-[11px] text-zinc-300 mb-1">⏱️ Thời lượng mục tiêu (giây)</label>
+            <input id="qedit-duration" type="number" min="10" max="1200" step="5" class="w-full rounded-lg bg-zinc-950 border border-zinc-700 px-2.5 py-1.5 text-xs text-zinc-100 mono" />
+          </div>
+          <div>
+            <label class="block text-[11px] text-cyan-200 mb-1">💎 Chất lượng (Video Dài)</label>
+            <select id="qedit-quality" class="w-full rounded-lg bg-zinc-950 border border-zinc-700 px-2.5 py-1.5 text-xs text-zinc-100"></select>
+          </div>
+          <div class="sm:col-span-2">
+            <label class="block text-[11px] text-cyan-200 mb-1">🌐 Ngôn ngữ Phụ đề</label>
+            <select id="qedit-sub-lang" class="w-full rounded-lg bg-zinc-950 border border-zinc-700 px-2.5 py-1.5 text-xs text-zinc-100"></select>
+          </div>
+        </div>
+        <div>
+          <label class="block text-[11px] text-amber-200 mb-1">🏷️ Tiêu đề Intro Vlog</label>
+          <input id="qedit-title" type="text" placeholder="Để trống để AI tự đặt tiêu đề..." class="w-full rounded-lg bg-zinc-950 border border-zinc-700 px-2.5 py-1.5 text-xs text-zinc-100" />
+        </div>
+        <div>
+          <label class="block text-[11px] text-amber-200 mb-1">📝 AI Brief / Nội dung &amp; Bối cảnh</label>
+          <textarea id="qedit-note" rows="3" class="w-full rounded-lg bg-zinc-950 border border-zinc-700 px-2.5 py-1.5 text-xs text-zinc-100"></textarea>
+        </div>
+        <div class="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-1 text-[11px]">
+          <label class="flex items-center gap-1.5 text-teal-300 cursor-pointer"><input id="qedit-auto360" type="checkbox" class="rounded bg-zinc-800" /><span>📱 Tự xuất 360p</span></label>
+          <label class="flex items-center gap-1.5 text-emerald-300 cursor-pointer"><input id="qedit-keep-audio" type="checkbox" class="rounded bg-zinc-800" /><span>🎙️ Giữ âm gốc</span></label>
+          <label class="flex items-center gap-1.5 text-amber-300 cursor-pointer"><input id="qedit-mute-voice" type="checkbox" class="rounded bg-zinc-800" /><span>🔇 Ẩn giọng AI</span></label>
+          <label class="flex items-center gap-1.5 text-rose-300 cursor-pointer"><input id="qedit-hide-subs" type="checkbox" class="rounded bg-zinc-800" /><span>🚫 Ẩn phụ đề</span></label>
+          <label class="flex items-center gap-1.5 text-sky-300 cursor-pointer"><input id="qedit-face-blur" type="checkbox" class="rounded bg-zinc-800" /><span>🕵️ Che mặt</span></label>
+          <label class="flex items-center gap-1.5 text-amber-200 cursor-pointer"><input id="qedit-plate-blur" type="checkbox" class="rounded bg-zinc-800" /><span>🚘 Che biển số</span></label>
+        </div>
+      </div>
+      <div class="px-5 py-3 border-t border-zinc-800 flex items-center justify-end gap-2 bg-zinc-950/60">
+        <button type="button" onclick="closeQueueJobEditModal()" class="px-4 py-1.5 rounded-xl bg-zinc-800 hover:bg-zinc-700 text-xs text-zinc-200">Hủy</button>
+        <button type="button" onclick="saveQueueJobEdit()" class="px-4 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-xs font-semibold text-white">💾 Lưu thay đổi</button>
       </div>
     </div>
   </div>
@@ -5036,13 +5144,18 @@
           liveQEl.innerHTML = `<div class="text-[10px] text-amber-300 font-semibold">📋 Đang xếp hàng chờ chạy tiếp (${pq.length} tác vụ):</div>` + pq.map((qItem, idx) => {
             const isL = qItem.pipeline_category === 'long_vlog';
             const durTxt = isL ? `${Math.round(Number(qItem.duration_sec || 300) / 60)}p` : `${Math.round(Number(qItem.duration_sec || 30))}s`;
+            const vLbl = getVibeLabel(qItem.content_vibe);
             return `<div class="flex items-center justify-between gap-2 px-2.5 py-1 rounded-lg bg-zinc-900/75 border border-zinc-800 text-[11px]">
               <div class="flex items-center gap-2 min-w-0">
                 <span class="mono text-zinc-400">#${idx + 1}</span>
-                <span class="px-1.5 py-0.5 rounded border text-[10px] font-semibold ${isL ? 'bg-amber-500/15 border-amber-500/35 text-amber-200' : 'bg-emerald-500/15 border-emerald-500/35 text-emerald-200'}">${isL ? '🎬 Dài' : '⚡ Ngắn'} · ${durTxt}</span>
-                <span class="text-zinc-200 truncate">${escapeHtml(qItem.project_name || qItem.project_id)}</span>
+                <span class="px-1.5 py-0.5 rounded border text-[10px] font-semibold shrink-0 ${isL ? 'bg-amber-500/15 border-amber-500/35 text-amber-200' : 'bg-emerald-500/15 border-emerald-500/35 text-emerald-200'}">${isL ? '🎬 Dài' : '⚡ Ngắn'} · ${durTxt}</span>
+                <span class="text-zinc-200 font-medium truncate">${escapeHtml(qItem.project_name || qItem.project_id)}</span>
+                <span class="text-zinc-400 truncate hidden sm:inline">· ${escapeHtml(vLbl)}${qItem.auto_render_360p ? ' · 360p' : ''}</span>
               </div>
-              <button type="button" onclick="removeLiveQueueJob('${escapeHtml(qItem.id)}')" title="Xóa khỏi hàng đợi chờ" class="px-1.5 py-0.5 rounded bg-rose-500/15 hover:bg-rose-500/35 text-rose-300 shrink-0">✕</button>
+              <div class="flex items-center gap-1 shrink-0">
+                <button type="button" onclick="openQueueJobEditModal('live', '${escapeHtml(qItem.id)}')" title="Xem &amp; chỉnh sửa cấu hình tác vụ này" class="px-1.5 py-0.5 rounded bg-indigo-500/20 hover:bg-indigo-500/40 text-indigo-200">✏️</button>
+                <button type="button" onclick="removeLiveQueueJob('${escapeHtml(qItem.id)}')" title="Xóa khỏi hàng đợi chờ" class="px-1.5 py-0.5 rounded bg-rose-500/15 hover:bg-rose-500/35 text-rose-300">✕</button>
+              </div>
             </div>`;
           }).join('');
         } else {
@@ -5344,6 +5457,11 @@
     }
 
     async function openAutoPipelineModal() {
+      try {
+        const saved360 = localStorage.getItem('openreel_auto_360p');
+        const el360 = document.getElementById('chk-auto-render-360p');
+        if (el360 && saved360 !== null) el360.checked = (saved360 === '1');
+      } catch (e) {}
       const tab3Eng = document.getElementById('rm-render-engine')?.value || 'remotion_classic';
       selectAutoEngine(tab3Eng);
 
@@ -5519,6 +5637,7 @@
               <span class="text-zinc-400 truncate hidden sm:inline">· ${escapeHtml(item.vibeLabel || item.vibeId)}</span>
             </div>
             <div class="flex items-center gap-1 shrink-0">
+              <button type="button" onclick="openQueueJobEditModal('local', ${idx})" title="Xem &amp; chỉnh sửa cấu hình" class="px-1.5 py-0.5 rounded bg-indigo-500/20 hover:bg-indigo-500/40 text-indigo-200">✏️</button>
               <button type="button" onclick="moveAutoQueueItem(${idx}, -1)" ${idx === 0 ? 'disabled' : ''} class="px-1.5 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-200 disabled:opacity-35">⬆️</button>
               <button type="button" onclick="moveAutoQueueItem(${idx}, 1)" ${idx === q.length - 1 ? 'disabled' : ''} class="px-1.5 py-0.5 rounded bg-zinc-800 hover:bg-zinc-700 text-zinc-200 disabled:opacity-35">⬇️</button>
               <button type="button" onclick="removeAutoQueueItem(${idx})" class="px-1.5 py-0.5 rounded bg-rose-500/15 hover:bg-rose-500/35 text-rose-300">✕</button>
@@ -5546,6 +5665,159 @@
     function clearAutoRenderQueue() {
       state._renderQueue = [];
       renderAutoQueuePanel();
+    }
+
+    function getVibeLabel(vibeId) {
+      const id = String(vibeId || '').trim();
+      if (!id) return 'Mặc định';
+      const sel = document.getElementById('auto-content-vibe');
+      if (sel) {
+        const opt = Array.from(sel.options).find((o) => o.value === id);
+        if (opt) return opt.textContent.trim();
+      }
+      return id;
+    }
+
+    function getPacingLabel(pacingId) {
+      const map = {
+        auto: '✨ Tự động theo Vibe',
+        chill: '🌿 Chậm rãi / Khoảng thở (Chill)',
+        fast: '⚡ Nhanh & Dày thoại (~145 từ/phút)',
+        turbo: '🔥 Dồn dập / Kín clip (~180 từ/phút)',
+      };
+      return map[String(pacingId || 'auto')] || String(pacingId || 'auto');
+    }
+
+    state._editingQueueCtx = null;
+
+    function _populateQueueEditDropdowns() {
+      const pairs = [
+        ['qedit-vibe', 'auto-content-vibe'],
+        ['qedit-pacing', 'auto-pacing-preset'],
+        ['qedit-voice', 'auto-tts-engine'],
+        ['qedit-bgm', 'auto-bgm-track'],
+        ['qedit-title-style', 'longform-title-style'],
+        ['qedit-quality', 'longform-quality'],
+        ['qedit-sub-lang', 'auto-subtitle-lang'],
+      ];
+      pairs.forEach(([destId, srcId]) => {
+        const d = document.getElementById(destId);
+        const s = document.getElementById(srcId);
+        if (d && s && s.innerHTML) d.innerHTML = s.innerHTML;
+      });
+    }
+
+    async function openQueueJobEditModal(sourceType, key) {
+      await loadBgmTracks();
+      _populateQueueEditDropdowns();
+      let jobData = null;
+      let projName = '';
+      if (sourceType === 'local') {
+        const item = (state._renderQueue || [])[Number(key)];
+        if (!item) return toast('Không tìm thấy tác vụ trong hàng đợi.', 'warn');
+        jobData = item.payload || {};
+        projName = item.projectName || item.projectId;
+        state._editingQueueCtx = { sourceType: 'local', idx: Number(key) };
+      } else {
+        try {
+          const res = await api(`/api/pipeline/queue/${encodeURIComponent(String(key))}`);
+          jobData = res.job || {};
+          projName = jobData.project_name || jobData.project_id || String(key);
+          state._editingQueueCtx = { sourceType: 'live', jobId: String(key) };
+        } catch (e) {
+          return toast(e.message, 'warn');
+        }
+      }
+
+      const isL = jobData.pipeline_category === 'long_vlog' || Number(jobData.target_duration_sec || 0) > 90;
+      const setV = (id, v) => { const el = document.getElementById(id); if (el && v !== undefined && v !== null) el.value = String(v); };
+      const setC = (id, v) => { const el = document.getElementById(id); if (el) el.checked = !!v; };
+
+      const titleEl = document.getElementById('qedit-modal-title');
+      const subEl = document.getElementById('qedit-modal-sub');
+      if (titleEl) titleEl.textContent = `✏️ Sửa cấu hình: ${projName}`;
+      if (subEl) subEl.textContent = `${isL ? '🎬 Clip Dài / Vlog' : '⚡ Video Ngắn TikTok'} · ${sourceType === 'live' ? 'Đang chờ trong hàng đợi chạy' : 'Hàng đợi sắp chạy'}`;
+
+      setV('qedit-vibe', jobData.content_vibe || (isL ? 'outdoor_picnic' : 'learned_dna'));
+      setV('qedit-pacing', jobData.pacing_preset || 'auto');
+      setV('qedit-voice', jobData.voice_preset || 'f5_clone_default');
+      setV('qedit-bgm', jobData.bgm_track || 'auto_ai');
+      setV('qedit-title-style', jobData.title_style || 'auto');
+      setV('qedit-aspect', jobData.aspect_ratio || (isL ? '16:9' : '9:16'));
+      setV('qedit-duration', Math.round(Number(jobData.target_duration_sec || (isL ? 300 : 30))));
+      setV('qedit-quality', jobData.quality_preset || 'auto_source');
+      setV('qedit-sub-lang', jobData.subtitle_lang || 'vi');
+      setV('qedit-title', jobData.vlog_title || '');
+      setV('qedit-note', jobData.product_note || '');
+      setC('qedit-auto360', jobData.auto_render_360p);
+      setC('qedit-keep-audio', jobData.keep_clip_audio);
+      setC('qedit-mute-voice', jobData.mute_voice);
+      setC('qedit-hide-subs', jobData.hide_subtitles);
+      setC('qedit-face-blur', jobData.face_blur_enabled);
+      setC('qedit-plate-blur', jobData.plate_blur_enabled);
+
+      const m = document.getElementById('queue-job-edit-modal');
+      if (m) {
+        m.classList.remove('hidden');
+        m.classList.add('flex');
+      }
+    }
+
+    function closeQueueJobEditModal() {
+      const m = document.getElementById('queue-job-edit-modal');
+      if (m) {
+        m.classList.add('hidden');
+        m.classList.remove('flex');
+      }
+      state._editingQueueCtx = null;
+    }
+
+    async function saveQueueJobEdit() {
+      const ctx = state._editingQueueCtx;
+      if (!ctx) return;
+      const updates = {
+        content_vibe: document.getElementById('qedit-vibe')?.value || 'outdoor_picnic',
+        pacing_preset: document.getElementById('qedit-pacing')?.value || 'auto',
+        voice_preset: document.getElementById('qedit-voice')?.value || 'f5_clone_default',
+        bgm_track: document.getElementById('qedit-bgm')?.value || 'auto_ai',
+        title_style: document.getElementById('qedit-title-style')?.value || 'auto',
+        aspect_ratio: document.getElementById('qedit-aspect')?.value || '16:9',
+        target_duration_sec: parseFloat(document.getElementById('qedit-duration')?.value || '300') || 300,
+        quality_preset: document.getElementById('qedit-quality')?.value || 'auto_source',
+        subtitle_lang: document.getElementById('qedit-sub-lang')?.value || 'vi',
+        vlog_title: document.getElementById('qedit-title')?.value?.trim() || '',
+        product_note: document.getElementById('qedit-note')?.value?.trim() || '',
+        auto_render_360p: !!document.getElementById('qedit-auto360')?.checked,
+        keep_clip_audio: !!document.getElementById('qedit-keep-audio')?.checked,
+        mute_voice: !!document.getElementById('qedit-mute-voice')?.checked,
+        hide_subtitles: !!document.getElementById('qedit-hide-subs')?.checked,
+        face_blur_enabled: !!document.getElementById('qedit-face-blur')?.checked,
+        plate_blur_enabled: !!document.getElementById('qedit-plate-blur')?.checked,
+      };
+      if (ctx.sourceType === 'local') {
+        const item = (state._renderQueue || [])[ctx.idx];
+        if (!item) return closeQueueJobEditModal();
+        item.payload = { ...(item.payload || {}), ...updates };
+        item.durationSec = updates.target_duration_sec;
+        item.vibeId = updates.content_vibe;
+        item.vibeLabel = getVibeLabel(updates.content_vibe);
+        renderAutoQueuePanel();
+        closeQueueJobEditModal();
+        toast('💾 Đã cập nhật cấu hình trong hàng đợi!', 'success');
+        return;
+      }
+      try {
+        const res = await api(`/api/pipeline/queue/${encodeURIComponent(ctx.jobId)}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(updates),
+        });
+        renderPipelineState(res);
+        closeQueueJobEditModal();
+        toast('💾 Đã cập nhật cấu hình tác vụ đang chờ!', 'success');
+      } catch (e) {
+        toast(e.message, 'error');
+      }
     }
 
     function addCurrentConfigToRenderQueue() {
@@ -5664,6 +5936,9 @@
         clips_full: state.longformClips || [],
         total_duration_sec: prev.total_duration_sec || 0,
         vlog_title: document.getElementById('longform-title')?.value?.trim() || '',
+        title_style: document.getElementById('longform-title-style')?.value || 'auto',
+        subtitle_style: document.getElementById('longform-subtitle-style')?.value || 'auto',
+        auto_render_360p: !!document.getElementById('chk-auto-render-360p')?.checked,
         short_content_mode: state.shortContentMode || 'brand_brief',
         product_note: state.pipelineCategory === 'long_vlog'
           ? (document.getElementById('longform-topic-note')?.value?.trim() || '')
@@ -5723,6 +5998,9 @@
       setChk('chk-longform-autofit', cfg.auto_fit_duration);
       setChk('chk-longform-keep-audio', cfg.keep_clip_audio);
       setVal('longform-title', cfg.vlog_title ?? '');
+      setVal('longform-title-style', cfg.title_style || 'auto');
+      setVal('longform-subtitle-style', cfg.subtitle_style || 'auto');
+      setChk('chk-auto-render-360p', !!cfg.auto_render_360p);
       setVal('longform-topic-note', cfg.product_note ?? '');
       setVal('short-story-note', cfg.product_note ?? '');
       setShortContentMode(cfg.short_content_mode || 'brand_brief');
@@ -6495,6 +6773,9 @@
         auto_fit_duration,
         quality_preset,
         vlog_title,
+        title_style: document.getElementById('longform-title-style')?.value || 'auto',
+        subtitle_style: document.getElementById('longform-subtitle-style')?.value || 'auto',
+        auto_render_360p: !!document.getElementById('chk-auto-render-360p')?.checked,
         preserve_longform_script,
         longform_random_mode,
         longform_random_count,
@@ -8130,13 +8411,27 @@
 
       document.getElementById('om-social-title').value = m.social_title || m.title || name;
       document.getElementById('om-social-desc').value = m.social_description || m.product_note || '';
+      const subLangMap = { vi: 'Tiếng Việt', bilingual: 'Song ngữ Việt – Anh', en: 'Tiếng Anh' };
+      const vibeTxt = m.content_vibe ? getVibeLabel(m.content_vibe) : '';
+      const pacingTxt = m.pacing_preset ? getPacingLabel(m.pacing_preset) : '';
+      const colorTxt = m.disable_vibe_filter ? 'Màu gốc (Tắt bộ lọc)' : (m.color_preset || '');
+      const durTxt = m.duration_sec ? `${m.duration_sec}s` : '';
+      const privacyParts = [];
+      if (m.face_blur_enabled) privacyParts.push(`Che mặt (${m.face_blur_mode || 'bật'})`);
+      if (m.plate_blur_enabled) privacyParts.push('Che biển số');
       const lines = [
         `📅 Tạo lúc: ${m.created_at || ''}`,
-        `🎬 Chế độ: ${m.mode || ''} (${m.aspect_ratio || ''} · ${m.quality || m.engine || ''})`,
-        `🎙️ Giọng đọc: ${m.voice_preset || ''}${m.mute_voice ? ' (Đã tắt)' : ''}`,
-        `🎵 Nhạc nền: ${m.bgm_track || 'Mặc định'}`,
-        `🎨 Style: ${m.title_style || m.visual_theme || ''} · Phụ đề: ${m.subtitle_style || (m.hide_subtitles ? 'Đã ẩn' : 'Mặc định')}`,
-        m.sticker_density ? `✨ Sticker: ${m.sticker_density}` : '',
+        `🎬 Chế độ: ${m.mode || ''} (${m.aspect_ratio || ''} · ${m.quality || m.engine || ''}${durTxt ? ` · ${durTxt}` : ''})`,
+        vibeTxt ? `🎭 Vibe: ${vibeTxt}` : '',
+        pacingTxt ? `⚡ Tiết tấu: ${pacingTxt}` : '',
+        `🎙️ Giọng đọc: ${m.voice_preset || ''}${m.mute_voice ? ' (Đã tắt)' : ''}${m.keep_clip_audio ? ' · Giữ âm gốc (Auto-Duck)' : ''}`,
+        `🎵 Nhạc nền: ${m.bgm_track || 'Mặc định'}${m.bgm_reason ? ` (${m.bgm_reason})` : ''}`,
+        `🎨 Tiêu đề & Màu: ${m.title_style || m.visual_theme || 'auto'}${colorTxt ? ` · Màu: ${colorTxt}` : ''}${m.enable_motion_zoom ? ' · Zoom động' : ''}`,
+        `💬 Phụ đề: ${m.hide_subtitles ? 'Đã ẩn' : `${m.subtitle_style || 'mặc định'} (${subLangMap[m.subtitle_lang || 'vi'] || m.subtitle_lang || 'vi'})`}`,
+        m.sticker_density ? `✨ Sticker: ${m.sticker_density}${m.stickers_count !== undefined ? ` (${m.stickers_count} cái)` : ''}` : '',
+        privacyParts.length ? `🔒 Riêng tư AI: ${privacyParts.join(' · ')}` : '',
+        m.disclaimer_text ? `⚠️ Nhãn cảnh báo: ${m.disclaimer_text}` : '',
+        m.auto_render_360p ? '📱 Tự xuất kèm 360p: Có' : '',
         m.title ? `🏷️ Tiêu đề gốc: ${m.title}` : '',
         Array.isArray(m.chapters_summary) && m.chapters_summary.length ? `📑 Chương:\n  - ${m.chapters_summary.join('\n  - ')}` : '',
         m.product_note ? `📝 Brief: ${m.product_note}` : '',
