@@ -306,50 +306,78 @@ VIBE_EDITING_PROFILES: dict[str, dict[str, Any]] = {
         "force_vfx": True,
     },
     "outdoor_picnic": {
-        "shot_sec": 6.2,
-        "sentence_pause_sec": 0.85,
+        "shot_sec": 5.8,
+        "sentence_pause_sec": 0.80,
         "voice_rate_offset": "",
-        "word_multiplier": 1.0,
+        "word_multiplier": 1.05,
         "ambient_swell": True,
+        "sfx_theme": "cinematic",
         "color_preset": "warm_sunset",
         "title_style": "campfire_warm",
         "subtitle_style": "warm_vlog_gold",
         "accent_color": "#F59E0B",
-        "force_vfx": False,
+        "force_vfx": True,
+        "chapter_sfx": True,
     },
     "travel_vlog": {
-        "shot_sec": 5.8,
-        "sentence_pause_sec": 0.80,
-        "voice_rate_offset": "",
-        "word_multiplier": 1.02,
+        "shot_sec": 5.2,
+        "sentence_pause_sec": 0.68,
+        "voice_rate_offset": "+2%",
+        "word_multiplier": 1.12,
+        "ambient_swell": True,
+        "sfx_theme": "cinematic",
         "color_preset": "fresh_cool",
         "title_style": "adventure_bold",
         "subtitle_style": "mint_nature",
         "accent_color": "#38BDF8",
-        "force_vfx": False,
+        "force_vfx": True,
+        "chapter_sfx": True,
+    },
+    "vlog_genz": {
+        "shot_sec": 4.5,
+        "sentence_pause_sec": 0.48,
+        "voice_rate_offset": "+4%",
+        "word_multiplier": 1.25,
+        "blocks_per_chap": 4,
+        "tight_pacing": True,
+        "max_block_gap_sec": 1.5,
+        "lead_gap_cap_sec": 0.85,
+        "tail_reserve_ratio": 0.08,
+        "sfx_theme": "comedy",
+        "color_preset": "fresh_cool",
+        "title_style": "adventure_bold",
+        "subtitle_style": "highlight_bold",
+        "accent_color": "#38BDF8",
+        "force_vfx": True,
+        "motion_zoom": True,
+        "chapter_sfx": True,
     },
     "food_cafe": {
-        "shot_sec": 5.4,
-        "sentence_pause_sec": 0.72,
-        "voice_rate_offset": "",
-        "word_multiplier": 1.05,
+        "shot_sec": 5.0,
+        "sentence_pause_sec": 0.65,
+        "voice_rate_offset": "+1%",
+        "word_multiplier": 1.10,
         "ambient_swell": True,
+        "sfx_theme": "comedy",
         "color_preset": "warm_sunset",
         "title_style": "pastel_soft",
         "subtitle_style": "cinema_box",
         "accent_color": "#FB7185",
-        "force_vfx": False,
+        "force_vfx": True,
+        "chapter_sfx": True,
     },
     "daily_story": {
-        "shot_sec": 6.2,
-        "sentence_pause_sec": 0.85,
+        "shot_sec": 5.8,
+        "sentence_pause_sec": 0.78,
         "voice_rate_offset": "",
-        "word_multiplier": 1.0,
+        "word_multiplier": 1.04,
+        "ambient_swell": True,
+        "sfx_theme": "cinematic",
         "color_preset": "natural",
         "title_style": "editorial_minimal",
         "subtitle_style": "editorial_clean",
         "accent_color": "#34D399",
-        "force_vfx": False,
+        "force_vfx": True,
     },
 }
 
@@ -716,6 +744,33 @@ def _build_vibe_director_rules(content_vibe: str, n_chap: int) -> str:
             "- CHẤT THƠ ĐIỆN ẢNH (CINEMATIC DEEP): Câu văn tinh tế, giàu hình ảnh, tránh kể lể thừa thãi để nhường chỗ cho âm thanh môi trường và hình ảnh tự kể chuyện.\n"
             "- SIGNATURE QUOTE: Ở chương cao trào giữa video, cài 1 câu chiêm nghiệm sâu sắc, ngắn gọn (<= 14 từ) có sức đọng lại lâu.\n"
         )
+    if key == "travel_vlog":
+        return (
+            "- CẤU TRÚC HÀNH TRÌNH DU LỊCH (TRAVEL VLOG): Chương 1 mở bằng ấn tượng đầu tiên khi tới địa điểm; các chương giữa dẫn chuyện theo từng chặng trải nghiệm (cảnh đẹp - di chuyển - ăn uống/góc check-in) kèm 1 mẹo thực tế nhỏ; chương cuối đúc kết kỷ niệm đáng nhớ nhất.\n"
+            "- CHỐNG VĂN SẾN: TUYỆT ĐỐI KHÔNG dùng sáo ngữ như 'bức tranh thủy mặc', 'chốn bồng lai', 'hành trình tìm lại chính mình', 'chữa lành tâm hồn'. Kể tự nhiên, sinh động như chia sẻ với bạn đi cùng.\n"
+            "- HIỆU ỨNG CHUYỂN CHẶNG: Chèn 1 thẻ `[SFX:camera_shutter]` hoặc `[SFX:whoosh]` ở khoảnh khắc ngắm cảnh đẹp hoặc đổi địa điểm.\n"
+        )
+    if key == "vlog_genz":
+        return (
+            "- GIỌNG VLOG GENZ VUI TƯƠI, KHÔNG SẾN: Kể chuyện thoải mái như đang nhắn tin thoại kể cho bạn thân — câu ngắn vừa tai, có năng lượng vui vẻ, quan sát tinh tế & duyên dáng các chi tiết thật trong khung hình (biểu cảm, đồ ăn, thời tiết, tình huống bất ngờ).\n"
+            "- CẤM SẾN & CẤM LỐ: Tuyệt đối KHÔNG viết văn thơ mộng sáo rỗng ('chữa lành', 'thanh xuân rực rỡ', 'lắng đọng'), cũng KHÔNG nhồi quá đà từ lóng vô nghĩa gây gượng khi đọc voice AI.\n"
+            "- HIỆU ỨNG NHỊP TƯƠI: Chèn 1 đến 2 thẻ `[SFX:pop]`, `[SFX:camera_shutter]` hoặc `[SFX:whoosh]` ở những câu phản ứng thú vị.\n"
+        )
+    if key == "food_cafe":
+        return (
+            "- REVIEW ẨM THỰC / CAFE CHÂN THẬT: Tập trung tả đúng thứ thấy trong khung hình (kết cấu giòn/mềm, độ béo/thanh, ánh sáng & góc ngồi của quán), nói rõ món nào hợp vị / lưu ý nhỏ nếu có.\n"
+            "- HIỆU ỨNG NHẸ: Chèn tối đa 1 thẻ `[SFX:pop]` hoặc `[SFX:camera_shutter]` khi lên món hoặc góc quán đẹp.\n"
+        )
+    if key == "outdoor_picnic":
+        return (
+            "- NHẬT KÝ DÃ NGOẠI TỰ NHIÊN: Kể chân thực quá trình chuẩn bị, không khí ngoài trời, đồ ăn và tương tác vui vẻ với mọi người; tránh lời văn giáo điều hoặc sến súa.\n"
+            "- HIỆU ỨNG CHILL: Có thể chèn 1 thẻ `[SFX:camera_shutter]` hoặc `[SFX:whoosh]` nhẹ lúc chuyển cảnh không gian.\n"
+        )
+    if key == "daily_story":
+        return (
+            "- KỂ CHUYỆN ĐỜI THƯỜNG CÓ ĐIỂM NHẤN (DAILY VLOG): Mở đầu bằng bối cảnh rõ ràng, giữ giọng ấm áp gần gũi, mỗi chương nêu 1 chi tiết nhỏ đáng nhớ thay vì liệt kê.\n"
+            "- CHUYỂN CẢNH MƯỢT: Tối đa 1 thẻ `[SFX:whoosh]` nhẹ khi sang hoạt động mới.\n"
+        )
     if key == "creative_internet":
         return (
             "- NHỊP VIRAL TREND / REVIEW SÁNG TẠO: Mở đầu bằng hook tò mò ngay câu đầu tiên, đưa ra nhận xét thú vị / xếp hạng / góc nhìn độc đáo; có thể chèn `[SFX:pop]`, `[SFX:whoosh]`, hoặc `[SFX:vine_boom]` ở điểm nhấn.\n"
@@ -1074,6 +1129,7 @@ def generate_longform_chapter_script(
     vibe_visual_defaults = {
         "outdoor_picnic": all_style_combos[0],
         "travel_vlog": all_style_combos[1],
+        "vlog_genz": all_style_combos[1],
         "daily_story": all_style_combos[2],
         "food_cafe": all_style_combos[3],
         "creative_internet": all_style_combos[4],

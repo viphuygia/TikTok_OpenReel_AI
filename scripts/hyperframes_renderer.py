@@ -1344,7 +1344,7 @@ def render_hyperframes_video(
     elif color_preset == "cool_vivid":
         ov_file = "light_leak_cool.mp4"
     else:
-        ov_file = "bokeh_sparkle.mp4"
+        ov_file = "none"
     ov_path = (ROOT_DIR / "assets" / "overlays" / ov_file) if ov_file and ov_file != "none" else None
 
     comp_cmd = [

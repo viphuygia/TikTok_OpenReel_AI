@@ -381,28 +381,35 @@ CONTENT_VIBE_PRESETS: dict[str, dict[str, Any]] = {
         "label": "🏕️ Dã ngoại / Camping / Picnic (Thiên nhiên & Nhật ký)",
         "is_vlog": True,
         "cta_default": "Lưu lại cuối tuần rủ hội bạn đi chill ngay nha.",
-        "prompt_hint": "Phong cách vlog dã ngoại, camping, picnic ngoài trời: giọng kể tự nhiên, thư giãn, tả cảm giác nắng gió, cây cỏ, khoảnh khắc chill cùng bạn bè. TUYỆT ĐỐI KHÔNG nhắc giỏ hàng, chốt đơn hay freeship.",
+        "prompt_hint": "Phong cách vlog dã ngoại, camping, picnic ngoài trời: giọng kể tự nhiên, thư giãn, bám sát chi tiết dựng trại, ánh nắng, đồ ăn và khoảnh khắc cùng bạn bè; CẤM văn sến (như 'hòa mình vào thiên nhiên', 'chữa lành tâm hồn'). TUYỆT ĐỐI KHÔNG nhắc giỏ hàng, chốt đơn hay freeship.",
     },
     "travel_vlog": {
         "id": "travel_vlog",
-        "label": "✈️ Du lịch / Travel Vlog (Cinematic & Khám phá)",
+        "label": "✈️ Du lịch / Travel Vlog (Khám phá & Trải nghiệm thật)",
         "is_vlog": True,
-        "cta_default": "Theo dõi để cùng khám phá thêm nhiều điểm đẹp nữa nha.",
-        "prompt_hint": "Phong cách travel vlog trên mạng: mở đầu bằng cảm xúc đặt chân tới địa điểm, review góc chụp đẹp, kinh nghiệm đi lại và khoảnh khắc đáng nhớ. TUYỆT ĐỐI KHÔNG nhắc giỏ hàng, chốt đơn hay bán hàng.",
+        "cta_default": "Lưu lại lịch trình này cho chuyến đi sắp tới nha.",
+        "prompt_hint": "Phong cách travel vlog hiện đại thực tế: mở đầu bằng ấn tượng đầu tiên khi đặt chân tới nơi, đi qua trải nghiệm thật từng chặng, xen kẽ góc chụp đẹp và mẹo đi lại hữu ích; CẤM văn sến hay sáo rỗng ('bức tranh thủy mặc', 'hành trình tìm lại chính mình', 'quên hết âu lo'). TUYỆT ĐỐI KHÔNG nhắc giỏ hàng, chốt đơn hay bán hàng.",
+    },
+    "vlog_genz": {
+        "id": "vlog_genz",
+        "label": "⚡ Vlog GenZ · Vui tươi (Không sến)",
+        "is_vlog": True,
+        "cta_default": "Thấy ổn áp thì thả tim lưu lại bữa nào đi thử nha.",
+        "prompt_hint": "Phong cách Vlog GenZ vui tươi, năng lượng tự nhiên kiểu kể chuyện với bạn thân: câu ngắn gọn gãy gọn, nhận xét thật và có duyên từ chi tiết thấy trong ảnh, thỉnh thoảng pha nhẹ 1 chút hài thực tế; CẤM TUYỆT ĐỐI văn sến thơ mộng sáo rỗng ('chữa lành', 'thanh xuân rực rỡ', 'lắng đọng') và KHÔNG nhồi tiếng lóng lố lăng hay bán hàng/giỏ hàng.",
     },
     "food_cafe": {
         "id": "food_cafe",
         "label": "🍜 Ẩm thực / Cafe / Chill (Review không gian & hương vị)",
         "is_vlog": True,
         "cta_default": "Lưu lại địa điểm này cho cuối tuần hẹn hò nhé.",
-        "prompt_hint": "Phong cách food/cafe vlog: tả không gian quán, ánh sáng, âm thanh, hương vị đồ ăn thức uống chân thật như chia sẻ với bạn thân. TUYỆT ĐỐI KHÔNG nhắc giỏ hàng hay chốt đơn.",
+        "prompt_hint": "Phong cách food/cafe vlog chân thật: tả rõ kết cấu món ăn, độ nóng giòn/béo ngọt, không gian ánh sáng và điểm cộng/trừ thực tế như chia sẻ với bạn thân; CẤM sáo rỗng 'mỹ vị nhân gian' hay nhắc giỏ hàng/chốt đơn.",
     },
     "daily_story": {
         "id": "daily_story",
         "label": "📖 Daily Vlog / Storytelling (Tâm sự & Đời sống)",
         "is_vlog": True,
-        "cta_default": "Còn bạn, cuối tuần này bạn dự định làm gì nè.",
-        "prompt_hint": "Phong cách daily vlog storytelling nhẹ nhàng kiểu phim ngắn đời sống, kể chuyện gần gũi, nhịp câu có khoảng thở tự nhiên. TUYỆT ĐỐI KHÔNG nhắc giỏ hàng hay bán hàng.",
+        "cta_default": "Còn bạn, dạo này bạn thường làm gì để xả hơi nè.",
+        "prompt_hint": "Phong cách daily vlog storytelling đời thường, ấm áp, kể có đầu có đuôi xoay quanh việc đang làm trong khung hình; CẤM viết triết lý sến súa hay nhắc giỏ hàng, bán hàng.",
     },
     "creative_internet": {
         "id": "creative_internet",
@@ -1994,13 +2001,13 @@ def _infer_motif_from_brief(brief: dict[str, Any], rng: Any) -> str:
     combined = " ".join(
         str(brief.get(k) or "") for k in ("brand", "product_line", "category", "usps")
     ).lower()
-    if any(k in combined for k in ("mát lạnh", "menthol", "băng", "nước", "serum", "dầu gội", "sữa rửa")):
+    if any(k in combined for k in ("mát lạnh", "menthol", "nước", "serum", "dầu gội", "sữa rửa")):
         return rng.choice(["bubbles_ice", "wave_ribbon"])
     if any(k in combined for k in ("thảo dược", "thiên nhiên", "lá", "trà", "lợi khuẩn", "thơm miệng", "kissport")):
-        return rng.choice(["botanical_leaf", "sparkle_burst"])
+        return rng.choice(["botanical_leaf", "geometric_orbit"])
     if any(k in combined for k in ("công nghệ", "laptop", "chuột", "điện", "máy", "led")):
         return rng.choice(["cyber_grid", "geometric_orbit"])
-    return rng.choice(["bubbles_ice", "botanical_leaf", "cyber_grid", "sparkle_burst", "wave_ribbon", "geometric_orbit"])
+    return rng.choice(["wave_ribbon", "geometric_orbit", "botanical_leaf"])
 
 
 def _build_default_sticker_events(
@@ -2059,11 +2066,11 @@ def _build_default_sticker_events(
     # Safe edge/corner slots avoiding Hook badge & central subtitle band (y 0.66..0.82)
     edge_slots = [
         (0.06, 0.42, -6),
-        (0.70, 0.44, 6),
+        (0.58, 0.44, 6),
         (0.05, 0.50, -5),
-        (0.68, 0.54, 5),
+        (0.56, 0.54, 5),
         (0.06, 0.58, -6),
-        (0.66, 0.38, 7),
+        (0.58, 0.38, 7),
         (0.08, 0.36, -4),
     ]
     events: list[dict[str, Any]] = []
@@ -2303,7 +2310,7 @@ def generate_ai_wildcard_style_spec(
                                     "styleKind": "animated_sticker" if (asset_rel and si % 2 == 0) else "messenger_bubble",
                                     "start": st_start,
                                     "duration": max(1.6, min(3.8, float(st.get("duration") or 2.5))),
-                                    "xPct": max(0.04, min(0.74, float(st.get("xPct") or (0.06 if si % 2 == 0 else 0.68)))),
+                                    "xPct": max(0.04, min(0.60, float(st.get("xPct") or (0.06 if si % 2 == 0 else 0.58)))),
                                     "yPct": max(0.22, min(0.86, yp)),
                                     "bg": str(st.get("bg") or pal_ref[si % len(pal_ref)]),
                                     "rotateDeg": max(-14, min(14, int(float(st.get("rotateDeg") or (-7 if si % 2 == 0 else 7))))),

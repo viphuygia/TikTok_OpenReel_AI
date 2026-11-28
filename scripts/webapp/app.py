@@ -1244,6 +1244,7 @@ class OneClickPipelineReq(BaseModel):
     plate_blur_ids: list[str] = Field(default_factory=list)
     project_ids: list[str] = Field(default_factory=list)
     project_configs: dict[str, dict[str, Any]] = Field(default_factory=dict)
+    queue_jobs: list[dict[str, Any]] = Field(default_factory=list)
     sync: bool = False
 
 
@@ -7527,7 +7528,7 @@ def _req_for_project(req: OneClickPipelineReq, pid: str, multi_projects: bool) -
         if isinstance(pc.get("ordered_clips"), list):
             upd["ordered_clips"] = [str(x) for x in pc["ordered_clips"] if str(x).strip()]
         str_fields = (
-            "vlog_title", "product_note", "quality_preset", "aspect_ratio", "content_vibe", "pacing_preset",
+            "pipeline_category", "vlog_title", "product_note", "quality_preset", "aspect_ratio", "content_vibe", "pacing_preset",
             "short_content_mode", "voice_preset", "tts_engine", "edge_voice", "bgm_track", "sticker_density", "sticker_style",
             "render_engine", "innovation_preset", "sfx_level", "transition_level",
             "icon_density", "visual_theme", "subtitle_lang", "disclaimer_text",
@@ -7566,7 +7567,62 @@ def _req_for_project(req: OneClickPipelineReq, pid: str, multi_projects: bool) -
     return req
 
 
+def _build_queue_job_req(base_req: OneClickPipelineReq, job: dict[str, Any]) -> tuple[str, OneClickPipelineReq]:
+    pid = str(job.get("project_id") or ACTIVE_PROJECT_ID).strip() or ACTIVE_PROJECT_ID
+    valid_fields = set(OneClickPipelineReq.model_fields.keys()) - {"queue_jobs", "project_ids", "project_configs", "sync"}
+    upd: dict[str, Any] = {
+        "project_ids": [pid],
+        "project_configs": {},
+        "queue_jobs": [],
+    }
+    for k, v in job.items():
+        if k in valid_fields and v is not None:
+            upd[k] = v
+    return pid, base_req.model_copy(update=upd)
+
+
 def _run_pipeline_worker(req: OneClickPipelineReq) -> None:
+    queue_jobs = [j for j in (getattr(req, "queue_jobs", None) or []) if isinstance(j, dict)]
+    if queue_jobs:
+        batch_summary: list[dict[str, Any]] = []
+        n_jobs = len(queue_jobs)
+        for q_idx, job_dict in enumerate(queue_jobs, start=1):
+            pid = str(job_dict.get("project_id") or ACTIVE_PROJECT_ID).strip() or ACTIVE_PROJECT_ID
+            try:
+                pid, job_req = _build_queue_job_req(req, job_dict)
+                cat_lbl = "Dài" if (getattr(job_req, "pipeline_category", "short_tiktok") == "long_vlog" or float(job_req.target_duration_sec or 0) > 90.0) else "Ngắn"
+                pm_set_active_project(pid)
+                refresh_app_project_paths()
+                _update_pipeline(
+                    running=True,
+                    error=None,
+                    current_step=1,
+                    percent=max(5, int(((q_idx - 1) / n_jobs) * 100)),
+                    message=f"[Hàng đợi {q_idx}/{n_jobs} · {cat_lbl} · {pid}] Đang xử lý...",
+                    log_line=f"=== [Hàng đợi {q_idx}/{n_jobs}] Bắt đầu `{pid}` ({cat_lbl} · vibe={job_req.content_vibe}) ===",
+                )
+                _run_single_project_pipeline(job_req)
+                err = PIPELINE_STATE.get("error")
+                batch_summary.append({"project_id": pid, "pipeline_category": job_req.pipeline_category, "ok": not bool(err), "error": err or ""})
+            except Exception as exc:
+                batch_summary.append({"project_id": pid, "ok": False, "error": str(exc)})
+                _update_pipeline(log_line=f"[Hàng đợi {q_idx}/{n_jobs} · {pid} LỖI] {exc}")
+
+        ok_cnt = sum(1 for x in batch_summary if x["ok"])
+        fail_list = [x["project_id"] for x in batch_summary if not x["ok"]]
+        summary_msg = f"Hoàn tất hàng đợi {ok_cnt}/{n_jobs} tác vụ" + (f" (Lỗi: {', '.join(fail_list)})" if fail_list else " thành công!")
+        _update_pipeline(
+            running=False,
+            error=None if ok_cnt > 0 else "Tất cả tác vụ trong hàng đợi đều lỗi",
+            current_step=5,
+            current_tab="tab5",
+            percent=100,
+            message=summary_msg,
+            log_line=f"[HOÀN TẤT HÀNG ĐỢI HỖN HỢP] {summary_msg}",
+            result={"multi_project": batch_summary},
+        )
+        return
+
     target_pids = [str(p).strip() for p in (req.project_ids or []) if str(p).strip()] or [ACTIVE_PROJECT_ID]
     if len(target_pids) <= 1:
         if target_pids[0] != ACTIVE_PROJECT_ID:
@@ -7575,7 +7631,7 @@ def _run_pipeline_worker(req: OneClickPipelineReq) -> None:
         _run_single_project_pipeline(_req_for_project(req, target_pids[0], False))
         return
 
-    batch_summary: list[dict[str, Any]] = []
+    batch_summary = []
     n_proj = len(target_pids)
     for p_idx, pid in enumerate(target_pids, start=1):
         try:
@@ -7630,9 +7686,35 @@ def api_save_global_banned_words(req: GlobalBannedWordsReq):
 
 @app.post("/api/pipeline/run-all")
 def api_pipeline_run_all(req: OneClickPipelineReq):
+    queue_jobs = [j for j in (getattr(req, "queue_jobs", None) or []) if isinstance(j, dict)]
     target_pids = [str(p).strip() for p in (req.project_ids or []) if str(p).strip()]
     is_long_mode = getattr(req, "pipeline_category", "short_tiktok") == "long_vlog" or float(req.target_duration_sec or 0) > 90.0
-    if target_pids:
+    if queue_jobs:
+        all_projs = {p["id"]: p for p in pm_list_projects().get("projects", [])}
+        not_ready = []
+        for idx_j, job_dict in enumerate(queue_jobs, start=1):
+            pid, job_req = _build_queue_job_req(req, job_dict)
+            p_obj = all_projs.get(pid)
+            if not p_obj:
+                not_ready.append(f"#{idx_j}:{pid}")
+                continue
+            j_is_long = getattr(job_req, "pipeline_category", "short_tiktok") == "long_vlog" or float(job_req.target_duration_sec or 0) > 90.0
+            if j_is_long:
+                if int(p_obj.get("raw_video_count") or 0) <= 0:
+                    not_ready.append(f"#{idx_j}:{pid} (thiếu video thô)")
+            else:
+                j_scm = str(getattr(job_req, "short_content_mode", "brand_brief") or "brand_brief").strip()
+                if j_scm == "story_note":
+                    if int(p_obj.get("raw_video_count") or 0) <= 0:
+                        not_ready.append(f"#{idx_j}:{pid} (thiếu video thô)")
+                elif not p_obj.get("ready"):
+                    not_ready.append(f"#{idx_j}:{pid} (thiếu brief/video)")
+        if not_ready:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Các tác vụ hàng đợi chưa đủ điều kiện: {', '.join(not_ready)}",
+            )
+    elif target_pids:
         all_projs = {p["id"]: p for p in pm_list_projects().get("projects", [])}
         if is_long_mode:
             not_ready = [pid for pid in target_pids if pid not in all_projs or int(all_projs[pid].get("raw_video_count") or 0) <= 0]

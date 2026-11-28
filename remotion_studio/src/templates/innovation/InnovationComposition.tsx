@@ -222,7 +222,7 @@ export const InnovationComposition: React.FC<TikTokVideoProps> = (props) => {
 
   const checklistStart = Math.round(durationInFrames * 0.24);
   const checklistDur = Math.max(45, Math.round(durationInFrames * 0.44));
-  const ctaStartFrame = Math.round(durationInFrames * 0.68);
+  const ctaStartFrame = Math.round(durationInFrames * 0.82);
   const ctaDurationFrames = Math.max(30, durationInFrames - ctaStartFrame);
 
   const isMagazine = preset === 'magazine_split';
@@ -702,7 +702,7 @@ export const InnovationComposition: React.FC<TikTokVideoProps> = (props) => {
                       ? 'light_leak_warm.mp4'
                       : props.colorPreset === 'cool_vivid'
                         ? 'light_leak_cool.mp4'
-                        : 'bokeh_sparkle.mp4';
+                        : 'none';
             if (!ovFile || ovFile === 'none') return null;
             const isVideoOv = ovFile.endsWith('.mp4') || ovFile.endsWith('.webm');
             const isPaperOv = ovFile.startsWith('paper_');
@@ -844,8 +844,8 @@ export const InnovationComposition: React.FC<TikTokVideoProps> = (props) => {
             />
           )}
 
-          {/* Multi-Color Confetti & Starburst Pop at Hook (0-3.2s) & CTA */}
-          {(frame < Math.round(fps * 3.2) || frame >= ctaStartFrame) && (
+          {/* Multi-Color Confetti: opt-in only (disabled by default for clean creator look) */}
+          {props.overlayEffect === 'bokeh_sparkle.mp4' && (frame < Math.round(fps * 3.2) || frame >= ctaStartFrame) && (
             <AbsoluteFill style={{ pointerEvents: 'none', overflow: 'hidden' }}>
               {Array.from({ length: 18 }).map((_, ci) => {
                 const localF = frame < Math.round(fps * 3.2) ? frame : frame - ctaStartFrame;
@@ -1361,7 +1361,7 @@ export const InnovationComposition: React.FC<TikTokVideoProps> = (props) => {
 
       {!props.badgeOnly && (
         <Sequence from={ctaStartFrame} durationInFrames={ctaDurationFrames}>
-          <div style={{ position: 'absolute', bottom: 108, left: 52, pointerEvents: 'none' }}>
+          <div style={{ position: 'absolute', bottom: 220, left: 52, pointerEvents: 'none' }}>
             <AsymmetricBox totalFrames={ctaDurationFrames} enterOffsetY={24} exitOffsetY={16}>
               <div
                 style={{
