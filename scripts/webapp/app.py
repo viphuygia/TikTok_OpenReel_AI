@@ -6027,9 +6027,28 @@ def api_remotion_apply_critic():
     }
 
 
+class PipelineCancelledError(RuntimeError):
+    """Raised when the user cancels the running render pipeline."""
+
+
 PIPELINE_LOCK = threading.Lock()
+PIPELINE_CANCEL_EVENT = threading.Event()
+PIPELINE_STOP_AFTER_CURRENT = threading.Event()
+LIVE_PIPELINE_QUEUE: list[dict[str, Any]] = []
+ACTIVE_PIPELINE_PROCS_LOCK = threading.Lock()
+ACTIVE_PIPELINE_PROCS: list[subprocess.Popen[Any]] = []
+_PIPELINE_THREAD_ID: int | None = None
+_ORIG_SUBPROCESS_RUN = subprocess.run
+
 PIPELINE_STATE: dict[str, Any] = {
     "running": False,
+    "stop_after_current": False,
+    "cancelling": False,
+    "stopped": False,
+    "active_job": None,
+    "pending_queue": [],
+    "queue_completed": 0,
+    "queue_total": 0,
     "current_step": 0,
     "current_tab": "tab4",
     "percent": 0,
@@ -6045,6 +6064,83 @@ PIPELINE_STATE: dict[str, Any] = {
     "error": "",
     "result": None,
 }
+
+
+def _kill_proc_tree(proc: subprocess.Popen[Any]) -> None:
+    try:
+        if proc.poll() is not None:
+            return
+        if os.name == "nt":
+            _ORIG_SUBPROCESS_RUN(
+                ["taskkill", "/F", "/T", "/PID", str(proc.pid)],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                timeout=6,
+            )
+        else:
+            proc.kill()
+    except Exception:
+        try:
+            proc.kill()
+        except Exception:
+            pass
+
+
+def _kill_active_pipeline_procs() -> None:
+    with ACTIVE_PIPELINE_PROCS_LOCK:
+        procs = list(ACTIVE_PIPELINE_PROCS)
+    for proc in procs:
+        _kill_proc_tree(proc)
+
+
+def _check_pipeline_cancelled() -> None:
+    if PIPELINE_CANCEL_EVENT.is_set() and (
+        _PIPELINE_THREAD_ID is None or threading.get_ident() == _PIPELINE_THREAD_ID
+    ):
+        raise PipelineCancelledError("Người dùng đã dừng pipeline ngay lập tức.")
+
+
+def _pipeline_tracked_subprocess_run(*popenargs: Any, **kwargs: Any) -> subprocess.CompletedProcess[Any]:
+    if _PIPELINE_THREAD_ID is None or threading.get_ident() != _PIPELINE_THREAD_ID:
+        return _ORIG_SUBPROCESS_RUN(*popenargs, **kwargs)
+    if PIPELINE_CANCEL_EVENT.is_set():
+        raise PipelineCancelledError("Pipeline đã được yêu cầu dừng.")
+
+    call_kwargs = dict(kwargs)
+    timeout = call_kwargs.pop("timeout", None)
+    check = call_kwargs.pop("check", False)
+    input_data = call_kwargs.pop("input", None)
+    if call_kwargs.pop("capture_output", False):
+        call_kwargs.setdefault("stdout", subprocess.PIPE)
+        call_kwargs.setdefault("stderr", subprocess.PIPE)
+    if input_data is not None and "stdin" not in call_kwargs:
+        call_kwargs["stdin"] = subprocess.PIPE
+
+    cmd = popenargs[0] if popenargs else call_kwargs.get("args")
+    proc = subprocess.Popen(*popenargs, **call_kwargs)
+    with ACTIVE_PIPELINE_PROCS_LOCK:
+        ACTIVE_PIPELINE_PROCS.append(proc)
+    try:
+        if PIPELINE_CANCEL_EVENT.is_set():
+            _kill_proc_tree(proc)
+        try:
+            stdout, stderr = proc.communicate(input=input_data, timeout=timeout)
+        except subprocess.TimeoutExpired:
+            _kill_proc_tree(proc)
+            proc.communicate()
+            raise
+        if PIPELINE_CANCEL_EVENT.is_set():
+            raise PipelineCancelledError("Đã ngắt tiến trình render theo yêu cầu dừng ngay.")
+        if check and proc.returncode != 0:
+            raise subprocess.CalledProcessError(proc.returncode, cmd, output=stdout, stderr=stderr)
+        return subprocess.CompletedProcess(cmd, proc.returncode, stdout, stderr)
+    finally:
+        with ACTIVE_PIPELINE_PROCS_LOCK:
+            if proc in ACTIVE_PIPELINE_PROCS:
+                ACTIVE_PIPELINE_PROCS.remove(proc)
+
+
+subprocess.run = _pipeline_tracked_subprocess_run
 
 
 def _update_pipeline(
@@ -6085,19 +6181,51 @@ def _update_pipeline(
             PIPELINE_STATE["logs"] = (PIPELINE_STATE["logs"] + [log_line])[-40:]
 
 
+def _job_summary(item: dict[str, Any]) -> dict[str, Any]:
+    jreq = item["req"]
+    is_long = getattr(jreq, "pipeline_category", "short_tiktok") == "long_vlog" or float(getattr(jreq, "target_duration_sec", 0) or 0) > 90.0
+    return {
+        "id": item["id"],
+        "project_id": item["project_id"],
+        "project_name": item.get("project_name") or item["project_id"],
+        "pipeline_category": "long_vlog" if is_long else "short_tiktok",
+        "duration_sec": float(getattr(jreq, "target_duration_sec", 30.0) or 30.0),
+        "content_vibe": str(getattr(jreq, "content_vibe", "") or ""),
+        "batch_all_scripts": bool(getattr(jreq, "batch_all_scripts", False)),
+    }
+
+
+def _sync_pending_queue_locked() -> None:
+    PIPELINE_STATE["pending_queue"] = [_job_summary(j) for j in LIVE_PIPELINE_QUEUE]
+
+
+def _reset_pipeline_state_locked() -> None:
+    PIPELINE_CANCEL_EVENT.clear()
+    PIPELINE_STOP_AFTER_CURRENT.clear()
+    LIVE_PIPELINE_QUEUE.clear()
+    PIPELINE_STATE["running"] = True
+    PIPELINE_STATE["stop_after_current"] = False
+    PIPELINE_STATE["cancelling"] = False
+    PIPELINE_STATE["stopped"] = False
+    PIPELINE_STATE["active_job"] = None
+    PIPELINE_STATE["pending_queue"] = []
+    PIPELINE_STATE["queue_completed"] = 0
+    PIPELINE_STATE["queue_total"] = 0
+    PIPELINE_STATE["current_step"] = 1
+    PIPELINE_STATE["current_tab"] = "tab4"
+    PIPELINE_STATE["percent"] = 5
+    PIPELINE_STATE["message"] = "Khởi động luồng dựng tự động theo Kế hoạch AI..."
+    PIPELINE_STATE["error"] = ""
+    PIPELINE_STATE["result"] = None
+    PIPELINE_STATE["logs"] = []
+    for s in PIPELINE_STATE["steps"]:
+        s["status"] = "idle"
+        s["detail"] = ""
+
+
 def _reset_pipeline_state() -> None:
     with PIPELINE_LOCK:
-        PIPELINE_STATE["running"] = True
-        PIPELINE_STATE["current_step"] = 1
-        PIPELINE_STATE["current_tab"] = "tab4"
-        PIPELINE_STATE["percent"] = 5
-        PIPELINE_STATE["message"] = "Khởi động luồng dựng tự động theo Kế hoạch AI..."
-        PIPELINE_STATE["error"] = ""
-        PIPELINE_STATE["result"] = None
-        PIPELINE_STATE["logs"] = []
-        for s in PIPELINE_STATE["steps"]:
-            s["status"] = "idle"
-            s["detail"] = ""
+        _reset_pipeline_state_locked()
 
 
 def _build_fallback_script_from_brief(brief: dict[str, Any], target_dur: float) -> tuple[str, str]:
@@ -6350,6 +6478,7 @@ def _execute_longform_vlog_pipeline(
         step_status=(1, "running", "Chia shot Highlight"),
         log_line=f"[Clip Dài > 90s]{pacing_log} Quét clip 02_video_tho/ & chia nhịp {float(vp_prof.get('shot_sec') or 6.2):.1f}s/cảnh theo thứ tự thời gian...",
     )
+    _check_pipeline_cancelled()
     ordered = _lf.collect_ordered_raw_clips(DIR_VIDEO_THO, ordered_names=req.ordered_clips or None)
     if not ordered:
         raise RuntimeError("Chưa có video thô nào trong 02_video_tho/. Vui lòng upload video trước khi tạo Clip Dài.")
@@ -6373,6 +6502,7 @@ def _execute_longform_vlog_pipeline(
         log_line=f"[Bước 1/5] Đã chia {n_shots} cảnh vào {n_chaps} chương ({req_aspect} {q_label}, {actual_target:.0f}s).",
     )
 
+    _check_pipeline_cancelled()
     _update_pipeline(
         current_step=2,
         percent=30,
@@ -6505,6 +6635,7 @@ def _execute_longform_vlog_pipeline(
         if vp.startswith("random_"):
             vp = _ve.pick_random_voice_presets(vp, count=1)[0]["id"]
         def _lf_voice_progress(done_i: int, total_n: int, msg_lbl: str) -> None:
+            _check_pipeline_cancelled()
             pct = 50 + int((done_i / max(1, total_n)) * 15)
             _update_pipeline(
                 percent=min(65, pct),
@@ -6580,6 +6711,7 @@ def _execute_longform_vlog_pipeline(
         _update_pipeline(log_line=f"[Ngôn ngữ Phụ đề] {req_sub_lang} (Dịch tự động từ SRT tiếng Việt).")
 
     for ar_idx, cur_ar in enumerate(aspect_list, start=1):
+        _check_pipeline_cancelled()
         ar_plan = dict(plan)
         if cur_ar != req_aspect:
             tw, th, _ = _lf.resolve_target_resolution(ordered, aspect_ratio=cur_ar, quality_preset=req_quality)
@@ -6676,10 +6808,11 @@ def _execute_longform_vlog_pipeline(
         percent=94,
     )
     out_names = ", ".join(x["filename"] for x in exported_list)
+    _q_managed = threading.get_ident() == _PIPELINE_THREAD_ID
     _update_pipeline(
-        running=False,
+        running=None if _q_managed else False,
         current_step=5,
-        percent=100,
+        percent=96 if _q_managed else 100,
         message=f"Hoàn tất Vlog {q_label} ({len(exported_list)} MP4 · {out_names})!",
         step_status=(5, "done", f"{q_label} · {len(exported_list)} MP4"),
         result={
@@ -6745,6 +6878,7 @@ def _run_single_project_pipeline(req: OneClickPipelineReq) -> None:
                 _rnd.shuffle(color_pool)
                 all_exported: list[dict[str, Any]] = []
                 for v_idx in range(1, n_rand + 1):
+                    _check_pipeline_cancelled()
                     pick_bgm = vlog_bgms[(v_idx - 1) % len(vlog_bgms)]
                     pick_stk = "normal" if v_idx % 2 == 1 else "rich"
                     pick_style = style_combos[(v_idx - 1) % len(style_combos)]
@@ -6777,11 +6911,12 @@ def _run_single_project_pipeline(req: OneClickPipelineReq) -> None:
                     )
                     all_exported.extend(res_list)
                 names_joined = ", ".join(x["filename"] for x in all_exported)
+                _q_managed = threading.get_ident() == _PIPELINE_THREAD_ID
                 _update_pipeline(
-                    running=False,
+                    running=None if _q_managed else False,
                     current_step=5,
                     current_tab="tab6",
-                    percent=100,
+                    percent=96 if _q_managed else 100,
                     message=f"🎲 Hoàn tất {len(all_exported)} Video Random: {names_joined}",
                     step_status=(5, "done", f"Xong {len(all_exported)} MP4 Random"),
                 )
@@ -6878,6 +7013,7 @@ def _run_single_project_pipeline(req: OneClickPipelineReq) -> None:
             percent=20,
         )
 
+        _check_pipeline_cancelled()
         # Step 2: Pre-Production - Tự kiểm tra AI Critic & đảm bảo kịch bản đủ thời lượng mục tiêu
         _update_pipeline(
             current_step=2,
@@ -7052,6 +7188,7 @@ def _run_single_project_pipeline(req: OneClickPipelineReq) -> None:
             used_wc_subs: list[str] = []
             try:
                 for b_idx, b_opt in enumerate(batch_opts, start=1):
+                    _check_pipeline_cancelled()
                     opt_id = str(b_opt.get("id") or f"opt{b_idx}")
                     opt_title = str(b_opt.get("title") or opt_id)
                     mix_prof = (
@@ -7301,11 +7438,12 @@ def _run_single_project_pipeline(req: OneClickPipelineReq) -> None:
 
             names_str = ", ".join(str(x.get("output_filename") or "") for x in rendered_batch)
             frames = _collect_remotion_preview_frames()
+            _q_managed = threading.get_ident() == _PIPELINE_THREAD_ID
             _update_pipeline(
-                running=False,
+                running=None if _q_managed else False,
                 current_step=5,
                 current_tab="tab5",
-                percent=100,
+                percent=96 if _q_managed else 100,
                 message=f"Hoàn tất Batch {len(rendered_batch)} kịch bản! Đã xuất: {names_str}",
                 step_status=(3, "done", f"Xong {len(rendered_batch)} giọng AI"),
                 log_line=f"[HOÀN TẤT BATCH x{len(rendered_batch)}] {names_str}",
@@ -7315,6 +7453,7 @@ def _run_single_project_pipeline(req: OneClickPipelineReq) -> None:
             _update_pipeline(step_status=(5, "done", f"Đã xuất {len(rendered_batch)} MP4"))
             return
 
+        _check_pipeline_cancelled()
         # Step 3: Thực Thi - Tạo Giọng AI chuẩn Thời Lượng & Phụ đề Karaoke sạch
         _update_pipeline(
             current_step=3,
@@ -7388,6 +7527,7 @@ def _run_single_project_pipeline(req: OneClickPipelineReq) -> None:
                 percent=65,
             )
 
+        _check_pipeline_cancelled()
         # Step 4: Thực Thi - Khớp & Cắt Clip 9:16 bám Beat (tôn trọng Khóa Clips)
         _update_pipeline(
             current_step=4,
@@ -7427,6 +7567,7 @@ def _run_single_project_pipeline(req: OneClickPipelineReq) -> None:
             percent=82,
         )
 
+        _check_pipeline_cancelled()
         # Step 5: Tab 5 - Remotion Render MP4
         _update_pipeline(
             current_step=5,
@@ -7498,20 +7639,24 @@ def _run_single_project_pipeline(req: OneClickPipelineReq) -> None:
         )
         _record_render_history(DIR_WORKSPACE, out_fname, s_meta)
         frames = _collect_remotion_preview_frames()
+        _q_managed = threading.get_ident() == _PIPELINE_THREAD_ID
         _update_pipeline(
-            running=False,
+            running=None if _q_managed else False,
             current_step=5,
             current_tab="tab5",
-            percent=100,
+            percent=96 if _q_managed else 100,
             message=f"Hoàn tất! {sel_meta.get('label', 'Video')} -> {out_fname} ({render_res.get('duration_sec', 0)}s).",
             step_status=(5, "done", f"{out_fname} ({render_res.get('duration_sec', 0)}s)"),
             log_line=f"[HOÀN TẤT] Xuất thành công 05_output/{out_fname}",
             result={"render": render_res, "preview_frames": frames, "style_dna": dna},
         )
+    except PipelineCancelledError:
+        raise
     except Exception as exc:
         cur_step = PIPELINE_STATE.get("current_step") or 1
+        _q_managed = threading.get_ident() == _PIPELINE_THREAD_ID
         _update_pipeline(
-            running=False,
+            running=None if _q_managed else False,
             error=str(exc),
             message=f"Lỗi ở bước {cur_step}: {exc}",
             step_status=(int(cur_step), "error", str(exc)[:120]),
@@ -7581,95 +7726,193 @@ def _build_queue_job_req(base_req: OneClickPipelineReq, job: dict[str, Any]) -> 
     return pid, base_req.model_copy(update=upd)
 
 
-def _run_pipeline_worker(req: OneClickPipelineReq) -> None:
+def _expand_req_to_queue_jobs(
+    req: OneClickPipelineReq, all_projs: dict[str, dict[str, Any]] | None = None
+) -> list[dict[str, Any]]:
+    import uuid as _uuid
+
+    proj_map = all_projs if all_projs is not None else {p["id"]: p for p in pm_list_projects().get("projects", [])}
+    jobs: list[dict[str, Any]] = []
     queue_jobs = [j for j in (getattr(req, "queue_jobs", None) or []) if isinstance(j, dict)]
     if queue_jobs:
-        batch_summary: list[dict[str, Any]] = []
-        n_jobs = len(queue_jobs)
-        for q_idx, job_dict in enumerate(queue_jobs, start=1):
-            pid = str(job_dict.get("project_id") or ACTIVE_PROJECT_ID).strip() or ACTIVE_PROJECT_ID
+        for job_dict in queue_jobs:
+            pid, job_req = _build_queue_job_req(req, job_dict)
+            pname = str((proj_map.get(pid) or {}).get("name") or job_dict.get("project_name") or pid)
+            jobs.append({"id": _uuid.uuid4().hex[:8], "project_id": pid, "project_name": pname, "req": job_req})
+        return jobs
+
+    target_pids = [str(p).strip() for p in (req.project_ids or []) if str(p).strip()]
+    if target_pids:
+        multi = len(target_pids) > 1
+        for pid in target_pids:
+            job_req = _req_for_project(req, pid, multi)
+            pname = str((proj_map.get(pid) or {}).get("name") or pid)
+            jobs.append({"id": _uuid.uuid4().hex[:8], "project_id": pid, "project_name": pname, "req": job_req})
+        return jobs
+
+    pid = ACTIVE_PROJECT_ID
+    job_req = _req_for_project(req, pid, False)
+    pname = str((proj_map.get(pid) or {}).get("name") or pid)
+    jobs.append({"id": _uuid.uuid4().hex[:8], "project_id": pid, "project_name": pname, "req": job_req})
+    return jobs
+
+
+def _run_pipeline_worker(_initial_req: OneClickPipelineReq | None = None) -> None:
+    global _PIPELINE_THREAD_ID
+    _PIPELINE_THREAD_ID = threading.get_ident()
+    batch_summary: list[dict[str, Any]] = []
+    cancelled_mid_job = False
+    last_single_result: dict[str, Any] | None = None
+    last_single_message: str = ""
+    last_single_tab: str = "tab5"
+
+    try:
+        while True:
+            if PIPELINE_CANCEL_EVENT.is_set():
+                cancelled_mid_job = True
+                break
+            if PIPELINE_STOP_AFTER_CURRENT.is_set() and batch_summary:
+                break
+
+            with PIPELINE_LOCK:
+                if PIPELINE_STOP_AFTER_CURRENT.is_set() and batch_summary:
+                    LIVE_PIPELINE_QUEUE.clear()
+                    _sync_pending_queue_locked()
+                    break
+                if not LIVE_PIPELINE_QUEUE:
+                    break
+                job_item = LIVE_PIPELINE_QUEUE.pop(0)
+                _sync_pending_queue_locked()
+                job_summary = _job_summary(job_item)
+                PIPELINE_STATE["active_job"] = job_summary
+                completed_so_far = int(PIPELINE_STATE.get("queue_completed") or 0)
+                total_so_far = max(int(PIPELINE_STATE.get("queue_total") or 0), completed_so_far + 1 + len(LIVE_PIPELINE_QUEUE))
+                PIPELINE_STATE["queue_total"] = total_so_far
+                for st_s in PIPELINE_STATE["steps"]:
+                    st_s["status"] = "idle"
+                    st_s["detail"] = ""
+
+            pid = job_item["project_id"]
+            pname = job_item.get("project_name") or pid
+            job_req = job_item["req"]
+            q_idx = completed_so_far + 1
+            cat_lbl = "Dài" if job_summary["pipeline_category"] == "long_vlog" else "Ngắn"
             try:
-                pid, job_req = _build_queue_job_req(req, job_dict)
-                cat_lbl = "Dài" if (getattr(job_req, "pipeline_category", "short_tiktok") == "long_vlog" or float(job_req.target_duration_sec or 0) > 90.0) else "Ngắn"
                 pm_set_active_project(pid)
                 refresh_app_project_paths()
+                prefix = f"[Hàng đợi {q_idx}/{total_so_far} · {cat_lbl} · {pname}] " if total_so_far > 1 else ""
                 _update_pipeline(
                     running=True,
-                    error=None,
+                    error="",
                     current_step=1,
-                    percent=max(5, int(((q_idx - 1) / n_jobs) * 100)),
-                    message=f"[Hàng đợi {q_idx}/{n_jobs} · {cat_lbl} · {pid}] Đang xử lý...",
-                    log_line=f"=== [Hàng đợi {q_idx}/{n_jobs}] Bắt đầu `{pid}` ({cat_lbl} · vibe={job_req.content_vibe}) ===",
+                    percent=max(5, min(95, int(((q_idx - 1) / max(1, total_so_far)) * 100))),
+                    message=f"{prefix}Đang xử lý...",
+                    log_line=f"=== [Hàng đợi {q_idx}/{total_so_far}] Bắt đầu `{pname}` ({cat_lbl} · vibe={job_req.content_vibe}) ===",
                 )
                 _run_single_project_pipeline(job_req)
-                err = PIPELINE_STATE.get("error")
-                batch_summary.append({"project_id": pid, "pipeline_category": job_req.pipeline_category, "ok": not bool(err), "error": err or ""})
+                with PIPELINE_LOCK:
+                    err = str(PIPELINE_STATE.get("error") or "")
+                    last_single_result = PIPELINE_STATE.get("result")
+                    last_single_message = str(PIPELINE_STATE.get("message") or "")
+                    last_single_tab = str(PIPELINE_STATE.get("current_tab") or "tab5")
+                    PIPELINE_STATE["queue_completed"] = int(PIPELINE_STATE.get("queue_completed") or 0) + 1
+                batch_summary.append({
+                    "project_id": pid,
+                    "project_name": pname,
+                    "pipeline_category": job_summary["pipeline_category"],
+                    "ok": not bool(err),
+                    "error": err,
+                })
+            except PipelineCancelledError:
+                cancelled_mid_job = True
+                batch_summary.append({
+                    "project_id": pid,
+                    "project_name": pname,
+                    "pipeline_category": job_summary["pipeline_category"],
+                    "ok": False,
+                    "cancelled": True,
+                    "error": "Đã dừng ngay theo yêu cầu.",
+                })
+                break
             except Exception as exc:
-                batch_summary.append({"project_id": pid, "ok": False, "error": str(exc)})
-                _update_pipeline(log_line=f"[Hàng đợi {q_idx}/{n_jobs} · {pid} LỖI] {exc}")
+                with PIPELINE_LOCK:
+                    PIPELINE_STATE["queue_completed"] = int(PIPELINE_STATE.get("queue_completed") or 0) + 1
+                batch_summary.append({
+                    "project_id": pid,
+                    "project_name": pname,
+                    "pipeline_category": job_summary["pipeline_category"],
+                    "ok": False,
+                    "error": str(exc),
+                })
+                _update_pipeline(log_line=f"[Hàng đợi {q_idx}/{total_so_far} · {pname} LỖI] {exc}")
 
-        ok_cnt = sum(1 for x in batch_summary if x["ok"])
-        fail_list = [x["project_id"] for x in batch_summary if not x["ok"]]
-        summary_msg = f"Hoàn tất hàng đợi {ok_cnt}/{n_jobs} tác vụ" + (f" (Lỗi: {', '.join(fail_list)})" if fail_list else " thành công!")
-        _update_pipeline(
-            running=False,
-            error=None if ok_cnt > 0 else "Tất cả tác vụ trong hàng đợi đều lỗi",
-            current_step=5,
-            current_tab="tab5",
-            percent=100,
-            message=summary_msg,
-            log_line=f"[HOÀN TẤT HÀNG ĐỢI HỖN HỢP] {summary_msg}",
-            result={"multi_project": batch_summary},
-        )
-        return
+        ok_cnt = sum(1 for x in batch_summary if x.get("ok"))
+        fail_list = [str(x.get("project_name") or x["project_id"]) for x in batch_summary if not x.get("ok") and not x.get("cancelled")]
+        soft_stopped = PIPELINE_STOP_AFTER_CURRENT.is_set() and not cancelled_mid_job
 
-    target_pids = [str(p).strip() for p in (req.project_ids or []) if str(p).strip()] or [ACTIVE_PROJECT_ID]
-    if len(target_pids) <= 1:
-        if target_pids[0] != ACTIVE_PROJECT_ID:
-            pm_set_active_project(target_pids[0])
-            refresh_app_project_paths()
-        _run_single_project_pipeline(_req_for_project(req, target_pids[0], False))
-        return
+        with PIPELINE_LOCK:
+            LIVE_PIPELINE_QUEUE.clear()
+            PIPELINE_STATE["pending_queue"] = []
+            PIPELINE_STATE["active_job"] = None
+            PIPELINE_STATE["running"] = False
+            PIPELINE_STATE["stop_after_current"] = False
+            PIPELINE_STATE["cancelling"] = False
 
-    batch_summary = []
-    n_proj = len(target_pids)
-    for p_idx, pid in enumerate(target_pids, start=1):
-        try:
-            pm_set_active_project(pid)
-            refresh_app_project_paths()
-            _update_pipeline(
-                running=True,
-                error=None,
-                current_step=1,
-                percent=max(5, int(((p_idx - 1) / n_proj) * 100)),
-                message=f"[Project {p_idx}/{n_proj}: {pid}] Đang xử lý tuần tự...",
-                log_line=f"=== [Project {p_idx}/{n_proj}] Bắt đầu xử lý `{pid}` ===",
-            )
-            _run_single_project_pipeline(_req_for_project(req, pid, True))
-            err = PIPELINE_STATE.get("error")
-            batch_summary.append({"project_id": pid, "ok": not bool(err), "error": err or ""})
-        except Exception as exc:
-            batch_summary.append({"project_id": pid, "ok": False, "error": str(exc)})
-            _update_pipeline(log_line=f"[Project {p_idx}/{n_proj} · {pid} LỖI] {exc}")
-
-    ok_cnt = sum(1 for x in batch_summary if x["ok"])
-    fail_list = [x["project_id"] for x in batch_summary if not x["ok"]]
-    summary_msg = f"Hoàn tất hàng đợi {ok_cnt}/{n_proj} Project" + (f" (Lỗi: {', '.join(fail_list)})" if fail_list else " thành công!")
-    _update_pipeline(
-        running=False,
-        error=None if ok_cnt > 0 else "Tất cả Project đều lỗi",
-        current_step=5,
-        current_tab="tab5",
-        percent=100,
-        message=summary_msg,
-        log_line=f"[HOÀN TẤT HÀNG ĐỢI] {summary_msg}",
-        result={"multi_project": batch_summary},
-    )
+            if cancelled_mid_job:
+                PIPELINE_STATE["stopped"] = True
+                PIPELINE_STATE["error"] = ""
+                PIPELINE_STATE["message"] = (
+                    f"⏹️ Đã dừng ngay (đã hoàn tất {ok_cnt} tác vụ trước đó)." if ok_cnt > 0
+                    else "⏹️ Đã dừng tiến trình render ngay lập tức."
+                )
+                PIPELINE_STATE["logs"] = (PIPELINE_STATE["logs"] + [f"[ĐÃ DỪNG NGAY] {PIPELINE_STATE['message']}"])[-40:]
+            elif soft_stopped:
+                PIPELINE_STATE["stopped"] = True
+                PIPELINE_STATE["error"] = ""
+                PIPELINE_STATE["percent"] = 100
+                PIPELINE_STATE["current_step"] = 5
+                PIPELINE_STATE["current_tab"] = last_single_tab or "tab5"
+                PIPELINE_STATE["message"] = f"⏭️ Đã dừng sau video hiện tại ({ok_cnt} tác vụ hoàn tất)."
+                PIPELINE_STATE["logs"] = (PIPELINE_STATE["logs"] + [f"[ĐÃ DỪNG SAU VIDEO NÀY] {PIPELINE_STATE['message']}"])[-40:]
+                if len(batch_summary) > 1:
+                    PIPELINE_STATE["result"] = {"multi_project": batch_summary}
+            elif len(batch_summary) <= 1:
+                PIPELINE_STATE["stopped"] = False
+                if ok_cnt == 1:
+                    PIPELINE_STATE["error"] = ""
+                    PIPELINE_STATE["percent"] = 100
+                    PIPELINE_STATE["current_step"] = 5
+                    PIPELINE_STATE["current_tab"] = last_single_tab or "tab5"
+                    if last_single_message:
+                        PIPELINE_STATE["message"] = last_single_message
+                    if last_single_result is not None:
+                        PIPELINE_STATE["result"] = last_single_result
+                else:
+                    single_err = (batch_summary[0].get("error") if batch_summary else "") or PIPELINE_STATE.get("error") or "Lỗi pipeline"
+                    PIPELINE_STATE["error"] = single_err
+            else:
+                PIPELINE_STATE["stopped"] = False
+                summary_msg = f"Hoàn tất hàng đợi {ok_cnt}/{len(batch_summary)} tác vụ" + (f" (Lỗi: {', '.join(fail_list)})" if fail_list else " thành công!")
+                PIPELINE_STATE["error"] = "" if ok_cnt > 0 else "Tất cả tác vụ trong hàng đợi đều lỗi"
+                PIPELINE_STATE["current_step"] = 5
+                PIPELINE_STATE["current_tab"] = "tab5"
+                PIPELINE_STATE["percent"] = 100
+                PIPELINE_STATE["message"] = summary_msg
+                PIPELINE_STATE["logs"] = (PIPELINE_STATE["logs"] + [f"[HOÀN TẤT HÀNG ĐỢI] {summary_msg}"])[-40:]
+                PIPELINE_STATE["result"] = {"multi_project": batch_summary}
+    finally:
+        _PIPELINE_THREAD_ID = None
+        PIPELINE_CANCEL_EVENT.clear()
+        PIPELINE_STOP_AFTER_CURRENT.clear()
 
 
 class GlobalBannedWordsReq(BaseModel):
     words: Any = ""
     reset_default: bool = False
+
+
+class PipelineStopReq(BaseModel):
+    mode: str = "after_current"
 
 
 @app.get("/api/banned-words")
@@ -7686,11 +7929,11 @@ def api_save_global_banned_words(req: GlobalBannedWordsReq):
 
 @app.post("/api/pipeline/run-all")
 def api_pipeline_run_all(req: OneClickPipelineReq):
+    all_projs = {p["id"]: p for p in pm_list_projects().get("projects", [])}
     queue_jobs = [j for j in (getattr(req, "queue_jobs", None) or []) if isinstance(j, dict)]
     target_pids = [str(p).strip() for p in (req.project_ids or []) if str(p).strip()]
     is_long_mode = getattr(req, "pipeline_category", "short_tiktok") == "long_vlog" or float(req.target_duration_sec or 0) > 90.0
     if queue_jobs:
-        all_projs = {p["id"]: p for p in pm_list_projects().get("projects", [])}
         not_ready = []
         for idx_j, job_dict in enumerate(queue_jobs, start=1):
             pid, job_req = _build_queue_job_req(req, job_dict)
@@ -7715,7 +7958,6 @@ def api_pipeline_run_all(req: OneClickPipelineReq):
                 detail=f"Các tác vụ hàng đợi chưa đủ điều kiện: {', '.join(not_ready)}",
             )
     elif target_pids:
-        all_projs = {p["id"]: p for p in pm_list_projects().get("projects", [])}
         if is_long_mode:
             not_ready = [pid for pid in target_pids if pid not in all_projs or int(all_projs[pid].get("raw_video_count") or 0) <= 0]
             if not_ready:
@@ -7747,16 +7989,95 @@ def api_pipeline_run_all(req: OneClickPipelineReq):
         brief_ready, brief_reason = is_brand_brief_ready()
         if not brief_ready:
             raise HTTPException(status_code=400, detail=brief_reason)
+
+    new_jobs = _expand_req_to_queue_jobs(req, all_projs=all_projs)
+    started_fresh = False
     with PIPELINE_LOCK:
         if PIPELINE_STATE["running"]:
-            raise HTTPException(status_code=409, detail="Pipeline 1-Click đang chạy, vui lòng chờ hoàn tất.")
-    _reset_pipeline_state()
-    if req.sync:
-        _run_pipeline_worker(req)
-    else:
-        t = threading.Thread(target=_run_pipeline_worker, args=(req,), daemon=True)
-        t.start()
-    return api_pipeline_status()
+            if PIPELINE_CANCEL_EVENT.is_set() or PIPELINE_STATE.get("cancelling"):
+                raise HTTPException(status_code=409, detail="Pipeline đang dừng ngay, vui lòng đợi vài giây rồi tạo lượt mới.")
+            if PIPELINE_STOP_AFTER_CURRENT.is_set():
+                PIPELINE_STOP_AFTER_CURRENT.clear()
+                PIPELINE_STATE["stop_after_current"] = False
+            LIVE_PIPELINE_QUEUE.extend(new_jobs)
+            _sync_pending_queue_locked()
+            PIPELINE_STATE["queue_total"] = int(PIPELINE_STATE.get("queue_total") or 0) + len(new_jobs)
+            PIPELINE_STATE["logs"] = (
+                PIPELINE_STATE.get("logs", [])
+                + [f"[Hàng đợi +{len(new_jobs)}] Đã nối thêm {len(new_jobs)} tác vụ vào hàng đợi đang chạy (Đang chờ: {len(LIVE_PIPELINE_QUEUE)})."]
+            )[-40:]
+            snap = json.loads(json.dumps(PIPELINE_STATE))
+            snap["appended"] = len(new_jobs)
+            return snap
+
+        _reset_pipeline_state_locked()
+        LIVE_PIPELINE_QUEUE.extend(new_jobs)
+        _sync_pending_queue_locked()
+        PIPELINE_STATE["queue_total"] = len(new_jobs)
+        started_fresh = True
+
+    if started_fresh:
+        if req.sync:
+            _run_pipeline_worker(req)
+        else:
+            t = threading.Thread(target=_run_pipeline_worker, args=(req,), daemon=True)
+            t.start()
+    snap = api_pipeline_status()
+    snap["appended"] = 0
+    return snap
+
+
+@app.post("/api/pipeline/stop")
+def api_pipeline_stop(req: PipelineStopReq):
+    mode = str(req.mode or "after_current").strip().lower()
+    if mode not in ("after_current", "immediate"):
+        raise HTTPException(status_code=400, detail="mode phải là 'after_current' hoặc 'immediate'.")
+    with PIPELINE_LOCK:
+        if not PIPELINE_STATE.get("running"):
+            return {"ok": True, "already_stopped": True, **json.loads(json.dumps(PIPELINE_STATE))}
+        dropped = len(LIVE_PIPELINE_QUEUE)
+        LIVE_PIPELINE_QUEUE.clear()
+        _sync_pending_queue_locked()
+        if mode == "after_current":
+            PIPELINE_STOP_AFTER_CURRENT.set()
+            PIPELINE_STATE["stop_after_current"] = True
+            PIPELINE_STATE["message"] = "⏭️ Sẽ dừng ngay sau khi xong video hiện tại..."
+            PIPELINE_STATE["logs"] = (
+                PIPELINE_STATE.get("logs", [])
+                + [f"[Dừng mềm] Đã bật dừng sau video này (hủy {dropped} tác vụ đang chờ)."]
+            )[-40:]
+            return {"ok": True, "mode": mode, "dropped_queue": dropped, **json.loads(json.dumps(PIPELINE_STATE))}
+        PIPELINE_CANCEL_EVENT.set()
+        PIPELINE_STOP_AFTER_CURRENT.set()
+        PIPELINE_STATE["cancelling"] = True
+        PIPELINE_STATE["stop_after_current"] = True
+        PIPELINE_STATE["message"] = "⏹️ Đang dừng ngay tiến trình render..."
+        PIPELINE_STATE["logs"] = (
+            PIPELINE_STATE.get("logs", [])
+            + [f"[Dừng ngay] Đang ngắt tiến trình render (hủy {dropped} tác vụ chờ)."]
+        )[-40:]
+    _kill_active_pipeline_procs()
+    with PIPELINE_LOCK:
+        return {"ok": True, "mode": mode, "dropped_queue": dropped, **json.loads(json.dumps(PIPELINE_STATE))}
+
+
+@app.delete("/api/pipeline/queue/{job_id}")
+def api_pipeline_queue_delete(job_id: str):
+    jid = str(job_id or "").strip()
+    with PIPELINE_LOCK:
+        idx = next((i for i, item in enumerate(LIVE_PIPELINE_QUEUE) if item.get("id") == jid), -1)
+        if idx < 0:
+            raise HTTPException(status_code=404, detail="Không tìm thấy tác vụ trong hàng đợi (có thể đã bắt đầu chạy).")
+        removed = LIVE_PIPELINE_QUEUE.pop(idx)
+        _sync_pending_queue_locked()
+        done_n = int(PIPELINE_STATE.get("queue_completed") or 0)
+        act_n = 1 if PIPELINE_STATE.get("active_job") else 0
+        PIPELINE_STATE["queue_total"] = max(done_n + act_n + len(LIVE_PIPELINE_QUEUE), 0)
+        PIPELINE_STATE["logs"] = (
+            PIPELINE_STATE.get("logs", [])
+            + [f"[Hàng đợi] Đã xóa `{removed.get('project_name') or removed.get('project_id')}` khỏi hàng đợi chờ."]
+        )[-40:]
+        return {"ok": True, "removed_id": jid, **json.loads(json.dumps(PIPELINE_STATE))}
 
 
 @app.get("/api/pipeline/status")

@@ -1075,10 +1075,19 @@
 
       <!-- Collapsible Live 5-Step Progress Stepper (scrollable!) -->
       <div id="pipeline-stepper" class="hidden pt-1 space-y-2">
+        <div id="pipeline-live-controls" class="hidden flex-wrap items-center justify-between gap-2 px-2.5 py-2 rounded-xl bg-zinc-900/90 border border-zinc-800 text-[11px]">
+          <div id="pipeline-active-job-info" class="flex items-center gap-2 min-w-0 text-zinc-200 font-medium"></div>
+          <div class="flex flex-wrap items-center gap-1.5 ml-auto shrink-0">
+            <button type="button" onclick="openAutoPipelineModal()" class="px-2.5 py-1 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/35 border border-emerald-500/45 text-emerald-200 font-semibold transition">➕ Thêm việc</button>
+            <button id="btn-stop-after-current" type="button" onclick="stopPipeline('after_current')" class="px-2.5 py-1 rounded-lg bg-amber-600/20 hover:bg-amber-600/35 border border-amber-500/45 text-amber-200 font-semibold transition">⏭️ Dừng sau video này</button>
+            <button id="btn-stop-immediate" type="button" onclick="stopPipeline('immediate')" class="px-2.5 py-1 rounded-lg bg-rose-600/25 hover:bg-rose-600/45 border border-rose-500/50 text-rose-200 font-semibold transition">⏹️ Dừng ngay</button>
+          </div>
+        </div>
         <div class="w-full h-1.5 rounded-full bg-zinc-800 overflow-hidden">
           <div id="pipeline-progress-bar" class="h-full bg-gradient-to-r from-indigo-500 via-emerald-400 to-teal-400 transition-all duration-300" style="width: 0%"></div>
         </div>
         <div id="pipeline-steps-row" class="grid grid-cols-2 sm:grid-cols-5 gap-2 text-[11px]"></div>
+        <div id="pipeline-live-queue" class="hidden pt-1 space-y-1"></div>
       </div>
     </div>
 
@@ -4924,16 +4933,74 @@
       const btn = document.getElementById('btn-one-click-mp4');
       const btnBatch = document.getElementById('btn-batch-3-mp4');
 
-      if (p.running || p.percent > 0 || p.error) {
+      if (p.running || p.percent > 0 || p.error || p.stopped) {
         stepper?.classList.remove('hidden');
       }
       if (bar) bar.style.width = `${p.percent || 0}%`;
       if (txt) txt.textContent = p.message || 'Sẵn sàng 1-Click';
       state.pipelineRunning = !!p.running;
       if (btn) {
-        btn.disabled = !!p.running;
-        btn.textContent = p.running ? `⏳ Đang chạy (${p.percent || 0}%)...` : '🚀 Tạo Video Auto';
+        btn.disabled = !!p.cancelling;
+        btn.textContent = p.cancelling
+          ? '⏹️ Đang dừng...'
+          : (p.running ? `➕ Thêm vào hàng đợi (${p.percent || 0}%)` : '🚀 Tạo Video Auto');
+        btn.title = p.running
+          ? 'Đang render: Bấm để cấu hình & nối thêm Short/Long vào hàng đợi đang chạy'
+          : 'Mở bảng cấu hình & Tạo Video Auto';
         btn.classList.remove('opacity-45', 'cursor-not-allowed', 'grayscale');
+      }
+      const liveCtrl = document.getElementById('pipeline-live-controls');
+      const activeJobEl = document.getElementById('pipeline-active-job-info');
+      const liveQEl = document.getElementById('pipeline-live-queue');
+      const stopSoftBtn = document.getElementById('btn-stop-after-current');
+      const stopHardBtn = document.getElementById('btn-stop-immediate');
+      if (liveCtrl) {
+        liveCtrl.classList.toggle('hidden', !p.running);
+        liveCtrl.classList.toggle('flex', !!p.running);
+      }
+      if (activeJobEl && p.running) {
+        const aj = p.active_job;
+        const pendCnt = Array.isArray(p.pending_queue) ? p.pending_queue.length : 0;
+        const doneCnt = Number(p.queue_completed || 0);
+        const totCnt = Math.max(Number(p.queue_total || 0), doneCnt + (aj ? 1 : 0) + pendCnt);
+        if (aj) {
+          const isL = aj.pipeline_category === 'long_vlog';
+          const durTxt = isL ? `${Math.round(Number(aj.duration_sec || 300) / 60)}p` : `${Math.round(Number(aj.duration_sec || 30))}s`;
+          activeJobEl.innerHTML = `<span class="px-1.5 py-0.5 rounded text-[10px] font-bold ${isL ? 'bg-amber-500/20 text-amber-200 border border-amber-500/40' : 'bg-emerald-500/20 text-emerald-200 border border-emerald-500/40'}">${isL ? '🎬 Dài' : '⚡ Ngắn'} · ${durTxt}</span><span class="truncate">Đang chạy: <b>${escapeHtml(aj.project_name || aj.project_id)}</b></span><span class="text-zinc-400 shrink-0">(${doneCnt + 1}/${totCnt}${pendCnt ? ` · Chờ ${pendCnt}` : ''})</span>`;
+        } else {
+          activeJobEl.innerHTML = `<span class="text-zinc-300">⏳ Đang khởi chạy pipeline...</span>`;
+        }
+      }
+      if (stopSoftBtn) {
+        stopSoftBtn.disabled = !!p.stop_after_current || !!p.cancelling;
+        stopSoftBtn.textContent = p.stop_after_current ? '⏳ Sẽ dừng sau video này' : '⏭️ Dừng sau video này';
+        stopSoftBtn.classList.toggle('opacity-50', !!p.stop_after_current || !!p.cancelling);
+      }
+      if (stopHardBtn) {
+        stopHardBtn.disabled = !!p.cancelling;
+        stopHardBtn.textContent = p.cancelling ? '⏳ Đang dừng ngay...' : '⏹️ Dừng ngay';
+        stopHardBtn.classList.toggle('opacity-50', !!p.cancelling);
+      }
+      if (liveQEl) {
+        const pq = Array.isArray(p.pending_queue) ? p.pending_queue : [];
+        if (p.running && pq.length > 0) {
+          liveQEl.classList.remove('hidden');
+          liveQEl.innerHTML = `<div class="text-[10px] text-amber-300 font-semibold">📋 Đang xếp hàng chờ chạy tiếp (${pq.length} tác vụ):</div>` + pq.map((qItem, idx) => {
+            const isL = qItem.pipeline_category === 'long_vlog';
+            const durTxt = isL ? `${Math.round(Number(qItem.duration_sec || 300) / 60)}p` : `${Math.round(Number(qItem.duration_sec || 30))}s`;
+            return `<div class="flex items-center justify-between gap-2 px-2.5 py-1 rounded-lg bg-zinc-900/75 border border-zinc-800 text-[11px]">
+              <div class="flex items-center gap-2 min-w-0">
+                <span class="mono text-zinc-400">#${idx + 1}</span>
+                <span class="px-1.5 py-0.5 rounded border text-[10px] font-semibold ${isL ? 'bg-amber-500/15 border-amber-500/35 text-amber-200' : 'bg-emerald-500/15 border-emerald-500/35 text-emerald-200'}">${isL ? '🎬 Dài' : '⚡ Ngắn'} · ${durTxt}</span>
+                <span class="text-zinc-200 truncate">${escapeHtml(qItem.project_name || qItem.project_id)}</span>
+              </div>
+              <button type="button" onclick="removeLiveQueueJob('${escapeHtml(qItem.id)}')" title="Xóa khỏi hàng đợi chờ" class="px-1.5 py-0.5 rounded bg-rose-500/15 hover:bg-rose-500/35 text-rose-300 shrink-0">✕</button>
+            </div>`;
+          }).join('');
+        } else {
+          liveQEl.classList.add('hidden');
+          liveQEl.innerHTML = '';
+        }
       }
       const projSel = document.getElementById('project-select');
       const newProjBtn = document.getElementById('btn-new-project');
@@ -5007,9 +5074,12 @@
           _pipelineTimer = null;
           if (p.error) {
             toast(p.message || p.error, 'error');
+          } else if (p.stopped) {
+            await Promise.all([loadWorkshopState(), loadOpenReelStatus(), loadProjects()]);
+            toast(p.message || '⏹️ Đã dừng pipeline.', 'warn');
           } else if (p.percent === 100) {
             switchTab('tab5');
-            await Promise.all([loadWorkshopState(), loadOpenReelStatus()]);
+            await Promise.all([loadWorkshopState(), loadOpenReelStatus(), loadProjects()]);
             toast('🎉 Hoàn tất toàn bộ Pipeline 1-Click! Video MP4 đã sẵn sàng ở Tab 5.', 'success');
           }
         }
@@ -5158,6 +5228,7 @@
       } catch (e) {}
 
       updateAutoModalMixUi();
+      renderAutoQueuePanel();
 
       if (state.pipelineCategory === 'long_vlog') {
         await syncLongformProjectsUi();
@@ -5222,7 +5293,12 @@
             }),
           });
           renderPipelineState(res);
-          toast(`🚀 Đã khởi động Hàng đợi ${queueJobs.length} tác vụ (Ngắn & Dài chạy tuần tự)!`, 'success');
+          toast(
+            res?.appended > 0
+              ? `➕ Đã nối thêm ${res.appended} tác vụ vào hàng đợi đang chạy!`
+              : `🚀 Đã khởi động Hàng đợi ${queueJobs.length} tác vụ (Ngắn & Dài chạy tuần tự)!`,
+            'success'
+          );
           pollPipelineStatus(false);
         } catch (e) {
           toast(e.message, 'error');
@@ -5266,9 +5342,15 @@
       if (cntEl) cntEl.textContent = String(q.length);
       if (panel) panel.classList.toggle('hidden', q.length === 0);
       if (confirmBtn) {
-        confirmBtn.textContent = q.length > 0
-          ? `🚀 Chạy Hàng Đợi (${q.length} tác vụ)`
-          : '✅ Xác nhận & Bắt đầu Tạo Video';
+        if (state.pipelineRunning) {
+          confirmBtn.textContent = q.length > 0
+            ? `➕ Nối thêm ${q.length} tác vụ vào hàng đợi đang chạy`
+            : '➕ Thêm cấu hình đang chọn vào hàng đợi đang chạy';
+        } else {
+          confirmBtn.textContent = q.length > 0
+            ? `🚀 Chạy Hàng Đợi (${q.length} tác vụ)`
+            : '✅ Xác nhận & Bắt đầu Tạo Video';
+        }
       }
       if (!listEl) return;
       listEl.innerHTML = q.map((item, idx) => {
@@ -6288,8 +6370,43 @@
           body: JSON.stringify(payload),
         });
         renderPipelineState(p);
-        toast(batchAll ? (mix_variants ? 'Đã khởi động Xuất & Mix 3 Biến Thể (.MP4 x3)!' : 'Đã khởi động Xuất Cả 3 Kịch Bản (.MP4 x3)!') : 'Đã khởi động Pipeline tự động 100% -> Xuất MP4!', 'info');
+        toast(
+          p?.appended > 0
+            ? `➕ Đã nối thêm ${p.appended} tác vụ vào hàng đợi đang chạy!`
+            : (batchAll ? (mix_variants ? 'Đã khởi động Xuất & Mix 3 Biến Thể (.MP4 x3)!' : 'Đã khởi động Xuất Cả 3 Kịch Bản (.MP4 x3)!') : 'Đã khởi động Pipeline tự động 100% -> Xuất MP4!'),
+          'success'
+        );
         pollPipelineStatus(false);
+      } catch (e) {
+        toast(e.message, 'error');
+      }
+    }
+
+    async function stopPipeline(mode = 'after_current') {
+      try {
+        const res = await api('/api/pipeline/stop', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ mode }),
+        });
+        renderPipelineState(res);
+        toast(
+          mode === 'immediate'
+            ? '⏹️ Đang dừng ngay tiến trình render...'
+            : '⏭️ Đã đặt dừng ngay sau khi hoàn tất video hiện tại!',
+          'warn'
+        );
+      } catch (e) {
+        toast(e.message, 'error');
+      }
+    }
+
+    async function removeLiveQueueJob(jobId) {
+      if (!jobId) return;
+      try {
+        const res = await api(`/api/pipeline/queue/${encodeURIComponent(jobId)}`, { method: 'DELETE' });
+        renderPipelineState(res);
+        toast('🗑️ Đã xóa tác vụ khỏi hàng đợi chờ.', 'info');
       } catch (e) {
         toast(e.message, 'error');
       }
